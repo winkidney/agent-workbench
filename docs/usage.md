@@ -52,7 +52,7 @@ Type `/` or `$` to open a list that filters as you type (prefix matches first, a
 
 ### Approvals and questions
 
-Permission requests appear as cards in the conversation: **1** allow, **2** allow for this session, **3** deny and tell the agent what to do instead; arrow keys and Enter work too, Esc denies. Questions (Claude's AskUserQuestion, Codex's input requests) are answered by choosing options. Claude's plan confirmation shows the plan. Requests the workbench does not know are shown as they are, and can be denied or interrupted.
+Permission requests appear as cards in the conversation: **1** allow, **2** allow for this session, **3** deny and tell the agent what to do instead; arrow keys and Enter work too, Esc denies. Questions are answered in place. Claude's AskUserQuestion shows a card with its options (single or multiple choice) and an "Other" answer. Codex asks in two ways: an input request shows the same kind of card, and Codex's newer questions (`request_user_input_async`) appear in its reply as a card with the first option preselected and a box for a typed answer; Send answers puts them into the running turn, which Codex waits for, or sends them as the next message. Once the turn that asked ends without an answer, Codex stops waiting and the card shows "Not answered"; sending another message instead skips the questions. Claude's plan confirmation shows the plan. Requests the workbench does not know are shown as they are, and can be denied or interrupted.
 
 ## The conversation
 

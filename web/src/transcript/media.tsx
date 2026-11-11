@@ -23,6 +23,9 @@ export type Env = {
   reveal: (path: string, base?: string) => void;
   // Opens images and videos in the zoomable viewer.
   view: (items: ViewItem[], index: number) => void;
+  // Sends a message as the composer would: into the running turn if there
+  // is one (answers to an agent's questions).
+  answer?: (text: string) => Promise<void>;
 };
 
 export type ViewItem = {

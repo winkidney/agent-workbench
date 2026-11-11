@@ -433,6 +433,47 @@ export default function App() {
     }
   };
   const approvals = transcript.approvals;
+  // Sends from the composer, or answers an agent's questions: into the
+  // running turn (steer), as the next message, or queued for after the turn.
+  const sendMessage = async (text: string, how: "send" | "steer" | "queue") => {
+    if (!current) return;
+    if (how === "steer") {
+      // Into the running turn; the server shows it as steered,
+      // or queues it (and says why) when the turn cannot take it.
+      setError("");
+      try {
+        const res = await api<SteerResult>(
+          "sessions/" + current.id + "/send",
+          "POST",
+          { text, steer: true },
+        );
+        setSteerNote(res.queued ? (res.reason ?? "") : "");
+      } catch (e) {
+        catchError(e);
+        throw e;
+      }
+      return;
+    }
+    const queue = how === "queue";
+    // Queued messages show in the queue; others show at once.
+    if (!queue) lastSent.current = { session: current.id, at: Date.now() };
+    if (!queue)
+      setSending({
+        session: current.id,
+        text,
+        at: Date.now(),
+        from: transcript.state.keys.length,
+      });
+    try {
+      await act("send", { text, queue });
+    } finally {
+      // Delivered (the server echoed it) or failed.
+      setSending(null);
+    }
+  };
+  // Questions answered in the transcript go out as the composer would send.
+  const answerRef = useRef<(text: string) => Promise<void>>(async () => {});
+  answerRef.current = (text) => sendMessage(text, running ? "steer" : "send");
   const env = useMemo<Env>(
     () => ({
       cwd: current?.cwd ?? "",
@@ -454,8 +495,13 @@ export default function App() {
           base,
         }).catch(catchError),
       view: (items, index) => items.length && setViewer({ items, index }),
+      // Read-only and archived sessions take no messages here.
+      answer:
+        current && !current.readOnly && !current.archived
+          ? (text) => answerRef.current(text)
+          : undefined,
     }),
-    [active, current?.cwd],
+    [active, current?.cwd, current?.readOnly, current?.archived],
   );
   const plan = useMemo(() => latestPlan(transcript.state), [transcript.state]);
   // The echo of a sent message gives way to the server's own as soon as it
@@ -875,42 +921,7 @@ export default function App() {
                 running={running}
                 disabled={busy}
                 inputRef={composerRef}
-                onSend={async (text, how) => {
-                  if (how === "steer") {
-                    // Into the running turn; the server shows it as steered,
-                    // or queues it (and says why) when the turn cannot take it.
-                    setError("");
-                    try {
-                      const res = await api<SteerResult>(
-                        "sessions/" + current.id + "/send",
-                        "POST",
-                        { text, steer: true },
-                      );
-                      setSteerNote(res.queued ? (res.reason ?? "") : "");
-                    } catch (e) {
-                      catchError(e);
-                      throw e;
-                    }
-                    return;
-                  }
-                  const queue = how === "queue";
-                  // Queued messages show in the queue; others show at once.
-                  if (!queue)
-                    lastSent.current = { session: current.id, at: Date.now() };
-                  if (!queue)
-                    setSending({
-                      session: current.id,
-                      text,
-                      at: Date.now(),
-                      from: transcript.state.keys.length,
-                    });
-                  try {
-                    await act("send", { text, queue });
-                  } finally {
-                    // Delivered (the server echoed it) or failed.
-                    setSending(null);
-                  }
-                }}
+                onSend={sendMessage}
                 onCommand={async (name, args) => {
                   setError("");
                   try {

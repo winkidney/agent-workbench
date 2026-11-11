@@ -21,6 +21,8 @@ import { BaseContext, MediaList, Mentions, useEnv } from "./media";
 import { toolDiff, toolSummary, toolTitle, unwrapShell } from "./summarize";
 import { withContext, type DiffLine } from "./diff";
 import { hasAnsi, parseAnsi } from "./ansi";
+import { AskCard } from "./AskCard";
+import { askStates, parseReply, type AskState } from "./questions";
 
 const ESTIMATE: Record<string, number> = {
   user: 64,
@@ -57,6 +59,8 @@ type RowProps = {
   kids?: Block[];
   open: boolean;
   onToggle: (key: string) => void;
+  // Codex questions: answered, skipped or still open (questions.ts).
+  ask?: AskState;
 };
 
 function Fold({
@@ -327,13 +331,26 @@ function ToolRow({ block, kids, open, onToggle }: RowProps) {
 function UserRow({ block, open, onToggle }: RowProps) {
   const lines = (block.text ?? "").split("\n");
   const long = lines.length > 12;
+  // Answers to Codex's questions read as question and answer.
+  const replies = useMemo(() => parseReply(block.text), [block.text]);
   return (
     <div className={"row user" + (block.sending ? " sending" : "")}>
       <span className="mark">›</span>
       <div className="body">
-        <div className="user-text">
-          {long && !open ? lines.slice(0, 12).join("\n") : block.text}
-        </div>
+        {replies ? (
+          <div className="user-replies">
+            {replies.map((r, i) => (
+              <div key={i} className="ask-answered">
+                <span className="ask-question">{r.question}</span>
+                <span className="ask-answer">{r.answer}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="user-text">
+            {long && !open ? lines.slice(0, 12).join("\n") : block.text}
+          </div>
+        )}
         {block.sending && <div className="user-sending">Sending…</div>}
         {block.steered && (
           <div className="user-steered-line">
@@ -362,7 +379,7 @@ function UserRow({ block, open, onToggle }: RowProps) {
             )}
           </div>
         )}
-        {long && (
+        {long && !replies && (
           <button
             type="button"
             className="more"
@@ -377,7 +394,16 @@ function UserRow({ block, open, onToggle }: RowProps) {
   );
 }
 
-function AssistantRow({ block }: RowProps) {
+function AssistantRow({ block, ask }: RowProps) {
+  if (block.questions?.length && ask)
+    return (
+      <div className="row assistant">
+        <span className="mark">●</span>
+        <div className="body">
+          <AskCard id={block.key} questions={block.questions} state={ask} />
+        </div>
+      </div>
+    );
   return (
     <div className={"row assistant" + (block.streaming ? " streaming" : "")}>
       <span className="mark">●</span>
@@ -550,6 +576,10 @@ export function Timeline({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const { rows, kids } = useMemo(() => layout(state), [state]);
+  const asks = useMemo(
+    () => askStates(state.keys.map((k) => state.blocks.get(k)!)),
+    [state],
+  );
   const [open, setOpen] = useState<Set<string>>(() => new Set());
   const toggle = useCallback(
     (key: string) =>
@@ -640,6 +670,7 @@ export function Timeline({
                   kids={kids.get(b.key)}
                   open={verbose || open.has(b.key)}
                   onToggle={toggle}
+                  ask={b.questions ? asks.get(b.key) : undefined}
                 />
               </div>
             );

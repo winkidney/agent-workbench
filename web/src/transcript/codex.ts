@@ -10,6 +10,7 @@ import {
   type ToolStatus,
 } from "./model";
 import type { Context, Draft } from "./reducer";
+import { asyncQuestions } from "./questions";
 
 const num = (v: unknown) => (typeof v === "number" ? v : undefined);
 
@@ -234,12 +235,14 @@ function item(
     }
     case "agentMessage": {
       const body = text(it.text);
-      if (body || d.get(id))
+      const questions = asyncQuestions(it);
+      if (body || questions || d.get(id))
         d.upsert({
           key: id,
           kind: "assistant",
           text: body || undefined,
           streaming: !completed,
+          questions,
         });
       return;
     }

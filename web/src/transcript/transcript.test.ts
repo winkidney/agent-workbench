@@ -887,3 +887,48 @@ describe("claude steer waiting", () => {
     expect(blocks(s).map((b) => b.text)).toEqual(["go left"]);
   });
 });
+
+describe("Codex async questions in the transcript", () => {
+  it("reads the questions of an async agent message, as Codex 0.167 sends it", () => {
+    // Recorded from a real request_user_input_async call.
+    const s = applyEvents(
+      emptyState(),
+      [
+        ev("native", {
+          method: "item/completed",
+          params: {
+            item: {
+              id: "call_3d85",
+              type: "agentMessage",
+              phase: "final_answer",
+              delivery: "async",
+              text: "Which color should the button be?\n- Red\n- Green\n- Blue\n\nWhat should the button say?",
+              questions: [
+                {
+                  title: "Which color should the button be?",
+                  options: ["Red", "Green", "Blue"],
+                },
+                { title: "What should the button say?", options: null },
+              ],
+            },
+          },
+        }),
+        ev("native", {
+          method: "item/completed",
+          params: {
+            item: { id: "plain", type: "agentMessage", text: "Done." },
+          },
+        }),
+      ],
+      { agent: "codex", history: false },
+    );
+    expect(s.blocks.get("call_3d85")!.questions).toEqual([
+      {
+        title: "Which color should the button be?",
+        options: ["Red", "Green", "Blue"],
+      },
+      { title: "What should the button say?", options: undefined },
+    ]);
+    expect(s.blocks.get("plain")!.questions).toBeUndefined();
+  });
+});
