@@ -877,8 +877,14 @@ func stopUnit(unit string) error {
 	}
 	return err
 }
+
+// unitArgs runs an engine or preview as a transient unit bound to the
+// workbench. SuccessExitStatus=143 makes a stop that the program answers by
+// exiting 143 (Claude Code catches SIGTERM) a successful stop, as systemd
+// already counts a death by SIGTERM: the journal records no failure and
+// systemd-run returns 0.
 func unitArgs(unit, cwd string) []string {
-	return []string{"--user", "--quiet", "--pipe", "--wait", "--collect", "--service-type=exec", "--unit=" + unit, "--working-directory=" + cwd, "--property=KillMode=control-group", "--property=TimeoutStopSec=10s", "--property=BindsTo=" + Service, "--property=After=" + Service, "--setenv=PATH=" + os.Getenv("PATH")}
+	return []string{"--user", "--quiet", "--pipe", "--wait", "--collect", "--service-type=exec", "--unit=" + unit, "--working-directory=" + cwd, "--property=KillMode=control-group", "--property=TimeoutStopSec=10s", "--property=SuccessExitStatus=143", "--property=BindsTo=" + Service, "--property=After=" + Service, "--setenv=PATH=" + os.Getenv("PATH")}
 }
 
 // agentCommand is the agent binary and arguments for a session's engine.

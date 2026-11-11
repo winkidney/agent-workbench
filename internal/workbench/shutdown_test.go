@@ -96,7 +96,9 @@ func TestStoppedOnRequest(t *testing.T) {
 		"exit 1":        false,
 		"exit 2":        false,
 		"kill -KILL $$": false,
-		"kill -SEGV $$": false,
+		// Any other signal; not SEGV or ABRT, which leave a core dump on the
+		// machine running the tests.
+		"kill -USR1 $$": false,
 	} {
 		if got := stoppedOnRequest(exitOf(t, script)); got != want {
 			t.Errorf("%s: %v", script, got)
@@ -104,6 +106,13 @@ func TestStoppedOnRequest(t *testing.T) {
 	}
 	if stoppedOnRequest(nil) || stoppedOnRequest(errors.New("broken pipe")) {
 		t.Fatal("non-exit errors are not stops")
+	}
+}
+
+func TestUnitsCountAStopAnsweredWith143AsSuccess(t *testing.T) {
+	args := strings.Join(unitArgs("agent-workbench-session-x.service", "/tmp"), " ")
+	if !strings.Contains(args, "--property=SuccessExitStatus=143") {
+		t.Fatalf("unit args: %s", args)
 	}
 }
 
