@@ -22,7 +22,12 @@ import { toolDiff, toolSummary, toolTitle, unwrapShell } from "./summarize";
 import { withContext, type DiffLine } from "./diff";
 import { hasAnsi, parseAnsi } from "./ansi";
 import { AskCard } from "./AskCard";
-import { askStates, parseReply, type AskState } from "./questions";
+import {
+  askStates,
+  claudeQuestions,
+  parseAnswers,
+  type AskState,
+} from "./questions";
 
 const ESTIMATE: Record<string, number> = {
   user: 64,
@@ -260,7 +265,35 @@ function ChildLine({ block }: { block: Block }) {
   );
 }
 
-function ToolRow({ block, kids, open, onToggle }: RowProps) {
+function ToolRow(props: RowProps) {
+  const { block, ask } = props;
+  // Claude's AskUserQuestion once its approval card is gone: answered, or
+  // still answerable.
+  const questions = useMemo(
+    () =>
+      block.tool?.name === "AskUserQuestion"
+        ? claudeQuestions(block.tool.input)
+        : undefined,
+    [block.tool],
+  );
+  if (questions && ask && ask.status !== "pending")
+    return (
+      <div className="row assistant">
+        <span className="mark">●</span>
+        <div className="body">
+          <AskCard
+            agent="claude"
+            id={block.key}
+            questions={questions}
+            state={ask}
+          />
+        </div>
+      </div>
+    );
+  return <ToolRowBody {...props} />;
+}
+
+function ToolRowBody({ block, kids, open, onToggle }: RowProps) {
   const env = useEnv();
   const t = block.tool!;
   const { name, arg } = toolTitle(t, env.cwd);
@@ -332,7 +365,7 @@ function UserRow({ block, open, onToggle }: RowProps) {
   const lines = (block.text ?? "").split("\n");
   const long = lines.length > 12;
   // Answers to Codex's questions read as question and answer.
-  const replies = useMemo(() => parseReply(block.text), [block.text]);
+  const replies = useMemo(() => parseAnswers(block.text), [block.text]);
   return (
     <div className={"row user" + (block.sending ? " sending" : "")}>
       <span className="mark">›</span>
@@ -400,7 +433,12 @@ function AssistantRow({ block, ask }: RowProps) {
       <div className="row assistant">
         <span className="mark">●</span>
         <div className="body">
-          <AskCard id={block.key} questions={block.questions} state={ask} />
+          <AskCard
+            agent="codex"
+            id={block.key}
+            questions={block.questions}
+            state={ask}
+          />
         </div>
       </div>
     );
@@ -670,7 +708,7 @@ export function Timeline({
                   kids={kids.get(b.key)}
                   open={verbose || open.has(b.key)}
                   onToggle={toggle}
-                  ask={b.questions ? asks.get(b.key) : undefined}
+                  ask={asks.get(b.key)}
                 />
               </div>
             );

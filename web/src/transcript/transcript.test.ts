@@ -925,7 +925,7 @@ describe("Codex async questions in the transcript", () => {
     expect(s.blocks.get("call_3d85")!.questions).toEqual([
       {
         title: "Which color should the button be?",
-        options: ["Red", "Green", "Blue"],
+        options: [{ label: "Red" }, { label: "Green" }, { label: "Blue" }],
       },
       { title: "What should the button say?", options: undefined },
     ]);

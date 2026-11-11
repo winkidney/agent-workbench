@@ -3,49 +3,73 @@ import { MessageCircleQuestion } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { useEnv } from "./media";
 import {
+  claudeAnswerText,
   questionItemId,
   replyText,
+  type AskQuestion,
   type AskState,
-  type AsyncQuestion,
 } from "./questions";
 
-const settled: Record<AskState["status"], string> = {
-  open: "",
-  answered: "Answered",
-  skipped: "Skipped",
-  ended: "Not answered",
-};
+const names = { claude: "Claude", codex: "Codex" } as const;
 
-// Codex's async questions (questions.ts), answered in place: an option (the
-// first is preselected, as in Codex) or a typed answer per question. The
-// answers go out as an ordinary message, into the running turn if there is
-// one, which wakes Codex while it waits.
+// Questions an agent asked (questions.ts), answered in place. Codex's are
+// open while its turn waits; any question left unanswered keeps an Answer
+// button, since agents often end the turn and expect the answer next. The
+// answers go out as a message, into the running turn if there is one:
+// Codex's reply envelope, or a readable list for Claude.
 export function AskCard({
+  agent,
   id,
   questions,
   state,
 }: {
+  agent: "claude" | "codex";
   id: string;
-  questions: AsyncQuestion[];
+  questions: AskQuestion[];
   state: AskState;
 }) {
   const env = useEnv();
-  const [picked, setPicked] = useState<Record<number, number>>(() =>
-    Object.fromEntries(
-      questions.map((q, i) => [i, q.options?.length ? 0 : -1]),
-    ),
+  // Codex preselects the first option, as its own clients do.
+  const [picked, setPicked] = useState<Record<number, string[]>>(() =>
+    agent === "codex"
+      ? Object.fromEntries(
+          questions.flatMap((q, i) =>
+            q.options?.length ? [[i, [q.options[0].label]]] : [],
+          ),
+        )
+      : {},
   );
   const [typed, setTyped] = useState<Record<number, string>>({});
+  const [answering, setAnswering] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const answerOf = (i: number) =>
-    typed[i]?.trim() ||
-    (picked[i] >= 0 ? (questions[i].options?.[picked[i]] ?? "") : "");
-  const pending = questions
+  const open = state.status === "open";
+  const formShown = open || answering;
+  const answerOf = (i: number) => {
+    const text = typed[i]?.trim() ?? "";
+    if (questions[i].multi)
+      return [...(picked[i] ?? []), ...(text ? [text] : [])].join(", ");
+    return text || (picked[i]?.[0] ?? "");
+  };
+  const remaining = questions
     .map((_, i) => i)
     .filter((i) => state.answers[i] === undefined);
-  const complete = pending.every((i) => answerOf(i));
-  const open = state.status === "open";
+  const complete = remaining.every((i) => answerOf(i));
+
+  const choose = (i: number, label: string) => {
+    const q = questions[i];
+    setPicked((p) => {
+      const cur = p[i] ?? [];
+      if (!q.multi) return { ...p, [i]: [label] };
+      return {
+        ...p,
+        [i]: cur.includes(label)
+          ? cur.filter((x) => x !== label)
+          : [...cur, label],
+      };
+    });
+    if (!q.multi) setTyped((t) => ({ ...t, [i]: "" }));
+  };
 
   const submit = async () => {
     if (!env.answer || !complete) return;
@@ -53,14 +77,22 @@ export function AskCard({
     setError("");
     try {
       await env.answer(
-        replyText(
-          pending.map((i) => ({
-            questionItemId: questionItemId(id, i),
-            question: questions[i].title,
-            answer: answerOf(i),
-          })),
-        ),
+        agent === "codex"
+          ? replyText(
+              remaining.map((i) => ({
+                questionItemId: questionItemId(id, i),
+                question: questions[i].title,
+                answer: answerOf(i),
+              })),
+            )
+          : claudeAnswerText(
+              remaining.map((i) => ({
+                question: questions[i].title,
+                answer: answerOf(i),
+              })),
+            ),
       );
+      setAnswering(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -68,20 +100,28 @@ export function AskCard({
     }
   };
 
+  const status =
+    state.status === "answered"
+      ? "Answered"
+      : state.status === "unanswered"
+        ? "Not answered"
+        : "";
   return (
     <div
-      className={"approval ask-card" + (open ? "" : " settled")}
+      className={"approval ask-card" + (formShown ? "" : " settled")}
       role="group"
-      aria-label="Codex's questions"
+      aria-label={`${names[agent]}'s questions`}
     >
       <div className="approval-title">
         <MessageCircleQuestion size={15} />
         <strong>
-          {open ? "Codex is waiting for your answer" : "Codex asked"}
+          {open
+            ? `${names[agent]} is waiting for your answer`
+            : `${names[agent]} asked`}
         </strong>
-        {!open && <span className="ask-status">{settled[state.status]}</span>}
+        {status && <span className="ask-status">{status}</span>}
       </div>
-      {open ? (
+      {formShown ? (
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -96,30 +136,41 @@ export function AskCard({
               </div>
             ) : (
               <fieldset key={i} className="question">
+                {q.header && (
+                  <span className="question-header">{q.header}</span>
+                )}
                 <legend>{q.title}</legend>
                 {q.options?.map((o, j) => {
-                  const on = picked[i] === j && !typed[i]?.trim();
+                  const on =
+                    (picked[i] ?? []).includes(o.label) &&
+                    (q.multi || !typed[i]?.trim());
                   return (
                     <button
                       key={j}
                       type="button"
                       className={"approval-option" + (on ? " selected" : "")}
                       aria-pressed={on}
-                      onClick={() => {
-                        setPicked((p) => ({ ...p, [i]: j }));
-                        setTyped((t) => ({ ...t, [i]: "" }));
-                      }}
+                      onClick={() => choose(i, o.label)}
                     >
-                      <span className="pointer">{on ? "◉" : "○"}</span>
+                      <span className="pointer">
+                        {q.multi ? (on ? "☒" : "☐") : on ? "◉" : "○"}
+                      </span>
                       <span className="num">{j + 1}.</span>
-                      <span>{o}</span>
+                      <span>{o.label}</span>
+                      {o.description && (
+                        <span className="hint">{o.description}</span>
+                      )}
                     </button>
                   );
                 })}
                 <input
                   aria-label={`Your answer to ${q.title}`}
                   placeholder={
-                    q.options?.length ? "Or type an answer…" : "Your answer"
+                    q.options?.length
+                      ? q.multi
+                        ? "Add another answer…"
+                        : "Or type an answer…"
+                      : "Your answer"
                   }
                   value={typed[i] ?? ""}
                   onChange={(e) =>
@@ -137,6 +188,17 @@ export function AskCard({
             >
               {busy ? "Sending…" : "Send answers"}
             </Button>
+            {!open && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={busy}
+                onClick={() => setAnswering(false)}
+              >
+                Cancel
+              </Button>
+            )}
             {!env.answer && (
               <span className="ask-note">
                 Answer in the client running this session.
@@ -150,14 +212,29 @@ export function AskCard({
           )}
         </form>
       ) : (
-        questions.map((q, i) => (
-          <div key={i} className="ask-answered">
-            <span className="ask-question">{q.title}</span>
-            <span className="ask-answer">
-              {state.answers[i] ?? "Not answered"}
-            </span>
-          </div>
-        ))
+        <>
+          {questions.map((q, i) => (
+            <div key={i} className="ask-answered">
+              <span className="ask-question">{q.title}</span>
+              <span className="ask-answer">
+                {state.answers[i] ??
+                  (state.status === "answered" ? "Answered" : "Not answered")}
+              </span>
+            </div>
+          ))}
+          {state.status === "unanswered" && env.answer && (
+            <div className="approval-actions">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => setAnswering(true)}
+              >
+                Answer
+              </Button>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

@@ -1,7 +1,7 @@
 // Protocol-neutral transcript blocks. Adapters map native Claude / Codex
 // records to these; anything unrecognised becomes a generic tool or notice
 // block so a CLI upgrade never hides content.
-import type { AsyncQuestion } from "./questions";
+import type { AskQuestion } from "./questions";
 
 export type WorkbenchEvent = {
   seq: number;
@@ -76,7 +76,7 @@ export type Block = {
   // Notice text is Markdown (local command output).
   markdown?: boolean;
   // Codex: questions the agent asked to be answered in place (questions.ts).
-  questions?: AsyncQuestion[];
+  questions?: AskQuestion[];
   // A message sent into a turn that was already running (steering).
   steered?: boolean;
   // Claude: the steer's id while it waits for the turn's next step, and
