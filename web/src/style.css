@@ -1224,9 +1224,23 @@ p {
   color: var(--muted-foreground);
 }
 .preview-toolbar > span {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.preview-newtab {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  color: var(--muted-foreground);
+}
+.preview-newtab:hover {
+  background: var(--accent);
+  color: var(--foreground);
 }
 .preview-services {
   padding: 0 15px;

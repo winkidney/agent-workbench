@@ -36,6 +36,10 @@ type Server struct {
 	// password sign-in, empty until first turned on.
 	remote     string
 	user, pass string
+	// fileGrants sign in file previews on the workbench's own address;
+	// signinGen ends those (and pairing sessions) when sign-in rules change.
+	fileGrants map[string]fileGrant
+	signinGen  uint64
 	// localSignin makes this computer sign in too, for a workbench reached
 	// through a tunnel here (read without the lock by hostAccess).
 	localSignin atomic.Bool
@@ -67,7 +71,7 @@ func assetBuild(assets fs.FS) string {
 }
 
 func NewServer(m *Manager, assets fs.FS, host, pairing string) *Server {
-	s := &Server{Manager: m, Assets: assets, Host: host, Pairing: pairing, auth: map[string]time.Time{}, grants: map[string]grant{}, attempts: map[string][]time.Time{}, build: assetBuild(assets)}
+	s := &Server{Manager: m, Assets: assets, Host: host, Pairing: pairing, auth: map[string]time.Time{}, grants: map[string]grant{}, attempts: map[string][]time.Time{}, fileGrants: map[string]fileGrant{}, build: assetBuild(assets)}
 	// On errors other devices stay refused.
 	s.remote, s.initErr = loadRemoteAccess(m.store.db)
 	if s.initErr == nil {
@@ -175,6 +179,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unrecognized host", 403)
 		return
 	}
+	if strings.HasPrefix(r.URL.Path, filesPrefix) {
+		// Signed in by a file grant the sign-in issued (files.go).
+		s.serveFiles(w, r, access)
+		return
+	}
 	if access == hostAuth {
 		s.mu.Lock()
 		mode := s.remote
@@ -192,7 +201,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.Header().Set("Referrer-Policy", "strict-origin")
-	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-src http://*.localhost:*; frame-ancestors 'none'")
+	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-src 'self' http://*.localhost:*; frame-ancestors 'none'")
 	// Changes must come from a page on the same host the request names, or
 	// an allowed origin (auth.go).
 	if r.Method != "GET" && r.Method != "HEAD" && !s.originAllowed(r, access) {
@@ -435,8 +444,9 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 		s.localSignin.Store(local)
 		s.allowedOrigins = origins
 		if mode != before || changed || local != localBefore {
-			// Sign-ins under the old rules end.
+			// Sign-ins under the old rules end, file grants with them.
 			s.auth = map[string]time.Time{}
+			s.signinGen++
 		}
 		if mode == remotePairing && s.hostAccess(r) == hostAuth && !s.validSessionLocked(r) {
 			// The device that saved stays connected where pairing applies.
@@ -662,16 +672,7 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 			http.NotFound(w, r)
 			return
 		}
-		key := token()
-		s.mu.Lock()
-		for k, g := range s.grants {
-			if time.Now().After(g.expires) {
-				delete(s.grants, k)
-			}
-		}
-		s.grants[key] = grant{p.ID, time.Now().Add(time.Minute)}
-		s.mu.Unlock()
-		writeJSON(w, map[string]any{"preview": p, "grant": key})
+		s.previewResponse(w, r, p)
 	case path == "previews" && r.Method == "POST":
 		var v struct {
 			Session, Kind, Path, Base, Target, Command string
@@ -690,21 +691,7 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 			bad(w, err)
 			return
 		}
-		key := token()
-		s.mu.Lock()
-		for k, g := range s.grants {
-			if time.Now().After(g.expires) {
-				delete(s.grants, k)
-			}
-		}
-		for k, g := range s.grants {
-			if time.Now().After(g.expires) {
-				delete(s.grants, k)
-			}
-		}
-		s.grants[key] = grant{p.ID, time.Now().Add(time.Minute)}
-		s.mu.Unlock()
-		writeJSON(w, map[string]any{"preview": p, "grant": key})
+		s.previewResponse(w, r, p)
 	case strings.HasPrefix(path, "previews/") && r.Method == "DELETE":
 		if err := m.RemovePreview(strings.TrimPrefix(path, "previews/")); err != nil {
 			bad(w, err)
@@ -1032,6 +1019,7 @@ func (s *Server) files(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, out)
 }
+
 func (s *Server) preview(w http.ResponseWriter, r *http.Request) {
 	host := strings.Split(r.Host, ":")[0]
 	id := strings.TrimSuffix(strings.TrimPrefix(host, "p-"), ".agent.localhost")

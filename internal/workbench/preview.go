@@ -3,6 +3,7 @@ package workbench
 import (
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -22,6 +23,10 @@ type Preview struct {
 	URL     string `json:"url"`
 	Entry   string `json:"entry"`
 	Owned   bool   `json:"owned"`
+	// FileURL serves a file preview from the workbench's own address, for
+	// pages that cannot reach the preview origin (another device, a tunnel).
+	// Set per response: it carries a grant for the page that asked (files.go).
+	FileURL string `json:"fileUrl,omitempty"`
 	// stop ends a managed service preview (its unit or process group).
 	stop   func() error
 	root   string
@@ -246,6 +251,7 @@ func (m *Manager) FindPreview(id string) *Preview {
 	}
 	return nil
 }
+
 func (m *Manager) RemovePreview(id string) error {
 	m.mu.Lock()
 	var found *Preview
@@ -284,13 +290,22 @@ func (p *Preview) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		proxy.ServeHTTP(w, r)
 		return
 	}
+	p.serveFile(w, r, strings.TrimPrefix(r.URL.Path, "/"), false)
+}
+
+// serveFile serves a file under the preview's root. Sandboxed (on the
+// workbench's own address) a page gets an opaque origin of its own: no
+// access to the workbench's cookies, storage or API, and its changes carry
+// Origin: null, which is refused. A real PDF is left unsandboxed, since
+// browsers do not show PDFs in a sandbox; their viewers run PDF scripts
+// apart from the page.
+func (p *Preview) serveFile(w http.ResponseWriter, r *http.Request, path string, sandbox bool) {
 	root, err := os.OpenRoot(p.root)
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
 	defer root.Close()
-	path := strings.TrimPrefix(r.URL.Path, "/")
 	if path == "" {
 		path = "index.html"
 	}
@@ -304,6 +319,20 @@ func (p *Preview) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil || !info.Mode().IsRegular() {
 		http.NotFound(w, r)
 		return
+	}
+	if sandbox {
+		head := make([]byte, 5)
+		n, _ := io.ReadFull(file, head)
+		if _, err := file.Seek(0, io.SeekStart); err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		if string(head[:n]) == "%PDF-" {
+			w.Header().Set("Content-Type", "application/pdf")
+			w.Header().Set("Content-Security-Policy", "frame-ancestors 'self'")
+		} else {
+			w.Header().Set("Content-Security-Policy", "sandbox allow-scripts allow-forms allow-popups allow-modals allow-downloads; frame-ancestors 'self'")
+		}
 	}
 	http.ServeContent(w, r, info.Name(), info.ModTime(), file)
 }

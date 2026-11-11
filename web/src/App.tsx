@@ -23,6 +23,7 @@ import { displayTitle, type Session } from "./sidebar/tree";
 import { api } from "./lib/api";
 import { Appearance } from "./components/Appearance";
 import { SettingsDialog } from "./components/SettingsDialog";
+import { canonicalAddress, fileFrameSandbox, previewMode } from "./lib/preview";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Timeline } from "./transcript/Timeline";
 import { useTranscript, type ExternalUpdate } from "./transcript/useTranscript";
@@ -57,6 +58,7 @@ import {
   Settings,
   Archive,
   Trash2,
+  ExternalLink,
 } from "lucide-react";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
@@ -70,6 +72,8 @@ type Preview = {
   url: string;
   entry: string;
   owned: boolean;
+  // A file preview on the workbench's own address, for this page only.
+  fileUrl?: string;
 };
 type Entry = { name: string; path: string; directory: boolean; size: number };
 export default function App() {
@@ -387,8 +391,19 @@ export default function App() {
       })
       .catch(catchError);
   const authorize = (p: Preview, grant: string) => {
+    const mode = previewMode(p, location.host);
+    if (mode === "unavailable") {
+      setError(
+        "Web previews only open in a browser on the workbench computer, at " +
+          canonicalAddress(p) +
+          ". Files open here.",
+      );
+      return;
+    }
     setPreview(p);
     setPanel(true);
+    // A file on the workbench's own address loads as the frame's src.
+    if (mode === "file") return;
     setTimeout(() => {
       const form = document.createElement("form");
       form.method = "POST";
@@ -968,6 +983,19 @@ export default function App() {
                     {preview.owned ? "Managed service" : "Preview"} ·{" "}
                     {preview.entry}
                   </span>
+                  {preview.fileUrl &&
+                    previewMode(preview, location.host) === "file" && (
+                      <a
+                        className="preview-newtab"
+                        href={preview.fileUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        aria-label="Open in a new tab"
+                        title="Open in a new tab"
+                      >
+                        <ExternalLink size={14} />
+                      </a>
+                    )}
                   <Button
                     variant="ghost"
                     size="icon"
@@ -984,13 +1012,26 @@ export default function App() {
                     <X size={14} />
                   </Button>
                 </div>
-                <iframe
-                  title="Resource preview"
-                  name="artifact-preview"
-                  className="preview-frame"
-                  sandbox="allow-scripts allow-same-origin allow-forms allow-downloads"
-                  referrerPolicy="strict-origin"
-                />
+                {preview.fileUrl &&
+                previewMode(preview, location.host) === "file" ? (
+                  // Sandboxed on the workbench's address: no same-origin.
+                  <iframe
+                    key={preview.fileUrl}
+                    title="Resource preview"
+                    className="preview-frame"
+                    src={preview.fileUrl}
+                    sandbox={fileFrameSandbox(preview.entry)}
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <iframe
+                    title="Resource preview"
+                    name="artifact-preview"
+                    className="preview-frame"
+                    sandbox="allow-scripts allow-same-origin allow-forms allow-downloads"
+                    referrerPolicy="strict-origin"
+                  />
+                )}
               </>
             ) : (
               <>
