@@ -14,36 +14,58 @@ describe("newPassword", () => {
 });
 
 describe("accessWarning", () => {
-  const base = {
-    local: false,
+  const remote = {
+    thisComputer: false,
+    savedLocalSignin: false,
+    localSignin: false,
     saved: "pairing" as const,
     credentialsChanged: false,
   };
-  it("never warns on this computer", () => {
-    expect(accessWarning({ ...base, local: true, draft: "off" })).toBe("");
+  const here = { ...remote, thisComputer: true };
+  it("never warns this computer while it skips sign-in", () => {
+    expect(accessWarning({ ...here, draft: "off" })).toBe("");
+    expect(accessWarning({ ...here, draft: "password" })).toBe("");
   });
   it("warns another device that it loses access", () => {
-    expect(accessWarning({ ...base, draft: "off" })).toMatch(/disconnected/);
+    expect(accessWarning({ ...remote, draft: "off" })).toMatch(/disconnected/);
   });
   it("warns another device that it must sign in again", () => {
-    expect(accessWarning({ ...base, draft: "password" })).toMatch(/ask/);
+    expect(accessWarning({ ...remote, draft: "password" })).toMatch(/ask/);
     expect(
       accessWarning({
-        ...base,
+        ...remote,
         saved: "password",
         draft: "password",
         credentialsChanged: true,
       }),
     ).toMatch(/ask/);
   });
-  it("stays quiet when nothing changes for this device", () => {
-    expect(accessWarning({ ...base, draft: "pairing" })).toBe("");
+  it("warns this computer when it starts signing in with the password", () => {
     expect(
-      accessWarning({ ...base, saved: "password", draft: "password" }),
+      accessWarning({ ...here, localSignin: true, draft: "password" }),
+    ).toMatch(/This browser will ask/);
+    // Already signing in with the same password: nothing changes.
+    expect(
+      accessWarning({
+        ...here,
+        savedLocalSignin: true,
+        localSignin: true,
+        saved: "password",
+        draft: "password",
+      }),
     ).toBe("");
-    // Turning pairing on keeps the device connected (it gets a session).
+  });
+  it("stays quiet when nothing changes for this device", () => {
+    expect(accessWarning({ ...remote, draft: "pairing" })).toBe("");
     expect(
-      accessWarning({ ...base, saved: "password", draft: "pairing" }),
+      accessWarning({ ...remote, saved: "password", draft: "password" }),
+    ).toBe("");
+    // Pairing keeps the saving browser signed in (it gets a session).
+    expect(
+      accessWarning({ ...remote, saved: "password", draft: "pairing" }),
+    ).toBe("");
+    expect(
+      accessWarning({ ...here, localSignin: true, draft: "pairing" }),
     ).toBe("");
   });
 });

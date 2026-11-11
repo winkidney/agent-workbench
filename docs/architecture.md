@@ -46,7 +46,7 @@ The interface runs at `agent.localhost:PORT`. Each preview gets its own random o
 
 ## Security model
 
-- **Who can connect:** only this computer is open, meaning a request from a loopback address (`127.0.0.0/8`, `::1`) that also names a loopback host (`localhost`, `*.localhost`, a `127.x` address or `[::1]`). Both are required: any client can send `Host: localhost`, and a website that points its name at `127.0.0.1` (DNS rebinding) names a host that is not loopback. Everything else follows the remote access setting (`remote_access`):
+- **Who can connect:** only this computer is open, meaning a request from a loopback address (`127.0.0.0/8`, `::1`) that also names a loopback host (`localhost`, `*.localhost`, a `127.x` address or `[::1]`). Both are required: any client can send `Host: localhost`, and a website that points its name at `127.0.0.1` (DNS rebinding) names a host that is not loopback. A request that carries a proxy header (`Forwarded`, `Via`, `X-Forwarded-*`, `X-Real-IP`, `CF-Connecting-IP`, `True-Client-IP`, `X-Client-IP`) was relayed and is not this computer either. The `local_signin` setting makes this computer sign in too, for plain tunnels that add no header; it requires `pairing` or `password`. Everything else follows the remote access setting (`remote_access`):
   - `off` (default): refused with a short HTML page (`403`, `X-Workbench-Access: off`);
   - `pairing`: the app is served; the API needs a session from `POST /api/login` with the pairing code;
   - `password`: HTTP Basic (`WWW-Authenticate: Basic realm="Agent Workbench", charset="UTF-8"`) on every request, pages included; pairing sessions are not accepted.

@@ -101,7 +101,10 @@ The workbench listens on all interfaces by default (`0.0.0.0:17880`) and `start`
 - The pairing code and the password are kept in the data directory, readable only by you, and survive restarts. Settings shows them, with copy buttons.
 - Ten wrong codes or passwords from one address within a minute block that address for a minute; other devices are not affected.
 - The workbench speaks plain HTTP, so on your network the password and the session travel unencrypted. On networks you don't trust, use a VPN such as Tailscale.
-- A reverse proxy or tunnel **on this machine** that forwards requests with `Host: localhost` makes its visitors count as this computer. SSH port forwarding (`ssh -L`) does too, which is fine, since SSH already signed you in. Proxies that keep their own host name, such as Tailscale Serve, are treated as other devices.
+- **Tunnels and reverse proxies on this machine.** Whatever they relay connects from this computer, so it needs care:
+  - Requests that carry proxy headers (`X-Forwarded-For`, `Forwarded`, `Via`, `X-Real-IP`, `CF-Connecting-IP` and similar, which nginx, Caddy, Apache, cloudflared or ngrok usually add) are treated as other devices and sign in.
+  - Plain TCP tunnels (`ssh -R`, frp, ngrok TCP, socat) and proxies that add no such header still look like this computer, and their visitors can claim `Host: localhost`. Before exposing the workbench that way, turn on **Sign in on this computer too** in Settings: then this computer signs in with the pairing code or password as well. It needs one of them, and Off cannot be chosen while it is on. If you lose the code or password, they are in the data directory (`pairing-code`, `access-password.json`).
+  - SSH port forwarding into this machine (`ssh -L`) arrives as this computer, which is fine: SSH already signed you in.
 - From public internet addresses only `agent.localhost:PORT` is accepted, and it signs in like any other device.
 
 `--listen 127.0.0.1:17880` keeps the workbench to this machine altogether.

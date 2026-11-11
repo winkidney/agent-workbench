@@ -41,20 +41,28 @@ export function newPassword(): string {
   return out;
 }
 
-// What saving does to the device showing Settings, if it is another device.
+// What saving does to the device showing Settings. This computer skips
+// sign-in unless "sign in on this computer too" is on; any other device (or
+// this one, then) signs in with the chosen method.
 export function accessWarning(o: {
-  local: boolean;
+  thisComputer: boolean;
+  savedLocalSignin: boolean;
+  localSignin: boolean;
   saved: RemoteAccess;
   draft: RemoteAccess;
   credentialsChanged: boolean;
 }): string {
-  if (o.local) return "";
+  if (o.thisComputer && !o.localSignin) return "";
   if (o.draft === "off")
     return "This device will be disconnected: only the workbench computer can turn access back on.";
+  const signedInBefore = !(o.thisComputer && !o.savedLocalSignin);
   if (
     o.draft === "password" &&
-    (o.saved !== "password" || o.credentialsChanged)
+    (!signedInBefore || o.saved !== "password" || o.credentialsChanged)
   )
-    return "This device will ask for the new username and password.";
+    return o.thisComputer
+      ? "This browser will ask for the username and password."
+      : "This device will ask for the new username and password.";
+  // Pairing: the server keeps the saving browser signed in.
   return "";
 }

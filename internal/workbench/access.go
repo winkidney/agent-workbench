@@ -13,16 +13,18 @@ import (
 // and names a loopback host (localhost, *.localhost, 127.0.0.1, [::1]). The
 // Host header alone proves nothing, any client can send "localhost", so the
 // source address must be loopback too; and a website that points its own
-// name at 127.0.0.1 (DNS rebinding) names a host that is not loopback.
-// Everything else signs in with the method chosen in Settings, or is refused
-// while access from other devices is off. From public addresses only the
-// canonical host is served.
+// name at 127.0.0.1 (DNS rebinding) names a host that is not loopback. A
+// proxy or tunnel on this machine also connects from loopback: requests with
+// proxy headers are not this computer, and for tunnels that add none,
+// Settings can require sign-in here too. Everything else signs in with the
+// method chosen in Settings, or is refused while access from other devices
+// is off. From public addresses only the canonical host is served.
 type hostAccess int
 
 const (
 	hostDenied hostAccess = iota
-	hostLocal             // this computer: never signs in
-	hostAuth              // another device: signs in with the remote access mode
+	hostLocal             // this computer, while it need not sign in
+	hostAuth              // another device (or this one, when set): signs in
 )
 
 var cgnat = netip.MustParsePrefix("100.64.0.0/10")
@@ -63,8 +65,32 @@ func loopbackName(host string) bool {
 	return err == nil && addr.Unmap().IsLoopback()
 }
 
+// proxyHeaders are added by reverse proxies and tunnels; browsers never
+// send them. A loopback request that carries one was relayed from
+// elsewhere, so it is not this computer.
+var proxyHeaders = []string{"Forwarded", "Via", "X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto", "X-Real-Ip", "Cf-Connecting-Ip", "True-Client-Ip", "X-Client-Ip"}
+
+func relayed(r *http.Request) bool {
+	for _, h := range proxyHeaders {
+		if _, ok := r.Header[h]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+// thisComputer reports a browser on this machine. A plain TCP tunnel or a
+// proxy that adds no headers still looks like one: for those, sign-in on
+// this computer can be turned on (Server.localSignin).
+func thisComputer(r *http.Request) bool {
+	return loopbackClient(r.RemoteAddr) && loopbackName(r.Host) && !relayed(r)
+}
+
 func (s *Server) hostAccess(r *http.Request) hostAccess {
-	if loopbackClient(r.RemoteAddr) && loopbackName(r.Host) {
+	if thisComputer(r) {
+		if s.localSignin.Load() {
+			return hostAuth
+		}
 		return hostLocal
 	}
 	if !privateClient(r.RemoteAddr) && !strings.EqualFold(r.Host, s.Host) {

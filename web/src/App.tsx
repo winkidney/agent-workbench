@@ -539,7 +539,8 @@ export default function App() {
           </h1>
           <p className="subtle">
             Enter the pairing code shown in Settings on the computer that runs
-            the workbench.
+            the workbench (it is also in the pairing-code file in its data
+            directory).
           </p>
           <form
             onSubmit={(e) => {

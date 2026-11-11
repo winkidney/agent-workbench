@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -35,9 +36,12 @@ type Server struct {
 	// password sign-in, empty until first turned on.
 	remote     string
 	user, pass string
-	auth       map[string]time.Time
-	grants     map[string]grant
-	attempts   map[string][]time.Time
+	// localSignin makes this computer sign in too, for a workbench reached
+	// through a tunnel here (read without the lock by hostAccess).
+	localSignin atomic.Bool
+	auth        map[string]time.Time
+	grants      map[string]grant
+	attempts    map[string][]time.Time
 	// build identifies the embedded web build, so open pages can tell
 	// they run an older one.
 	build string
@@ -66,6 +70,12 @@ func NewServer(m *Manager, assets fs.FS, host, pairing string) *Server {
 	s.remote, s.initErr = loadRemoteAccess(m.store.db)
 	if s.initErr == nil {
 		s.initErr = s.loadCredentialsLocked()
+	}
+	if s.initErr == nil {
+		var on bool
+		on, s.initErr = loadLocalSignin(m.store.db)
+		// Without a sign-in method nobody could get in.
+		s.localSignin.Store(on && s.remote != remoteOff)
 	}
 	if s.initErr == nil {
 		switch s.remote {
@@ -119,7 +129,7 @@ func (s *Server) authorized(r *http.Request) bool {
 // settings is what the Settings dialog shows; secrets are fetched apart.
 func (s *Server) settings(r *http.Request) map[string]any {
 	s.mu.Lock()
-	out := map[string]any{"remoteAccess": s.remote, "local": s.hostAccess(r) == hostLocal}
+	out := map[string]any{"remoteAccess": s.remote, "localSignin": s.localSignin.Load(), "thisComputer": thisComputer(r)}
 	if s.user != "" {
 		out["username"] = s.user
 	}
@@ -351,6 +361,7 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 	case path == "settings" && r.Method == "PUT":
 		var input struct {
 			RemoteAccess *string `json:"remoteAccess"`
+			LocalSignin  *bool   `json:"localSignin"`
 			Username     *string `json:"username"`
 			Password     *string `json:"password"`
 		}
@@ -365,6 +376,16 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 		mode := *input.RemoteAccess
 		s.mu.Lock()
 		before, user, pass := s.remote, s.user, s.pass
+		localBefore := s.localSignin.Load()
+		local := localBefore
+		if input.LocalSignin != nil {
+			local = *input.LocalSignin
+		}
+		if local && mode == remoteOff {
+			s.mu.Unlock()
+			bad(w, errors.New("signing in on this computer needs a pairing code or a password"))
+			return
+		}
 		if input.Username != nil {
 			user = *input.Username
 		}
@@ -385,7 +406,7 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 			err = s.ensurePairingCode()
 		}
 		if err == nil {
-			_, err = m.store.db.Exec("INSERT INTO settings(key,value) VALUES('remote_access',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", mode)
+			err = saveSettings(m.store.db, map[string]string{"remote_access": mode, "local_signin": strconv.FormatBool(local)})
 		}
 		if err != nil {
 			s.mu.Unlock()
@@ -393,12 +414,13 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.remote = mode
-		if mode != before || changed {
+		s.localSignin.Store(local)
+		if mode != before || changed || local != localBefore {
 			// Sign-ins under the old rules end.
 			s.auth = map[string]time.Time{}
 		}
-		if mode == remotePairing && before != remotePairing && s.hostAccess(r) == hostAuth {
-			// The device that turned pairing on stays connected.
+		if mode == remotePairing && s.hostAccess(r) == hostAuth && !s.validSessionLocked(r) {
+			// The device that saved stays connected where pairing applies.
 			key := token()
 			s.auth[key] = time.Now().Add(12 * time.Hour)
 			s.sessionCookie(w, key)

@@ -62,6 +62,30 @@ func loadRemoteAccess(db *sql.DB) (string, error) {
 	return remoteOff, nil
 }
 
+// loadLocalSignin reads whether this computer signs in too (off by default).
+func loadLocalSignin(db *sql.DB) (bool, error) {
+	var v string
+	err := db.QueryRow("SELECT value FROM settings WHERE key='local_signin'").Scan(&v)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	return v == "true", err
+}
+
+func saveSettings(db *sql.DB, values map[string]string) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	for k, v := range values {
+		if _, err := tx.Exec("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", k, v); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 func validRemoteAccess(v string) bool {
 	return v == remoteOff || v == remotePairing || v == remotePassword
 }
@@ -232,7 +256,7 @@ func (s *Server) checkPassword(w http.ResponseWriter, r *http.Request) bool {
 	s.mu.Unlock()
 	if !ok {
 		w.Header().Set("WWW-Authenticate", basicChallenge)
-		remotePage(w, http.StatusUnauthorized, "sign-in", "Sign in to Agent Workbench", "This workbench asks for a username and password. They are in Settings on the computer that runs it. Reload this page to sign in again.")
+		remotePage(w, http.StatusUnauthorized, "sign-in", "Sign in to Agent Workbench", "This workbench asks for a username and password. They are in Settings on the computer that runs it, and in access-password.json in its data directory. Reload this page to sign in again.")
 	}
 	return ok
 }

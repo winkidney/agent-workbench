@@ -14,7 +14,8 @@ import { Dialog, DialogContent, DialogTitle } from "./ui/dialog";
 
 type Settings = {
   remoteAccess: RemoteAccess;
-  local: boolean;
+  localSignin: boolean;
+  thisComputer: boolean;
   username?: string;
   storageBytes?: number;
   retentionDays?: number;
@@ -45,6 +46,7 @@ export function SettingsDialog({
   const [saved, setSaved] = useState<Settings>();
   const [secrets, setSecrets] = useState<Secrets>({});
   const [draft, setDraft] = useState<RemoteAccess>("off");
+  const [localSignin, setLocalSignin] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [reveal, setReveal] = useState(false);
@@ -57,6 +59,7 @@ export function SettingsDialog({
     setSaved(settings);
     setSecrets(sec);
     setDraft(settings.remoteAccess);
+    setLocalSignin(settings.localSignin);
     // Defaults the first time; saved only when the password is chosen.
     setUsername(sec.username ?? DEFAULT_USERNAME);
     setPassword(sec.password ?? newPassword());
@@ -82,7 +85,9 @@ export function SettingsDialog({
     password !== (secrets.password ?? "");
   const warning = saved
     ? accessWarning({
-        local: saved.local,
+        thisComputer: saved.thisComputer,
+        savedLocalSignin: saved.localSignin,
+        localSignin,
         saved: saved.remoteAccess,
         draft,
         credentialsChanged: draft === "password" && credentialsChanged,
@@ -98,8 +103,8 @@ export function SettingsDialog({
         "settings",
         "PUT",
         draft === "password"
-          ? { remoteAccess: draft, username, password }
-          : { remoteAccess: draft },
+          ? { remoteAccess: draft, localSignin, username, password }
+          : { remoteAccess: draft, localSignin },
       );
       await load();
       setStatus(
@@ -154,7 +159,11 @@ export function SettingsDialog({
                   name="remote-access"
                   value={o.id}
                   checked={draft === o.id}
-                  onChange={() => setDraft(o.id)}
+                  onChange={() => {
+                    setDraft(o.id);
+                    // Without a sign-in method nobody could get in.
+                    if (o.id === "off") setLocalSignin(false);
+                  }}
                 />
                 <span>
                   <strong>{o.label}</strong>
@@ -163,8 +172,26 @@ export function SettingsDialog({
               </label>
             ))}
           </fieldset>
+          <label className="access-option local-signin">
+            <input
+              type="checkbox"
+              checked={localSignin}
+              disabled={busy || !saved || draft === "off"}
+              onChange={(e) => setLocalSignin(e.target.checked)}
+            />
+            <span>
+              <strong>Sign in on this computer too</strong>
+              <small>
+                {draft === "off"
+                  ? "Needs a pairing code or a password."
+                  : "Turn on when a tunnel or reverse proxy on this computer (ssh -R, frp, ngrok, nginx…) makes the workbench reachable from elsewhere: its visitors arrive from this computer. If you lose the code or password, they are in the data directory (pairing-code, access-password.json)."}
+              </small>
+            </span>
+          </label>
           <p className="subtle access-note">
-            This computer (localhost, 127.0.0.1) never signs in.
+            {localSignin
+              ? "This computer signs in too."
+              : "This computer (localhost, 127.0.0.1) never signs in."}
           </p>
           {draft === "pairing" &&
             saved?.remoteAccess === "pairing" &&

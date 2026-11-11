@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"testing"
 )
@@ -44,6 +45,33 @@ func TestOnlyThisComputerIsLocal(t *testing.T) {
 		if got := s.hostAccess(r); got != c.want {
 			t.Errorf("%s from %s: %d, want %d", c.host, c.remote, got, c.want)
 		}
+	}
+}
+
+func TestRelayedRequestsAreNotThisComputer(t *testing.T) {
+	s := &Server{Host: "agent.localhost:17880"}
+	request := func(header string) *http.Request {
+		r := httptest.NewRequest("GET", "http://localhost:17880/", nil)
+		r.Host, r.RemoteAddr = "localhost:17880", "127.0.0.1:5000"
+		if header != "" {
+			r.Header.Set(header, "203.0.113.7")
+		}
+		return r
+	}
+	if got := s.hostAccess(request("")); got != hostLocal {
+		t.Fatalf("plain local request: %d", got)
+	}
+	// What reverse proxies and tunnels add (nginx, Caddy, Apache, cloudflared,
+	// ngrok, …); browsers never send these.
+	for _, h := range []string{"Forwarded", "Via", "X-Forwarded-For", "x-forwarded-host", "X-Forwarded-Proto", "X-Real-IP", "CF-Connecting-IP", "True-Client-IP", "X-Client-IP"} {
+		if got := s.hostAccess(request(h)); got != hostAuth {
+			t.Errorf("relayed with %s: %d", h, got)
+		}
+	}
+	// Signing in on this computer too covers tunnels that add nothing.
+	s.localSignin.Store(true)
+	if got := s.hostAccess(request("")); got != hostAuth {
+		t.Fatalf("local sign-in: %d", got)
 	}
 }
 

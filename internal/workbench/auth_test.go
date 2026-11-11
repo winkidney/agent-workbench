@@ -84,7 +84,7 @@ func privateFile(t *testing.T, path string) string {
 func TestOtherDevicesAreRefusedByDefault(t *testing.T) {
 	s, m := authServer(t)
 	w := request(t, s, s.Host, "GET", "/api/settings", "", nil)
-	if w.Code != 200 || !strings.Contains(w.Body.String(), `"remoteAccess":"off"`) || !strings.Contains(w.Body.String(), `"local":true`) {
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"remoteAccess":"off"`) || !strings.Contains(w.Body.String(), `"thisComputer":true`) || !strings.Contains(w.Body.String(), `"localSignin":false`) {
 		t.Fatalf("local settings: %d %s", w.Code, w.Body.String())
 	}
 	for _, path := range []string{"/", "/assets/index.js", "/api/sessions", "/api/auth/status", "/api/events"} {
@@ -323,5 +323,107 @@ func TestRemoteAccessMigration(t *testing.T) {
 		if want == remotePairing && s.Pairing == "" {
 			t.Fatal("pairing without a code")
 		}
+	}
+}
+
+// local is a request from this computer, optionally relayed by a proxy.
+func local(t *testing.T, s *Server, method, path, body string, cookie *http.Cookie, header http.Header, basic ...string) *httptest.ResponseRecorder {
+	t.Helper()
+	r := httptest.NewRequest(method, "http://localhost:17880"+path, strings.NewReader(body))
+	r.Host, r.RemoteAddr = "localhost:17880", "127.0.0.1:5000"
+	r.Header.Set("Origin", "http://localhost:17880")
+	for k, v := range header {
+		r.Header[k] = v
+	}
+	if cookie != nil {
+		r.AddCookie(cookie)
+	}
+	if len(basic) == 2 {
+		r.SetBasicAuth(basic[0], basic[1])
+	}
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, r)
+	return w
+}
+
+func TestProxyOnThisComputerSignsIn(t *testing.T) {
+	s, _ := authServer(t)
+	// nginx in front, forwarding Host: localhost and adding X-Forwarded-For:
+	// the visitor is another device, so with access off it is refused.
+	viaProxy := http.Header{"X-Forwarded-For": {"203.0.113.7"}}
+	if w := local(t, s, "GET", "/api/sessions", "", nil, viaProxy); w.Code != 403 || w.Header().Get("X-Workbench-Access") != "off" {
+		t.Fatalf("relayed while off: %d", w.Code)
+	}
+	setAccess(t, s, `{"remoteAccess":"password"}`)
+	sec := secrets(t, s)
+	if w := local(t, s, "PUT", "/api/settings", `{"remoteAccess":"off"}`, nil, viaProxy); w.Code != 401 {
+		t.Fatalf("relayed change without sign-in: %d", w.Code)
+	}
+	if w := local(t, s, "GET", "/api/sessions", "", nil, viaProxy, sec["username"], sec["password"]); w.Code != 200 {
+		t.Fatalf("relayed with the password: %d", w.Code)
+	}
+	if body := local(t, s, "GET", "/api/settings", "", nil, viaProxy, sec["username"], sec["password"]).Body.String(); !strings.Contains(body, `"thisComputer":false`) {
+		t.Fatalf("relayed settings: %s", body)
+	}
+}
+
+func TestSignInOnThisComputerToo(t *testing.T) {
+	s, m := authServer(t)
+	// Not without a way to sign in.
+	if w := local(t, s, "PUT", "/api/settings", `{"remoteAccess":"off","localSignin":true}`, nil, nil); w.Code != 400 {
+		t.Fatalf("local sign-in with access off: %d", w.Code)
+	}
+	// Pairing: the browser that turns it on stays connected; others sign in.
+	on := local(t, s, "PUT", "/api/settings", `{"remoteAccess":"pairing","localSignin":true}`, nil, nil)
+	if on.Code != 200 || len(on.Result().Cookies()) != 1 || !strings.Contains(on.Body.String(), `"localSignin":true`) {
+		t.Fatalf("turn on: %d %s", on.Code, on.Body.String())
+	}
+	cookie := on.Result().Cookies()[0]
+	if w := local(t, s, "GET", "/api/sessions", "", nil, nil); w.Code != 401 {
+		t.Fatalf("this computer without a session: %d", w.Code)
+	}
+	if w := local(t, s, "GET", "/", "", nil, nil); w.Code != 200 {
+		t.Fatalf("sign-in page: %d", w.Code)
+	}
+	if w := local(t, s, "GET", "/api/sessions", "", cookie, nil); w.Code != 200 {
+		t.Fatalf("this computer with a session: %d", w.Code)
+	}
+	status := local(t, s, "GET", "/api/auth/status", "", nil, nil).Body.String()
+	if !strings.Contains(status, `"authenticated":false`) || !strings.Contains(status, `"local":false`) {
+		t.Fatalf("status: %s", status)
+	}
+	// Access cannot be switched off while it is on.
+	if w := local(t, s, "PUT", "/api/settings", `{"remoteAccess":"off"}`, cookie, nil); w.Code != 400 {
+		t.Fatalf("off while local sign-in: %d", w.Code)
+	}
+	// Password: this computer gets the browser's prompt too.
+	if w := local(t, s, "PUT", "/api/settings", `{"remoteAccess":"password","localSignin":true}`, cookie, nil); w.Code != 200 {
+		t.Fatalf("password: %d", w.Code)
+	}
+	user, pass := s.user, s.pass
+	if w := local(t, s, "GET", "/", "", nil, nil); w.Code != 401 || w.Header().Get("WWW-Authenticate") == "" {
+		t.Fatalf("this computer without the password: %d", w.Code)
+	}
+	if w := local(t, s, "GET", "/api/sessions", "", nil, nil, user, pass); w.Code != 200 {
+		t.Fatalf("this computer with the password: %d", w.Code)
+	}
+	// It survives a restart.
+	restarted := NewServer(m, s.Assets, s.Host, "")
+	if restarted.initErr != nil || !restarted.localSignin.Load() {
+		t.Fatalf("restart: %v", restarted.initErr)
+	}
+	// Turning it off (with access off) opens this computer again.
+	if w := local(t, s, "PUT", "/api/settings", `{"remoteAccess":"off","localSignin":false}`, nil, nil, user, pass); w.Code != 200 {
+		t.Fatalf("turn off: %d", w.Code)
+	}
+	if w := local(t, s, "GET", "/api/sessions", "", nil, nil); w.Code != 200 {
+		t.Fatalf("this computer after turning off: %d", w.Code)
+	}
+	// A hand-edited database that asks for it without a method is ignored.
+	if err := saveSettings(m.store.db, map[string]string{"remote_access": "off", "local_signin": "true"}); err != nil {
+		t.Fatal(err)
+	}
+	if NewServer(m, s.Assets, s.Host, "").localSignin.Load() {
+		t.Fatal("local sign-in without a method")
 	}
 }
