@@ -21,7 +21,7 @@ import { Sidebar, statusLabels as labels } from "./sidebar/Sidebar";
 import { usePrefs } from "./sidebar/usePrefs";
 import { displayTitle, type Session } from "./sidebar/tree";
 import { api } from "./lib/api";
-import { useTheme } from "./theme";
+import { Appearance } from "./components/Appearance";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Timeline } from "./transcript/Timeline";
 import { useTranscript, type ExternalUpdate } from "./transcript/useTranscript";
@@ -72,7 +72,6 @@ type Preview = {
 };
 type Entry = { name: string; path: string; directory: boolean; size: number };
 export default function App() {
-  const { theme, setTheme } = useTheme();
   const [workspaces, setWorkspaces] = useState<string[]>([]);
   const [left, setLeft] = useState(
     () =>
@@ -746,20 +745,7 @@ export default function App() {
                 <MoreHorizontal size={18} />
               </summary>
               <div className="conversation-menu-content">
-                <label htmlFor="theme">Appearance</label>
-                <select
-                  id="theme"
-                  aria-label="Theme"
-                  className="theme-select"
-                  value={theme}
-                  onChange={(e) =>
-                    setTheme(e.target.value as "light" | "dark" | "system")
-                  }
-                >
-                  <option value="system">System</option>
-                  <option value="light">Light</option>
-                  <option value="dark">Dark</option>
-                </select>
+                <Appearance />
                 <Button
                   variant="ghost"
                   size="sm"

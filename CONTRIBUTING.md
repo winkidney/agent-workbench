@@ -52,6 +52,7 @@ Optional acceptance scripts in `scripts/` use real agents or the real service:
 
 - Go: `gofmt`; short, domain-named packages.
 - TypeScript/React: Prettier (`npm run format`); components in PascalCase.
+- Colors: use the tokens in `web/src/style.css`. A new color token needs a value in every theme in `web/src/themes.css`; `themes.test.ts` checks that, and the contrast of each theme.
 - Comments explain why, in plain English.
 - Commits: short imperative subjects in Conventional Commits style (`feat: …`, `fix: …`, `docs: …`), with a body when the reason isn't obvious.
 - Pull requests: describe the change, list the commands you ran to verify it, and include screenshots for visible changes (light and dark, and a phone width if the layout changes).

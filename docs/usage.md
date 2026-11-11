@@ -57,7 +57,7 @@ Permission requests appear as cards in the conversation: **1** allow, **2** allo
 ## The conversation
 
 - Replies are Markdown. Tool calls, thinking and subagents collapse to one line (`● Bash(npm test)`), with a short result below (`⎿ 2 failed, 31 passed`, `+3 −1`); click to expand the command, diff, full output or the raw record. **Ctrl+O** expands or collapses all.
-- Colors follow each CLI's default terminal theme: Claude Code's for Claude sessions, Catppuccin (as the Codex TUI uses) for Codex sessions. Code blocks with a language are highlighted; ANSI colors in tool output are kept.
+- With the Default theme, colors follow each CLI's default terminal theme: Claude Code's for Claude sessions, Catppuccin (as the Codex TUI uses) for Codex sessions. Other themes color both agents the same way (see [Appearance](#appearance)). Code blocks with a language are highlighted; ANSI colors in tool output are kept.
 - The to-do list (Claude's TodoWrite, Codex's plan) stays pinned above the composer.
 - The status line shows what the turn is doing (Thinking, Running a tool, Waiting for the model, …), its elapsed time, output tokens and speed. The ring next to it is context usage; the line below opens usage details and quota windows.
 - History loads newest first; scroll to the top for older messages.
@@ -101,4 +101,20 @@ The workbench listens on all interfaces by default (`0.0.0.0:17880`) and `start`
 
 ## Appearance
 
-Choose light, dark or system in the header's **⋯** menu. The interface adapts to phones: the sidebar and the right panel slide over the conversation.
+The header's **⋯** menu sets the **Mode** (System, Light or Dark) and the **Theme**. Every theme has a light and a dark palette, so the mode works with any of them. Changes apply at once and are remembered by each browser.
+
+| Theme | Light | Dark | Character |
+| --- | --- | --- | --- |
+| Default | neutral | neutral | Neutral interface; each agent keeps its own CLI's colors |
+| Everforest | Light Medium | Dark Medium | Soft greens on warm paper, made to be easy on the eyes |
+| Gruvbox | soft light | soft dark | Warm retro tones |
+| Solarized | light | dark | Tuned contrast, the same accents in both modes |
+| Paper | sepia | warm dark | For long reading, low in blue light |
+| Catppuccin | Latte | Mocha | Pastels |
+| Rosé Pine | Dawn | Moon | Muted rose and pine |
+| Nord | Snow Storm | Polar Night | Arctic blue-grey |
+| Tokyo Night | Day | Storm | Deep blue |
+
+A theme other than Default colors the whole page, and both agents the same way: the interface, headings, links, inline code, code highlighting and the ANSI colors in tool output. The colors come from each project's published palette. Where an accent was too faint to read on its background (yellows on light backgrounds, Nord's accents in light mode), only its lightness was changed, keeping the hue.
+
+The interface adapts to phones: the sidebar and the right panel slide over the conversation.

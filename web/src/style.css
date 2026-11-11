@@ -17,7 +17,11 @@
   --color-ring: var(--ring);
   --color-destructive: var(--destructive);
 }
-:root {
+/* Default theme. Named themes (themes.css) redefine these tokens; the
+   data-palette="default" selector lets the theme picker show Default's
+   swatch while another theme is in use. */
+:root,
+[data-palette="default"] {
   --radius: 0.625rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
@@ -41,15 +45,19 @@
   --sidebar-foreground: oklch(0.145 0 0);
   --success: oklch(0.56 0.14 150);
   --warning: oklch(0.62 0.14 70);
+  --info: oklch(0.6 0.13 250);
   --diff-add: oklch(0.56 0.14 150 / 12%);
   --diff-del: oklch(0.577 0.245 27.325 / 10%);
   --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+:root {
   font-family: ui-sans-serif, system-ui, sans-serif;
   font-size: 14px;
   color: var(--foreground);
   background: var(--background);
 }
-.dark {
+.dark,
+.dark [data-palette="default"] {
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.205 0 0);
@@ -72,6 +80,7 @@
   --sidebar-foreground: oklch(0.985 0 0);
   --success: oklch(0.72 0.15 150);
   --warning: oklch(0.78 0.13 75);
+  --info: oklch(0.72 0.12 250);
   --diff-add: oklch(0.72 0.15 150 / 14%);
   --diff-del: oklch(0.704 0.191 22.216 / 14%);
 }
@@ -1421,16 +1430,7 @@ textarea {
   background: rgb(0 0 0 / 0.5);
 }
 
-.theme-select {
-  background: var(--background);
-  color: var(--foreground);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 5px;
-  max-width: 95px;
-}
-
-/* Compact namespace navigator; all colors remain shadcn Neutral tokens. */
+/* Compact namespace navigator; all colors are theme tokens. */
 
 .conversation-menu {
   position: relative;
@@ -1468,16 +1468,144 @@ textarea {
   flex-direction: column;
   gap: 3px;
 }
-.conversation-menu-content label {
-  margin: 3px 4px;
-  font-size: 11px;
-}
-.conversation-menu-content .theme-select {
-  max-width: none;
-  margin: 2px 3px 6px;
-}
 .conversation-menu-content button {
   justify-content: flex-start;
+}
+
+/* Appearance: mode and theme, at the top of the ⋯ menu. */
+.appearance {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-bottom: 6px;
+  margin-bottom: 3px;
+  border-bottom: 1px solid var(--border);
+}
+.menu-label {
+  margin: 3px 4px 0;
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+.mode-toggle {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2px;
+  margin: 0 3px 4px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+.conversation-menu-content .mode-toggle button {
+  justify-content: center;
+  height: 24px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.mode-toggle button:hover {
+  color: var(--foreground);
+}
+.mode-toggle button[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--foreground);
+  font-weight: 600;
+}
+.theme-picker > summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 6px 0 2px;
+  border-radius: 6px;
+  list-style: none;
+  cursor: pointer;
+  font-size: 12px;
+}
+.theme-picker > summary::-webkit-details-marker {
+  display: none;
+}
+.theme-picker > summary:hover {
+  background: var(--accent);
+}
+.theme-picker > summary .menu-label {
+  margin: 0 auto 0 2px;
+}
+.theme-chevron {
+  color: var(--muted-foreground);
+  transition: transform 0.15s ease;
+}
+.theme-picker[open] .theme-chevron {
+  transform: rotate(90deg);
+}
+.theme-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding-top: 2px;
+}
+.conversation-menu-content .theme-list button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  font-size: 13px;
+  text-align: left;
+}
+.theme-list button:hover {
+  background: var(--accent);
+}
+.theme-list button[aria-pressed="true"] {
+  font-weight: 600;
+}
+.theme-list .theme-name {
+  flex: 1;
+  min-width: 0;
+}
+/* Drawn in its own theme: data-palette on the swatch selects the tokens. */
+.theme-swatch {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  height: 18px;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--background);
+  color: var(--foreground);
+  font: 600 10px/1 var(--mono);
+}
+.theme-swatch i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.theme-swatch i:nth-of-type(1) {
+  margin-left: 2px;
+  background: var(--syn-keyword);
+}
+.theme-swatch i:nth-of-type(2) {
+  background: var(--syn-string);
+}
+.theme-swatch i:nth-of-type(3) {
+  background: var(--syn-function);
+}
+/* Default has no syntax palette of its own (each agent keeps its CLI's). */
+.theme-swatch[data-palette="default"] i:nth-of-type(1) {
+  background: var(--destructive);
+}
+.theme-swatch[data-palette="default"] i:nth-of-type(2) {
+  background: var(--success);
+}
+.theme-swatch[data-palette="default"] i:nth-of-type(3) {
+  background: var(--info);
 }
 .menu-status {
   font-size: 11px;
@@ -1556,7 +1684,6 @@ textarea {
   --radius-lg: 14px;
   --prose-size: 14px;
   --prose-leading: 1.75;
-  --info: oklch(0.6 0.13 250);
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.04), 0 4px 14px rgb(0 0 0 / 0.05);
   --shadow-md: 0 4px 10px rgb(0 0 0 / 0.06), 0 16px 40px rgb(0 0 0 / 0.1);
   /* Dialogs, and the side panel over the conversation. Always black: a
@@ -1574,7 +1701,6 @@ textarea {
     sans-serif;
 }
 .dark {
-  --info: oklch(0.72 0.12 250);
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
   --shadow-md: 0 10px 32px rgb(0 0 0 / 0.5);
   --shadow-lg: 0 24px 64px rgb(0 0 0 / 0.6);
@@ -2990,9 +3116,10 @@ body.resizing iframe {
   }
 }
 
-/* Terminal palettes. Replies use the colors of the agent's own CLI, read from
-   Claude Code 2.1.322 (default RGB themes, highlight.js scope maps Monokai
-   Extended / GitHub) and the Codex TUI (Catppuccin Mocha / Latte). */
+/* Terminal palettes. With the Default theme, replies use the colors of the
+   agent's own CLI, read from Claude Code 2.1.322 (default RGB themes,
+   highlight.js scope maps Monokai Extended / GitHub) and the Codex TUI
+   (Catppuccin Mocha / Latte). Named themes override them in themes.css. */
 :root {
   --ansi-0: #000000;
   --ansi-1: #cd3131;

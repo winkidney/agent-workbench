@@ -40,7 +40,10 @@ Agent Workbench runs on your machine next to `claude` and `codex` and gives both
 
 **Anywhere on your network**
 - Use it by IP address or local host name from other devices; turn on a pairing code to require login.
-- Layouts for desktop and phone, light and dark.
+- Layouts for desktop and phone.
+
+**Themes**
+- Light, dark or system mode, with any of nine color themes: Default (each CLI's own colors), Everforest, Gruvbox, Solarized, Paper (sepia), Catppuccin, Rosé Pine, Nord and Tokyo Night. A theme colors the interface, code highlighting and terminal output alike.
 
 **Packaged for macOS, Windows and Linux**
 - One binary. `agent-workbench install` starts it at login (systemd user unit, launchd agent or Run key).
