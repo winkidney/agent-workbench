@@ -3,8 +3,6 @@ package workbench
 import (
 	"context"
 	"crypto/sha256"
-	"crypto/subtle"
-	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -26,22 +24,23 @@ type grant struct {
 	expires time.Time
 }
 type Server struct {
-	Manager         *Manager
-	Assets          fs.FS
-	Host            string
-	Pairing         string
-	pairingRequired bool
-	initErr         error
-	creationMu      sync.Mutex
-	mu              sync.Mutex
-	auth            map[string]time.Time
-	grants          map[string]grant
-	attempts        map[string][]time.Time
+	Manager    *Manager
+	Assets     fs.FS
+	Host       string
+	Pairing    string
+	initErr    error
+	creationMu sync.Mutex
+	mu         sync.Mutex
+	// remote is how other devices sign in (auth.go); user and pass are the
+	// password sign-in, empty until first turned on.
+	remote     string
+	user, pass string
+	auth       map[string]time.Time
+	grants     map[string]grant
+	attempts   map[string][]time.Time
 	// build identifies the embedded web build, so open pages can tell
 	// they run an older one.
 	build string
-	// hostname names this machine on the local network (see hostAccess).
-	hostname string
 	// stopToken and stop serve the command's local shutdown (control.go).
 	stopToken string
 	stop      func()
@@ -62,17 +61,19 @@ func assetBuild(assets fs.FS) string {
 }
 
 func NewServer(m *Manager, assets fs.FS, host, pairing string) *Server {
-	s := &Server{Manager: m, Assets: assets, Host: host, Pairing: pairing, auth: map[string]time.Time{}, grants: map[string]grant{}, attempts: map[string][]time.Time{}, build: assetBuild(assets), hostname: machineHostname()}
-	var value string
-	err := m.store.db.QueryRow("SELECT value FROM settings WHERE key='pairing_required'").Scan(&value)
-	if err != nil && err != sql.ErrNoRows {
-		s.initErr = err
-		s.pairingRequired = true
-	} else {
-		s.pairingRequired = value == "true"
+	s := &Server{Manager: m, Assets: assets, Host: host, Pairing: pairing, auth: map[string]time.Time{}, grants: map[string]grant{}, attempts: map[string][]time.Time{}, build: assetBuild(assets)}
+	// On errors other devices stay refused.
+	s.remote, s.initErr = loadRemoteAccess(m.store.db)
+	if s.initErr == nil {
+		s.initErr = s.loadCredentialsLocked()
 	}
-	if s.initErr == nil && s.pairingRequired && s.Pairing == "" {
-		s.initErr = s.ensurePairingCode()
+	if s.initErr == nil {
+		switch s.remote {
+		case remotePairing:
+			s.initErr = s.ensurePairingCode()
+		case remotePassword:
+			s.initErr = s.ensureCredentialsLocked()
+		}
 	}
 	return s
 }
@@ -96,41 +97,44 @@ func (s *Server) validSessionLocked(r *http.Request) bool {
 	}
 	return true
 }
+
+// authorized: this computer always; other devices by the remote access mode.
 func (s *Server) authorized(r *http.Request) bool {
-	access := s.hostAccess(r)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	switch access {
-	case hostOpen:
-		return !s.pairingRequired || s.validSessionLocked(r)
-	case hostLogin:
-		return s.validSessionLocked(r)
+	switch s.hostAccess(r) {
+	case hostLocal:
+		return true
+	case hostAuth:
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		switch s.remote {
+		case remotePassword:
+			return s.validPasswordLocked(r)
+		case remotePairing:
+			return s.validSessionLocked(r)
+		}
 	}
 	return false
+}
+
+// settings is what the Settings dialog shows; secrets are fetched apart.
+func (s *Server) settings(r *http.Request) map[string]any {
+	s.mu.Lock()
+	out := map[string]any{"remoteAccess": s.remote, "local": s.hostAccess(r) == hostLocal}
+	if s.user != "" {
+		out["username"] = s.user
+	}
+	s.mu.Unlock()
+	// Local data: events are a delivery buffer, kept for a week.
+	out["storageBytes"] = s.Manager.store.Size()
+	out["retentionDays"] = int(eventRetention / (24 * time.Hour))
+	return out
 }
 func (s *Server) ensurePairingCode() error {
 	if s.Pairing != "" {
 		return nil
 	}
 	code := token()
-	path := filepath.Join(s.Manager.store.dir, "pairing-code")
-	f, err := os.CreateTemp(s.Manager.store.dir, ".pairing-*")
-	if err != nil {
-		return err
-	}
-	name := f.Name()
-	defer os.Remove(name)
-	if err = f.Chmod(0600); err == nil {
-		_, err = f.WriteString(code)
-	}
-	closeErr := f.Close()
-	if err != nil {
-		return err
-	}
-	if closeErr != nil {
-		return closeErr
-	}
-	if err = os.Rename(name, path); err != nil {
+	if err := writePrivateFile(s.Manager.store.dir, "pairing-code", []byte(code)); err != nil {
 		return err
 	}
 	s.Pairing = code
@@ -156,6 +160,22 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unrecognized host", 403)
 		return
 	}
+	if access == hostAuth {
+		s.mu.Lock()
+		mode := s.remote
+		s.mu.Unlock()
+		switch mode {
+		case remotePairing:
+			// The app is served; its API needs the pairing session.
+		case remotePassword:
+			if !s.checkPassword(w, r) {
+				return
+			}
+		default:
+			remotePage(w, http.StatusForbidden, "off", "Access from other devices is off", "This workbench only answers on the computer that runs it. To use it from here, open Settings there and choose a pairing code or a password for other devices.")
+			return
+		}
+	}
 	w.Header().Set("Referrer-Policy", "strict-origin")
 	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-src http://*.localhost:*; frame-ancestors 'none'")
 	// Changes must come from a page on the same host the request names.
@@ -164,33 +184,20 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.URL.Path == "/api/auth/status" && r.Method == "GET" {
+		authenticated := s.authorized(r)
 		s.mu.Lock()
-		required := s.pairingRequired || access == hostLogin
-		authenticated := !required || s.validSessionLocked(r)
-		configured := s.Pairing != ""
+		mode := s.remote
 		s.mu.Unlock()
 		w.Header().Set("Cache-Control", "no-store")
-		status := map[string]any{"pairingRequired": required, "authenticated": authenticated}
-		if access == hostLogin && !authenticated {
-			// This address needs the code even with pairing off.
-			status["reason"] = "host"
-			status["pairingConfigured"] = configured
-		}
-		writeJSON(w, status)
+		writeJSON(w, map[string]any{"authenticated": authenticated, "local": access == hostLocal, "method": mode})
 		return
 	}
 	if r.URL.Path == "/api/login" && r.Method == "POST" {
 		s.mu.Lock()
 		now := time.Now()
-		recent := []time.Time{}
-		for _, t := range s.attempts["login"] {
-			if now.Sub(t) < time.Minute {
-				recent = append(recent, t)
-			}
-		}
-		limited := len(recent) >= 10
+		limited := s.limitedLocked("pairing", r.RemoteAddr, now)
 		if !limited {
-			s.attempts["login"] = append(recent, now)
+			s.attemptLocked("pairing", r.RemoteAddr, now)
 		}
 		s.mu.Unlock()
 		if limited {
@@ -205,8 +212,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.mu.Lock()
-		a, b := sha256.Sum256([]byte(input.Code)), sha256.Sum256([]byte(s.Pairing))
-		if s.Pairing == "" || subtle.ConstantTimeCompare(a[:], b[:]) != 1 {
+		if s.remote != remotePairing || s.Pairing == "" || !sameSecret(input.Code, s.Pairing) {
 			s.mu.Unlock()
 			http.Error(w, "invalid pairing code", 401)
 			return
@@ -340,71 +346,78 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 		}
 		http.NotFound(w, r)
 	case path == "settings" && r.Method == "GET":
-		s.mu.Lock()
-		required := s.pairingRequired
-		s.mu.Unlock()
 		w.Header().Set("Cache-Control", "no-store")
-		writeJSON(w, map[string]any{
-			"pairingRequired": required,
-			// Local data: events are a delivery buffer, kept for a week.
-			"storageBytes":  m.store.Size(),
-			"retentionDays": int(eventRetention / (24 * time.Hour)),
-		})
+		writeJSON(w, s.settings(r))
 	case path == "settings" && r.Method == "PUT":
 		var input struct {
-			PairingRequired *bool `json:"pairingRequired"`
+			RemoteAccess *string `json:"remoteAccess"`
+			Username     *string `json:"username"`
+			Password     *string `json:"password"`
 		}
 		if err := decode(w, r, &input); err != nil {
 			bad(w, err)
 			return
 		}
-		if input.PairingRequired == nil {
-			bad(w, errors.New("pairingRequired is required"))
+		if input.RemoteAccess == nil || !validRemoteAccess(*input.RemoteAccess) {
+			bad(w, errors.New("remoteAccess must be off, pairing or password"))
 			return
 		}
+		mode := *input.RemoteAccess
 		s.mu.Lock()
-		defer s.mu.Unlock()
-		if s.pairingRequired && !s.validSessionLocked(r) {
-			http.Error(w, "pair this browser first", 401)
-			return
+		before, user, pass := s.remote, s.user, s.pass
+		if input.Username != nil {
+			user = *input.Username
 		}
-		required := *input.PairingRequired
-		if required {
-			if err := s.ensurePairingCode(); err != nil {
-				bad(w, err)
-				return
+		if input.Password != nil {
+			pass = *input.Password
+		}
+		changed := user != s.user || pass != s.pass
+		var err error
+		switch {
+		case changed:
+			if err = checkCredentials(user, pass); err == nil {
+				err = s.saveCredentialsLocked(user, pass)
 			}
+		case mode == remotePassword:
+			err = s.ensureCredentialsLocked()
 		}
-		if _, err := m.store.db.Exec("INSERT INTO settings(key,value) VALUES('pairing_required',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", strconv.FormatBool(required)); err != nil {
+		if err == nil && mode == remotePairing {
+			err = s.ensurePairingCode()
+		}
+		if err == nil {
+			_, err = m.store.db.Exec("INSERT INTO settings(key,value) VALUES('remote_access',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", mode)
+		}
+		if err != nil {
+			s.mu.Unlock()
 			bad(w, err)
 			return
 		}
-		if required != s.pairingRequired {
+		s.remote = mode
+		if mode != before || changed {
+			// Sign-ins under the old rules end.
 			s.auth = map[string]time.Time{}
 		}
-		s.pairingRequired = required
-		if required {
+		if mode == remotePairing && before != remotePairing && s.hostAccess(r) == hostAuth {
+			// The device that turned pairing on stays connected.
 			key := token()
 			s.auth[key] = time.Now().Add(12 * time.Hour)
 			s.sessionCookie(w, key)
-		} else {
-			http.SetCookie(w, &http.Cookie{Name: "workbench_session", Value: "", Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: -1})
 		}
+		s.mu.Unlock()
 		w.Header().Set("Cache-Control", "no-store")
-		writeJSON(w, map[string]any{"pairingRequired": required})
-	case path == "settings/pairing-code" && r.Method == "GET":
+		writeJSON(w, s.settings(r))
+	case path == "settings/secrets" && r.Method == "GET":
 		s.mu.Lock()
-		defer s.mu.Unlock()
-		if s.pairingRequired && !s.validSessionLocked(r) {
-			http.Error(w, "pair this browser first", http.StatusUnauthorized)
-			return
+		secrets := map[string]any{}
+		if s.remote == remotePairing {
+			secrets["pairingCode"] = s.Pairing
 		}
-		if !s.pairingRequired {
-			bad(w, errors.New("pairing is disabled"))
-			return
+		if s.user != "" {
+			secrets["username"], secrets["password"] = s.user, s.pass
 		}
+		s.mu.Unlock()
 		w.Header().Set("Cache-Control", "no-store")
-		writeJSON(w, map[string]any{"code": s.Pairing})
+		writeJSON(w, secrets)
 	case path == "dirs" && r.Method == "GET":
 		v, err := listDirs(r.URL.Query().Get("path"))
 		switch {

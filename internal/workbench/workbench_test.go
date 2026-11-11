@@ -141,7 +141,7 @@ func TestSecurityPreviewRange(t *testing.T) {
 	_ = os.Symlink(outside, filepath.Join(root, "escape"))
 	session, _ := m.Create("claude", root, "preview")
 	s := pairedServer(m, fstest.MapFS{"index.html": {Data: []byte("app")}}, "agent.localhost:17880", "pair")
-	if w := request(t, s, s.Host, "GET", "/api/sessions", "", nil); w.Code != 401 {
+	if w := lan(t, s, "GET", "/api/sessions", "", nil); w.Code != 401 {
 		t.Fatal(w.Code)
 	}
 	if w := request(t, s, "evil.test:17880", "GET", "/api/sessions", "", nil); w.Code != 401 {
@@ -205,7 +205,7 @@ func TestSecurityPreviewRange(t *testing.T) {
 	if w.Code != 206 || w.Body.String() != "2345" {
 		t.Fatal(w.Code, w.Body.String())
 	}
-	if w = request(t, s, s.Host, "GET", "/api/sessions", "", pc); w.Code != 401 {
+	if w = lan(t, s, "GET", "/api/sessions", "", pc); w.Code != 401 {
 		t.Fatal("preview cookie authorized API")
 	}
 	if err := m.Stop(session.ID, true); err != nil {

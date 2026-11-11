@@ -1643,23 +1643,84 @@ textarea {
   }
 }
 
-.pairing-setting {
+/* Settings: access from other devices. */
+.access-setting {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  margin: 1.25rem 0 0.5rem;
+  flex-direction: column;
+  gap: 6px;
+  margin: 1rem 0 0;
+  padding: 0;
+  border: 0;
 }
-.pairing-setting input {
-  width: 1rem;
-  height: 1rem;
+.access-setting legend {
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+.access-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0;
+  padding: 9px 11px;
+  color: var(--foreground);
+  font-size: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.access-option:has(input:checked) {
+  border-color: var(--ring);
+  background: var(--accent);
+}
+.access-option input {
+  /* Not the full-width text-field look every input gets. */
+  flex: none;
+  width: auto;
+  margin: 4px 0 0;
+  padding: 0;
   accent-color: var(--primary);
 }
-.pairing-secret {
+.access-option span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.access-option small {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.modal .access-note {
+  margin: 8px 0 0;
+  font-size: 12px;
+}
+.access-secret {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   margin: 1rem 0;
 }
-.pairing-secret input {
-  font-family: monospace;
+.access-secret label {
+  margin: 6px 0 0;
+}
+.modal .access-secret .subtle {
+  margin: 4px 0 0;
+  font-size: 12px;
+}
+.secret-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.secret-row input {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mono);
+}
+.access-warning {
+  margin: 10px 0;
+  color: var(--warning);
+  font-size: 13px;
 }
 
 .usage-body p {

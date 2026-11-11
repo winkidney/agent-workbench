@@ -85,7 +85,7 @@ agent-workbench doctor      # check claude, codex and the platform
 
 - **Upgrade:** download the new release and run its `install`. It stops the old version, replaces the program and starts again; your data stays.
 - **Uninstall:** `agent-workbench uninstall` removes the login start and stops the workbench, keeping your data. Add `--purge` to also delete the data directory and the installed program.
-- **Address and data:** `install` accepts `--listen`, `--data-dir` and `--idle` and keeps them for the login start. The default `0.0.0.0:17880` is reachable from your local network (see [Network access](usage.md#network-access-and-pairing)); `--listen 127.0.0.1:17880` keeps it to this machine.
+- **Address and data:** `install` accepts `--listen`, `--data-dir` and `--idle` and keeps them for the login start. The default `0.0.0.0:17880` is reachable from your local network (other devices need a pairing code or password, see [Access from other devices](usage.md#access-from-other-devices)); `--listen 127.0.0.1:17880` keeps it to this machine.
 
 ### Environment
 

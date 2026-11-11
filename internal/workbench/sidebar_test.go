@@ -112,7 +112,7 @@ func TestRenameUsesNativeCodexOrAlias(t *testing.T) {
 func TestSidebarRoutesRequireAuthAndOrigin(t *testing.T) {
 	m, _ := fixture(t)
 	s := pairedServer(m, nil, "agent.localhost:17880", "pair")
-	if w := request(t, s, s.Host, "GET", "/api/sidebar", "", nil); w.Code != 401 {
+	if w := lan(t, s, "GET", "/api/sidebar", "", nil); w.Code != 401 {
 		t.Fatalf("unauthenticated: %d", w.Code)
 	}
 	cookie := request(t, s, s.Host, "POST", "/api/login", `{"code":"pair"}`, nil).Result().Cookies()[0]

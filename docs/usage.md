@@ -87,17 +87,24 @@ HTML and dev-server previews use `p-*.agent.localhost` addresses, so they work i
 
 Pins, hidden sessions and display names are stored by the workbench and sync live between browsers.
 
-## Network access and pairing
+## Access from other devices
 
-The workbench listens on all interfaces by default (`0.0.0.0:17880`) and `start` prints its LAN addresses.
+The workbench listens on all interfaces by default (`0.0.0.0:17880`) and `start` prints its LAN addresses. **Only this computer uses it without signing in**: a browser on this machine opening `localhost`, `agent.localhost` or `127.0.0.1` (or `[::1]`). Every other device, and every other address (this machine's LAN IP or host name too), follows the choice in **⋯ → Settings → Access from other devices**:
 
-- From this machine and private networks (LAN, link-local, and the `100.64.0.0/10` range Tailscale uses), any IP address, `localhost`, single-label host names, `.local`, `.lan`, `.home`, `.home.arpa`, `.internal`, `.localdomain` and this machine's host name work. Whether a login is needed depends on the pairing switch.
-- Any other domain name always needs the pairing code, because any website can point its domain at your machine (DNS rebinding). Without a pairing code set, the page suggests using an IP address or local name instead.
-- From public addresses only `agent.localhost:PORT` is accepted, always with login.
+| Choice | Other devices |
+| --- | --- |
+| **Off** (default) | are refused with a page that says how to turn access on |
+| **Pairing code** | open the page and enter the code shown in Settings; the browser then stays signed in until the workbench restarts, up to 12 hours |
+| **Password** | sign in with a username and password in the browser's own prompt (HTTP Basic), which browsers can remember. The first time, Settings fills in the username `workbench` and a generated password; edit either, or generate a new password, and save |
 
-**Pairing** is off by default. Turn it on in **⋯ → Settings**: the settings show the code, other browsers must enter it, and the current browser stays signed in. The setting and code survive restarts. Turning pairing off again lets local devices in directly.
+- Any signed-in device can change this setting. Saving warns when the change disconnects the device you are on, or makes it sign in again.
+- The pairing code and the password are kept in the data directory, readable only by you, and survive restarts. Settings shows them, with copy buttons.
+- Ten wrong codes or passwords from one address within a minute block that address for a minute; other devices are not affected.
+- The workbench speaks plain HTTP, so on your network the password and the session travel unencrypted. On networks you don't trust, use a VPN such as Tailscale.
+- A reverse proxy or tunnel **on this machine** that forwards requests with `Host: localhost` makes its visitors count as this computer. SSH port forwarding (`ssh -L`) does too, which is fine, since SSH already signed you in. Proxies that keep their own host name, such as Tailscale Serve, are treated as other devices.
+- From public internet addresses only `agent.localhost:PORT` is accepted, and it signs in like any other device.
 
-`--listen 127.0.0.1:17880` keeps the workbench to this machine.
+`--listen 127.0.0.1:17880` keeps the workbench to this machine altogether.
 
 ## Appearance
 

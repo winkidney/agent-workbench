@@ -183,7 +183,7 @@ func TestThumbServesOnlyConfinedRasterImages(t *testing.T) {
 			t.Fatalf("%s served", p)
 		}
 	}
-	if r := request(t, s, s.Host, "GET", "/api/thumb?session="+session.ID+"&path=ok.png", "", nil).Result(); r.StatusCode != 401 {
+	if r := lan(t, s, "GET", "/api/thumb?session="+session.ID+"&path=ok.png", "", nil).Result(); r.StatusCode != 401 {
 		t.Fatalf("unauthenticated thumb: %d", r.StatusCode)
 	}
 }

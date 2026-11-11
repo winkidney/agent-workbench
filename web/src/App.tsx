@@ -22,6 +22,7 @@ import { usePrefs } from "./sidebar/usePrefs";
 import { displayTitle, type Session } from "./sidebar/tree";
 import { api } from "./lib/api";
 import { Appearance } from "./components/Appearance";
+import { SettingsDialog } from "./components/SettingsDialog";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Timeline } from "./transcript/Timeline";
 import { useTranscript, type ExternalUpdate } from "./transcript/useTranscript";
@@ -80,18 +81,9 @@ export default function App() {
   const [connectionError, setConnectionError] = useState("");
   const [authReady, setAuthReady] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [pairingDraft, setPairingDraft] = useState(false);
-  const [settingsBusy, setSettingsBusy] = useState(false);
-  const [settingsError, setSettingsError] = useState("");
-  const [pairingCode, setPairingCode] = useState("");
   // When this page last sent a message: the turn clock starts there, not
   // when the engine has finished starting.
   const lastSent = useRef<{ session: string; at: number } | null>(null);
-  // Why this browser must pair: "host" when its address is a domain name
-  // that is not a local name (it needs the code even with pairing off).
-  const [authReason, setAuthReason] = useState("");
-  // Local data size and event retention, shown in Settings.
-  const [storage, setStorage] = useState<{ bytes: number; days: number }>();
   // A message sent from this page, shown until the server echoes it.
   const [sending, setSending] = useState<{
     session: string;
@@ -185,7 +177,6 @@ export default function App() {
     const requirePairing = () => {
       setAuthReady(true);
       setSettingsOpen(false);
-      setPairingCode("");
       setPaired(false);
       setSessions([]);
       setActive("");
@@ -206,18 +197,7 @@ export default function App() {
     setConnectionError("");
     setError("");
     try {
-      const status = await api<{
-        authenticated: boolean;
-        reason?: string;
-        pairingConfigured?: boolean;
-      }>("auth/status");
-      setAuthReason(
-        status.reason === "host"
-          ? status.pairingConfigured
-            ? "host"
-            : "host-unset"
-          : "",
-      );
+      const status = await api<{ authenticated: boolean }>("auth/status");
       if (status.authenticated) {
         const list = await api<Session[]>("sessions");
         setSessions(list);
@@ -234,55 +214,7 @@ export default function App() {
   useEffect(() => {
     void bootstrap();
   }, []);
-  const openSettings = async () => {
-    setSettingsBusy(true);
-    setSettingsError("");
-    setPairingCode("");
-    setSettingsOpen(true);
-    try {
-      const settings = await api<{
-        pairingRequired: boolean;
-        storageBytes?: number;
-        retentionDays?: number;
-      }>("settings");
-      setPairingDraft(settings.pairingRequired);
-      if (settings.storageBytes !== undefined)
-        setStorage({
-          bytes: settings.storageBytes,
-          days: settings.retentionDays ?? 7,
-        });
-      if (settings.pairingRequired)
-        setPairingCode(
-          (await api<{ code: string }>("settings/pairing-code")).code,
-        );
-    } catch (e) {
-      setSettingsError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setSettingsBusy(false);
-    }
-  };
-  const saveSettings = async () => {
-    setSettingsBusy(true);
-    setSettingsError("");
-    try {
-      const settings = await api<{ pairingRequired: boolean }>(
-        "settings",
-        "PUT",
-        { pairingRequired: pairingDraft },
-      );
-      setPairingDraft(settings.pairingRequired);
-      setPairingCode(
-        settings.pairingRequired
-          ? (await api<{ code: string }>("settings/pairing-code")).code
-          : "",
-      );
-      if (!settings.pairingRequired) setSettingsOpen(false);
-    } catch (e) {
-      setSettingsError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setSettingsBusy(false);
-    }
-  };
+  const openSettings = () => setSettingsOpen(true);
   useEffect(() => {
     if (!paired) return;
     const source = new EventSource(
@@ -606,11 +538,8 @@ export default function App() {
             one workbench.
           </h1>
           <p className="subtle">
-            {authReason === "host-unset"
-              ? "This address is a domain name, not a local name, so it needs a pairing code. Use an IP address or LAN host name, or enable pairing in Settings on the workbench computer first."
-              : authReason === "host"
-                ? "This address is a domain name, not a local name, so it needs the pairing code even with pairing off. Enter the code from Settings on the workbench computer."
-                : "Pairing is enabled. Enter the code from Settings to connect this browser."}
+            Enter the pairing code shown in Settings on the computer that runs
+            the workbench.
           </p>
           <form
             onSubmit={(e) => {
@@ -751,7 +680,7 @@ export default function App() {
                   size="sm"
                   onClick={(e) => {
                     e.currentTarget.closest("details")?.removeAttribute("open");
-                    void openSettings();
+                    openSettings();
                   }}
                 >
                   <Settings size={14} />
@@ -1178,87 +1107,7 @@ export default function App() {
             )}
           </aside>
         )}
-        <Dialog
-          open={settingsOpen}
-          onOpenChange={(open) => {
-            if (!settingsBusy) {
-              setSettingsOpen(open);
-              if (!open) setPairingCode("");
-            }
-          }}
-        >
-          <DialogContent>
-            <DialogTitle asChild>
-              <h2>Settings</h2>
-            </DialogTitle>
-            <button
-              className="modal-close"
-              aria-label="Close settings"
-              disabled={settingsBusy}
-              onClick={() => {
-                setSettingsOpen(false);
-                setPairingCode("");
-              }}
-            >
-              <X size={18} />
-            </button>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                void saveSettings();
-              }}
-            >
-              <label className="pairing-setting" htmlFor="pairing-enabled">
-                <span>Enable pairing</span>
-                <input
-                  id="pairing-enabled"
-                  type="checkbox"
-                  role="switch"
-                  checked={pairingDraft}
-                  disabled={settingsBusy}
-                  onChange={(e) => setPairingDraft(e.target.checked)}
-                />
-              </label>
-              <p className="subtle">
-                Off by default. Enable to require a pairing code in other
-                browsers. This browser stays connected. With pairing off,
-                devices on your local network can use this workbench too.
-              </p>
-              {storage && (
-                <p className="subtle storage-line">
-                  Local data:{" "}
-                  {storage.bytes >= 1048576
-                    ? (storage.bytes / 1048576).toFixed(1) + " MB"
-                    : Math.ceil(storage.bytes / 1024) + " KB"}{" "}
-                  · live events are kept {storage.days} days; conversations stay
-                  in each CLI's own records.
-                </p>
-              )}
-              {pairingDraft && pairingCode && (
-                <div className="pairing-secret">
-                  <label htmlFor="settings-pairing-code">Pairing code</label>
-                  <Input
-                    id="settings-pairing-code"
-                    readOnly
-                    value={pairingCode}
-                    onFocus={(e) => e.target.select()}
-                  />
-                  <p className="subtle">
-                    Enabled. Copy this code to pair another browser.
-                  </p>
-                </div>
-              )}
-              {settingsError && (
-                <p role="alert" className="error-text">
-                  {settingsError}
-                </p>
-              )}
-              <Button type="submit" disabled={settingsBusy}>
-                {settingsBusy ? "Saving…" : "Save settings"}
-              </Button>
-            </form>
-          </DialogContent>
-        </Dialog>
+        <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
         {viewer && (
           <MediaViewer
             items={viewer.items}

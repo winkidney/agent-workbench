@@ -46,11 +46,13 @@ The interface runs at `agent.localhost:PORT`. Each preview gets its own random o
 
 ## Security model
 
-- **Who can connect** depends on the address the request comes from and the `Host` it names:
-  - this machine and private networks (LAN, link-local, `100.64.0.0/10`): IP addresses, `localhost` and `*.localhost`, single-label names, `.local`, `.lan`, `.home`, `.home.arpa`, `.internal`, `.localdomain` and the machine's host name are accepted; a pairing code is required only when pairing is on;
-  - any other domain name always requires the pairing code (DNS rebinding);
-  - public addresses: only `agent.localhost:PORT`, always with login.
-- **Sessions** use a host-only, HttpOnly cookie after pairing; repeated wrong codes are rate-limited.
+- **Who can connect:** only this computer is open, meaning a request from a loopback address (`127.0.0.0/8`, `::1`) that also names a loopback host (`localhost`, `*.localhost`, a `127.x` address or `[::1]`). Both are required: any client can send `Host: localhost`, and a website that points its name at `127.0.0.1` (DNS rebinding) names a host that is not loopback. Everything else follows the remote access setting (`remote_access`):
+  - `off` (default): refused with a short HTML page (`403`, `X-Workbench-Access: off`);
+  - `pairing`: the app is served; the API needs a session from `POST /api/login` with the pairing code;
+  - `password`: HTTP Basic (`WWW-Authenticate: Basic realm="Agent Workbench", charset="UTF-8"`) on every request, pages included; pairing sessions are not accepted.
+  From public addresses only `agent.localhost:PORT` is served, and it signs in. Installs from before the setting keep pairing if it was on, and are otherwise `off`.
+- **Secrets:** the pairing code (`pairing-code`) and the username and password (`access-password.json`) are files in the data directory with mode 0600, compared in constant time. Failed sign-ins are limited to 10 per minute per client address.
+- **Sessions** use a host-only, HttpOnly, SameSite=Strict cookie after pairing, kept in memory for 12 hours; changing the mode or the password ends them.
 - **Changes** (`POST`, `PUT`, `PATCH`, `DELETE`) must carry an `Origin` equal to the requested host.
 - **Files:** the interface opens files only inside a session's launch directory; `..` and symlinks that lead outside are refused. The folder browser for new sessions lists directories inside the home directory only.
 - **Agents** keep their own permission systems: approvals are forwarded to the page, never answered automatically; unknown control requests are declined.
@@ -79,7 +81,8 @@ The interface uses a JSON API under `/api/`. Main endpoints:
 | `POST /api/previews`, `GET /api/previews` | File and server previews |
 | `POST /api/sessions/{id}/reveal` | Show a file in the desktop file manager |
 | `GET/POST /api/sidebar`, `GET /api/workspaces`, `GET /api/dirs?path=` | Sidebar preferences, projects, folder browser |
-| `GET /api/auth/status`, `POST /api/login` | Pairing |
+| `GET /api/auth/status`, `POST /api/login` | Sign-in state, pairing |
+| `GET/PUT /api/settings`, `GET /api/settings/secrets` | Access from other devices, storage; the pairing code and password |
 
 ## Limits
 

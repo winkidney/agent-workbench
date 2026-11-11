@@ -10,7 +10,7 @@ Only the latest release receives security fixes.
 
 Agent Workbench can start agents that read and change files and run commands with your account's rights, so access to it is close to access to your shell.
 
-- It answers on all interfaces by default. Requests are accepted by origin and `Host`: browsers on this machine and on private networks may use IP addresses and local host names; with pairing on, they must log in with the pairing code. Any other domain name always needs the code, so a website cannot reach the workbench through DNS rebinding. Public addresses are refused unless they name `agent.localhost`, and then need the code too.
+- It answers on all interfaces by default, but only this computer (a loopback connection naming `localhost`, `*.localhost`, `127.0.0.1` or `[::1]`) is open. Every other device and address is refused until the owner chooses how they sign in: a pairing code, or a username and password (HTTP Basic). From public addresses only `agent.localhost` is served, and it signs in. Failed sign-ins are limited per client address.
 - Changing requests must carry an `Origin` equal to the requested host.
 - Previews run on separate origins and never receive the workbench's cookies.
 - Files are served only from inside a session's directory.
@@ -20,4 +20,4 @@ See [docs/architecture.md](docs/architecture.md#security-model) for details.
 
 ## Out of scope
 
-Exposing the workbench to the internet (for example through a tunnel) is not supported. Anyone who can use your browser session, your account on the machine, or the pairing code can control your agents.
+Exposing the workbench to the internet (for example through a tunnel) is not supported. Anyone who can use your browser session, your account on the machine, the pairing code or the password can control your agents.

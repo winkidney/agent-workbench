@@ -11,7 +11,7 @@ A local-first web workbench for the Claude Code and Codex CLIs you already use.
   <img alt="Agent Workbench: a Claude Code session with tool calls and a diff, the project sidebar and the files panel" src="docs/screenshots/hero-light.png">
 </picture>
 
-Agent Workbench runs on your machine next to `claude` and `codex` and gives both a browser interface. It drives the official CLIs through their own protocols (Claude Code's stream-json mode and the Codex app-server), so your logins, settings, MCP servers, skills and project rules keep working, and every conversation stays in the CLI's own records. Open it from any browser on the machine or your local network, including a phone.
+Agent Workbench runs on your machine next to `claude` and `codex` and gives both a browser interface. It drives the official CLIs through their own protocols (Claude Code's stream-json mode and the Codex app-server), so your logins, settings, MCP servers, skills and project rules keep working, and every conversation stays in the CLI's own records. Open it from a browser on the machine, or, once you set up a pairing code or a password, from any device on your network, including a phone.
 
 ## Features
 
@@ -39,7 +39,7 @@ Agent Workbench runs on your machine next to `claude` and `codex` and gives both
 - A turn clock, live tokens per second, context usage and the provider's quota windows.
 
 **Anywhere on your network**
-- Use it by IP address or local host name from other devices; turn on a pairing code to require login.
+- Use it from your phone or another computer once you choose, in Settings, how other devices sign in: a pairing code, or a username and password.
 - Layouts for desktop and phone.
 
 **Themes**
@@ -119,7 +119,7 @@ Data lives in `~/.local/state/agent-workbench` on Linux (or `$XDG_STATE_HOME`), 
 The workbench can run agents that read and change files and run commands as you, so treat access to it like access to your shell.
 
 - It never reads the CLIs' credential files and never writes their conversation records; approvals and permissions are the CLIs' own.
-- By default it answers on all interfaces. Browsers on this machine and on private networks can use it by IP address or local host name; with pairing turned on (Settings), every other browser must enter the pairing code. Any other domain name always needs the code, which blocks DNS-rebinding attacks.
+- It answers on all interfaces, but only this computer (`localhost`, `127.0.0.1`) uses it without signing in. Other devices are refused until you choose in Settings how they sign in: a pairing code, or a username and password in the browser's own prompt. Unknown domain names pointed at your machine (DNS rebinding) are other devices too.
 - Changes must come from a page on the same origin. Previews run on separate `p-*.agent.localhost` origins and never receive the workbench's cookies.
 - It is not meant to be exposed to the internet directly.
 

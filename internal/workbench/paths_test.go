@@ -126,7 +126,7 @@ func TestMediaServesVideoRangesAndRefusesActiveContent(t *testing.T) {
 		"path=fake.mp4":            "415",
 		"path=video/clip.mp4":      "404", // no base, not related: not found, quietly
 		"path=../etc/passwd.png":   "400",
-		"path=game/README.md":     "415",
+		"path=game/README.md":      "415",
 		"path=missing/nothing.png": "404",
 	} {
 		if got := get(q); !strings.HasPrefix(got, want) {
@@ -184,7 +184,7 @@ func TestRevealShowsTheFileInTheFileManager(t *testing.T) {
 	if code := post(`{"path":"../../etc/hostname"}`, cookie); code == 200 || len(calls) != 0 {
 		t.Fatalf("outside root revealed: %d %v", code, calls)
 	}
-	if code := post(body, nil); code != 401 || len(calls) != 0 {
+	if code := lan(t, s, "POST", "/api/sessions/"+url.PathEscape(session.ID)+"/reveal", body, nil).Code; code != 401 || len(calls) != 0 {
 		t.Fatalf("unauthenticated: %d", code)
 	}
 	r := httptest.NewRequest("POST", "http://"+s.Host+"/api/sessions/"+url.PathEscape(session.ID)+"/reveal", strings.NewReader(body))

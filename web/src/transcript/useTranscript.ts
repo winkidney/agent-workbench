@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { text, type Agent, type WorkbenchEvent } from "./model";
+import { checkAccess } from "../lib/api";
 import {
   applyEvents,
   emptyState,
@@ -78,10 +79,7 @@ function reducer(s: State, a: Action): State {
 
 async function getJSON<T>(path: string): Promise<T> {
   const r = await fetch("/api/" + path);
-  if (r.status === 401) {
-    window.dispatchEvent(new CustomEvent("workbench:unauthorized"));
-    throw new Error("Session expired. Enter your pairing code again.");
-  }
+  checkAccess(r, path);
   if (!r.ok) throw new Error(await r.text());
   return r.json();
 }

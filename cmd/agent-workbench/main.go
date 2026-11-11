@@ -400,8 +400,12 @@ func printURLs(listen string) {
 	host, port, _ := net.SplitHostPort(listen)
 	fmt.Printf("Open http://agent.localhost:%s\n", port)
 	if ip := net.ParseIP(host); ip == nil || ip.IsUnspecified() {
-		for _, u := range lanURLs(port) {
+		lan := lanURLs(port)
+		for _, u := range lan {
 			fmt.Printf("LAN  %s\n", u)
+		}
+		if len(lan) > 0 {
+			fmt.Println("     Other devices sign in with a pairing code or password; choose one in Settings (off by default).")
 		}
 	}
 }

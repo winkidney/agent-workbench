@@ -4,93 +4,71 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
-	"os"
 	"strings"
 )
 
-// Who may use which Host name.
+// Who must sign in.
 //
-// From this machine and private networks (LAN, link-local, CGNAT as used by
-// Tailscale), any IP address and the names that only resolve locally
-// (localhost, single-label names, .local and similar, this machine's
-// hostname) follow the pairing switch. Any other domain name needs a login:
-// a website could point its own name at this machine (DNS rebinding) and
-// drive the agents from the visitor's browser. From public addresses only
-// the canonical host is served, and always with a login.
+// Only this computer is open: a request that comes from a loopback address
+// and names a loopback host (localhost, *.localhost, 127.0.0.1, [::1]). The
+// Host header alone proves nothing, any client can send "localhost", so the
+// source address must be loopback too; and a website that points its own
+// name at 127.0.0.1 (DNS rebinding) names a host that is not loopback.
+// Everything else signs in with the method chosen in Settings, or is refused
+// while access from other devices is off. From public addresses only the
+// canonical host is served.
 type hostAccess int
 
 const (
 	hostDenied hostAccess = iota
-	hostOpen              // follows the pairing switch
-	hostLogin             // needs a login whatever the switch says
+	hostLocal             // this computer: never signs in
+	hostAuth              // another device: signs in with the remote access mode
 )
 
 var cgnat = netip.MustParsePrefix("100.64.0.0/10")
 
-func privateClient(remote string) bool {
+func clientAddr(remote string) (netip.Addr, bool) {
 	host, _, err := net.SplitHostPort(remote)
 	if err != nil {
 		host = remote
 	}
 	addr, err := netip.ParseAddr(host)
 	if err != nil {
-		return false
+		return netip.Addr{}, false
 	}
-	addr = addr.Unmap()
-	return addr.IsLoopback() || addr.IsPrivate() || addr.IsLinkLocalUnicast() || cgnat.Contains(addr)
+	return addr.Unmap(), true
 }
 
-var localSuffixes = []string{".localhost", ".local", ".lan", ".home", ".home.arpa", ".internal", ".localdomain"}
+func privateClient(remote string) bool {
+	addr, ok := clientAddr(remote)
+	return ok && (addr.IsLoopback() || addr.IsPrivate() || addr.IsLinkLocalUnicast() || cgnat.Contains(addr))
+}
 
-// localName reports names that resolve only on this machine or the local
-// network, which no website can point elsewhere.
-func localName(name, hostname string) bool {
-	name = strings.TrimSuffix(strings.ToLower(name), ".")
-	if name == "" {
-		return false
+func loopbackClient(remote string) bool {
+	addr, ok := clientAddr(remote)
+	return ok && addr.IsLoopback()
+}
+
+// loopbackName reports Host values that can only mean this computer.
+func loopbackName(host string) bool {
+	name := strings.ToLower(host)
+	if h, _, err := net.SplitHostPort(name); err == nil {
+		name = h
 	}
-	if _, err := netip.ParseAddr(strings.Trim(name, "[]")); err == nil {
+	name = strings.TrimSuffix(strings.Trim(name, "[]"), ".")
+	if name == "localhost" || strings.HasSuffix(name, ".localhost") {
 		return true
 	}
-	if name == "localhost" || !strings.Contains(name, ".") {
-		return true
-	}
-	for _, s := range localSuffixes {
-		if strings.HasSuffix(name, s) {
-			return true
-		}
-	}
-	if hostname = strings.ToLower(hostname); hostname != "" {
-		short, _, _ := strings.Cut(hostname, ".")
-		if name == hostname || name == short {
-			return true
-		}
-	}
-	return false
+	addr, err := netip.ParseAddr(name)
+	return err == nil && addr.Unmap().IsLoopback()
 }
 
 func (s *Server) hostAccess(r *http.Request) hostAccess {
-	host := strings.ToLower(r.Host)
-	if !privateClient(r.RemoteAddr) {
-		if host == s.Host {
-			return hostLogin
-		}
+	if loopbackClient(r.RemoteAddr) && loopbackName(r.Host) {
+		return hostLocal
+	}
+	if !privateClient(r.RemoteAddr) && !strings.EqualFold(r.Host, s.Host) {
 		return hostDenied
 	}
-	if host == s.Host {
-		return hostOpen
-	}
-	name := host
-	if h, _, err := net.SplitHostPort(host); err == nil {
-		name = h
-	}
-	if localName(name, s.hostname) {
-		return hostOpen
-	}
-	return hostLogin
-}
-
-var machineHostname = func() string {
-	h, _ := os.Hostname()
-	return h
+	return hostAuth
 }
