@@ -956,6 +956,11 @@ p {
 .ask-card.settled {
   border-left-color: var(--border);
 }
+/* The choices after Codex's proposed plan, inside its plan row. */
+.plan-prompt {
+  width: 100%;
+  margin: 10px 0 4px;
+}
 .ask-card .question input {
   margin-top: 4px;
   font-size: 12.5px;

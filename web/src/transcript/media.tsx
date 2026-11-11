@@ -26,6 +26,10 @@ export type Env = {
   // Sends a message as the composer would: into the running turn if there
   // is one (answers to an agent's questions).
   answer?: (text: string) => Promise<void>;
+  // Codex's proposed plan: implement it in this session (leaving plan
+  // mode), or in a new session that starts from the plan alone.
+  implementPlan?: () => Promise<void>;
+  implementPlanFresh?: (plan: string) => Promise<void>;
 };
 
 export type ViewItem = {

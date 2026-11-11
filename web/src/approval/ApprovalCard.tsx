@@ -19,13 +19,17 @@ import { toolDiff, toolTitle, unwrapShell } from "../transcript/summarize";
 import { DiffView } from "../transcript/Timeline";
 import { Markdown } from "../transcript/Markdown";
 import { useEnv } from "../transcript/media";
+import { Choices } from "./Choices";
 
 export type Decision = "allow" | "allowAlways" | "deny" | "cancel";
+// The permission mode an approved Claude plan continues in.
+export type PlanMode = "acceptEdits" | "default";
 export type Reply = (
   id: string,
   decision: Decision,
   message?: string,
   answers?: Record<string, unknown>,
+  mode?: PlanMode,
 ) => Promise<void>;
 
 type Question = {
@@ -147,36 +151,6 @@ function ToolPreview({ tool }: { tool: Tool }) {
       </div>
       {command !== undefined && <pre className="tool-cmd">$ {command}</pre>}
       {diff && <DiffView lines={diff} limit={120} />}
-    </div>
-  );
-}
-
-function Options({
-  options,
-  selected,
-  onChoose,
-}: {
-  options: { label: string; hint?: string }[];
-  selected: number;
-  onChoose: (i: number) => void;
-}) {
-  return (
-    <div className="approval-options" role="listbox" aria-label="Choices">
-      {options.map((o, i) => (
-        <button
-          key={o.label}
-          type="button"
-          role="option"
-          aria-selected={i === selected}
-          className={"approval-option" + (i === selected ? " selected" : "")}
-          onClick={() => onChoose(i)}
-        >
-          <span className="pointer">{i === selected ? "›" : " "}</span>
-          <span className="num">{i + 1}.</span>
-          <span>{o.label}</span>
-          {o.hint && <span className="hint">{o.hint}</span>}
-        </button>
-      ))}
     </div>
   );
 }
@@ -312,11 +286,12 @@ export function ApprovalCard({
     decision: Decision,
     message?: string,
     answers?: Record<string, unknown>,
+    mode?: PlanMode,
   ) => {
     setBusy(true);
     setError("");
     try {
-      await reply(id, decision, message, answers);
+      await reply(id, decision, message, answers, mode);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -324,11 +299,15 @@ export function ApprovalCard({
     }
   };
 
+  // Claude Code's own plan choices: each "Yes" also sets how edits are
+  // approved from then on.
+  const planModes: PlanMode[] = ["acceptEdits", "default"];
   const toolOptions =
     parsed.kind === "plan"
       ? [
-          { label: "Approve plan and start" },
-          { label: "Keep planning", hint: "tell the agent what to change" },
+          { label: "Yes, auto-accept edits" },
+          { label: "Yes, manually approve edits" },
+          { label: "No, keep planning", hint: "tell Claude what to change" },
         ]
       : [
           { label: "Yes" },
@@ -346,6 +325,8 @@ export function ApprovalCard({
       if (was !== denyIndex) return;
       return void send("deny", feedback.trim() || undefined);
     }
+    if (parsed.kind === "plan")
+      return void send("allow", undefined, undefined, planModes[i]);
     void send(i === 0 ? "allow" : "allowAlways");
   };
 
@@ -474,7 +455,7 @@ export function ApprovalCard({
         </>
       ) : (
         <>
-          <Options
+          <Choices
             options={toolOptions}
             selected={selected}
             onChoose={choose}
@@ -484,7 +465,11 @@ export function ApprovalCard({
               ref={feedbackRef}
               className="approval-feedback"
               aria-label="Feedback for the agent"
-              placeholder="Optional: what should the agent do instead? Enter to send"
+              placeholder={
+                parsed.kind === "plan"
+                  ? "Optional: what should change in the plan? Enter to send"
+                  : "Optional: what should the agent do instead? Enter to send"
+              }
               value={feedback}
               onChange={(e) => setFeedback(e.target.value)}
             />

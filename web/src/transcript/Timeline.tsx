@@ -22,6 +22,8 @@ import { toolDiff, toolSummary, toolTitle, unwrapShell } from "./summarize";
 import { withContext, type DiffLine } from "./diff";
 import { hasAnsi, parseAnsi } from "./ansi";
 import { AskCard } from "./AskCard";
+import { PlanPrompt } from "./PlanPrompt";
+import { pendingPlan } from "./plans";
 import {
   askStates,
   claudeQuestions,
@@ -66,6 +68,8 @@ type RowProps = {
   onToggle: (key: string) => void;
   // Codex questions: answered, skipped or still open (questions.ts).
   ask?: AskState;
+  // Codex's plan still waiting for a decision (plans.ts).
+  planPrompt?: boolean;
 };
 
 function Fold({
@@ -475,7 +479,7 @@ function ThinkingRow({ block, open, onToggle }: RowProps) {
   );
 }
 
-function PlanRow({ block }: RowProps) {
+function PlanRow({ block, planPrompt }: RowProps) {
   return (
     <div className="row plan">
       <span className="mark">●</span>
@@ -493,6 +497,7 @@ function PlanRow({ block }: RowProps) {
         ) : (
           <Markdown text={block.text ?? ""} />
         )}
+        {planPrompt && <PlanPrompt plan={block.text ?? ""} />}
       </div>
     </div>
   );
@@ -618,6 +623,10 @@ export function Timeline({
     () => askStates(state.keys.map((k) => state.blocks.get(k)!)),
     [state],
   );
+  const planKey = useMemo(
+    () => pendingPlan(state.keys.map((k) => state.blocks.get(k)!)),
+    [state],
+  );
   const [open, setOpen] = useState<Set<string>>(() => new Set());
   const toggle = useCallback(
     (key: string) =>
@@ -709,6 +718,7 @@ export function Timeline({
                   open={verbose || open.has(b.key)}
                   onToggle={toggle}
                   ask={asks.get(b.key)}
+                  planPrompt={b.key === planKey}
                 />
               </div>
             );

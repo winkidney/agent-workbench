@@ -26,6 +26,8 @@ import { SettingsDialog } from "./components/SettingsDialog";
 import { canonicalAddress, fileFrameSandbox, previewMode } from "./lib/preview";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Timeline } from "./transcript/Timeline";
+import { IMPLEMENT_PLAN, freshPlanMessage } from "./transcript/plans";
+import type { Options } from "./agentOptions";
 import { useTranscript, type ExternalUpdate } from "./transcript/useTranscript";
 import {
   EnvContext,
@@ -474,6 +476,58 @@ export default function App() {
   // Questions answered in the transcript go out as the composer would send.
   const answerRef = useRef<(text: string) => Promise<void>>(async () => {});
   answerRef.current = (text) => sendMessage(text, running ? "steer" : "send");
+  // Workbench "/" commands from the composer, and the plan choices.
+  const runCommand = async (name: string, args: string) => {
+    if (!current) return;
+    setError("");
+    try {
+      const res = await api<{
+        session?: string;
+        options?: Record<string, string>;
+      }>(`sessions/${encodeURIComponent(current.id)}/command`, "POST", {
+        name,
+        args,
+      });
+      // Settings commands show in the pills right away.
+      if (res.options)
+        window.dispatchEvent(
+          new CustomEvent("workbench:options", {
+            detail: { session: current.id, options: res.options },
+          }),
+        );
+      await refresh();
+      // /fork opens the new session.
+      if (res.session) selectSession(res.session);
+    } catch (e) {
+      catchError(e);
+      throw e;
+    }
+  };
+  // Codex's plan, implemented in a new session in the same folder with this
+  // session's settings outside plan mode, as Codex's "clear context" does.
+  const startFromPlan = async (plan: string) => {
+    if (!current) return;
+    try {
+      const { options } = await api<{ options: Options }>(
+        `sessions/${encodeURIComponent(current.id)}/telemetry`,
+      );
+      const s = await api<Session>("sessions", "POST", {
+        agent: current.agent,
+        cwd: current.cwd,
+        initialMessage: freshPlanMessage(plan),
+        options: { ...options, mode: "default" },
+        requestID: crypto.randomUUID(),
+      });
+      setSessions((old) => [s, ...old.filter((x) => x.id !== s.id)]);
+      selectSession(s.id);
+      void refresh().catch(catchError);
+    } catch (e) {
+      catchError(e);
+      throw e;
+    }
+  };
+  const planRef = useRef({ runCommand, startFromPlan });
+  planRef.current = { runCommand, startFromPlan };
   const env = useMemo<Env>(
     () => ({
       cwd: current?.cwd ?? "",
@@ -500,6 +554,14 @@ export default function App() {
         current && !current.readOnly && !current.archived
           ? (text) => answerRef.current(text)
           : undefined,
+      ...(current && !current.readOnly && !current.archived
+        ? {
+            implementPlan: () =>
+              planRef.current.runCommand("default", IMPLEMENT_PLAN),
+            implementPlanFresh: (plan: string) =>
+              planRef.current.startFromPlan(plan),
+          }
+        : {}),
     }),
     [active, current?.cwd, current?.readOnly, current?.archived],
   );
@@ -849,8 +911,15 @@ export default function App() {
                         decision: Decision,
                         message,
                         answers,
+                        mode,
                       ) => {
-                        await act("reply", { id, decision, message, answers });
+                        await act("reply", {
+                          id,
+                          decision,
+                          message,
+                          answers,
+                          mode,
+                        });
                       }}
                     />
                   ))}
@@ -922,32 +991,7 @@ export default function App() {
                 disabled={busy}
                 inputRef={composerRef}
                 onSend={sendMessage}
-                onCommand={async (name, args) => {
-                  setError("");
-                  try {
-                    const res = await api<{
-                      session?: string;
-                      options?: Record<string, string>;
-                    }>(
-                      `sessions/${encodeURIComponent(current.id)}/command`,
-                      "POST",
-                      { name, args },
-                    );
-                    // Settings commands show in the pills right away.
-                    if (res.options)
-                      window.dispatchEvent(
-                        new CustomEvent("workbench:options", {
-                          detail: { session: current.id, options: res.options },
-                        }),
-                      );
-                    await refresh();
-                    // /fork opens the new session.
-                    if (res.session) selectSession(res.session);
-                  } catch (e) {
-                    catchError(e);
-                    throw e;
-                  }
-                }}
+                onCommand={runCommand}
                 onAction={(action) => {
                   if (action === "new") openNewSession(current.cwd);
                 }}

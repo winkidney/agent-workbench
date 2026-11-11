@@ -563,13 +563,15 @@ func (m *Manager) Reply(id, key string, allow bool, answers map[string]any) erro
 	if allow {
 		decision = "allow"
 	}
-	return m.ReplyDecision(id, key, decision, "", answers)
+	return m.ReplyDecision(id, key, decision, "", answers, "")
 }
 
 // ReplyDecision answers a pending native request. decision is allow,
 // allowAlways (session-scoped), deny (the turn continues, message is shown to
-// the agent) or cancel (deny and interrupt the turn).
-func (m *Manager) ReplyDecision(id, key, decision, message string, answers map[string]any) error {
+// the agent) or cancel (deny and interrupt the turn). mode is the permission
+// mode an approved Claude plan continues in, as Claude Code's own choices set
+// it: acceptEdits, or default (edits approved one by one; also when empty).
+func (m *Manager) ReplyDecision(id, key, decision, message string, answers map[string]any, mode string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	r := m.find(id)
@@ -588,6 +590,8 @@ func (m *Manager) ReplyDecision(id, key, decision, message string, answers map[s
 	allow := decision == "allow" || decision == "allowAlways"
 	request := obj(v)
 	var reply any
+	// An approved Claude plan leaves plan mode.
+	leavesPlan := false
 	if r.session.Agent == "codex" {
 		method := str(request["method"])
 		var result any
@@ -627,6 +631,17 @@ func (m *Manager) ReplyDecision(id, key, decision, message string, answers map[s
 			if suggestions, ok := req["permission_suggestions"].([]any); decision == "allowAlways" && ok && len(suggestions) > 0 {
 				response["updatedPermissions"] = suggestions
 			}
+			if str(req["tool_name"]) == "ExitPlanMode" {
+				switch mode {
+				case "", "default", "manual":
+					mode = "default"
+				case "acceptEdits":
+				default:
+					return errors.New("an approved plan continues in acceptEdits or default mode")
+				}
+				response["updatedPermissions"] = []any{map[string]any{"type": "setMode", "destination": "session", "mode": mode}}
+				leavesPlan = true
+			}
 		}
 		reply = map[string]any{"type": "control_response", "response": map[string]any{"subtype": "success", "request_id": key, "response": response}}
 	}
@@ -634,9 +649,27 @@ func (m *Manager) ReplyDecision(id, key, decision, message string, answers map[s
 		return err
 	}
 	delete(r.pending, key)
+	if leavesPlan {
+		m.leavePlan(r, mode)
+	}
 	m.emit(r.session.ID, "approval_resolved", map[string]any{"id": key})
 	m.status(r, "running")
 	return nil
+}
+
+// leavePlan records that an approved plan took a Claude session out of plan
+// mode into mode, so the settings shown, and those set before the next turn,
+// are no longer plan mode.
+func (m *Manager) leavePlan(r *runtime, mode string) {
+	permissions := "manual"
+	if mode == "acceptEdits" {
+		permissions = "acceptEdits"
+	}
+	o := m.options(r.session.ID)
+	o.Mode, o.Permissions = "default", permissions
+	_ = m.store.setting("options:"+r.session.ID, o)
+	r.applied.Mode, r.applied.Permissions = "default", permissions
+	r.effective.Mode, r.effective.Permissions = "default", permissions
 }
 
 // Live returns approvals still awaiting a reply and the running turn's start,

@@ -270,7 +270,7 @@ func TestReplyDecisionsMapToNativeResponses(t *testing.T) {
 			} else {
 				m.receive(s.ID, r.generation, map[string]any{"type": "control_request", "request_id": "7", "request": map[string]any{"subtype": "can_use_tool", "tool_name": "Bash", "input": map[string]any{"command": "grep"}, "permission_suggestions": []any{map[string]any{"type": "addRules"}}}})
 			}
-			if err := m.ReplyDecision(s.ID, key, c.decision, "use rg instead", nil); err != nil {
+			if err := m.ReplyDecision(s.ID, key, c.decision, "use rg instead", nil, ""); err != nil {
 				t.Fatal(err)
 			}
 			if last := p.in[len(p.in)-1]; !c.check(last) {
@@ -282,8 +282,61 @@ func TestReplyDecisionsMapToNativeResponses(t *testing.T) {
 	s, _ := m.Create("codex", t.TempDir(), "x")
 	_ = m.Start(s.ID)
 	m.receive(s.ID, m.sessions[s.ID].generation, map[string]any{"id": 1, "method": "item/commandExecution/requestApproval"})
-	if err := m.ReplyDecision(s.ID, "1", "maybe", "", nil); err == nil {
+	if err := m.ReplyDecision(s.ID, "1", "maybe", "", nil, ""); err == nil {
 		t.Fatal("accepted unknown decision")
+	}
+}
+
+// Approving a Claude plan continues in the chosen mode, as Claude Code's own
+// choices do, and the session's settings leave plan mode so the next turn
+// does not set it again.
+func TestApprovedClaudePlanLeavesPlanMode(t *testing.T) {
+	// next is the permission mode applyOptions sets before the next turn.
+	for _, c := range []struct{ decision, mode, setMode, permissions, next string }{
+		{"allow", "acceptEdits", "acceptEdits", "acceptEdits", "acceptEdits"},
+		{"allow", "default", "default", "manual", "manual"},
+		{"allow", "", "default", "manual", "manual"},
+		{"deny", "acceptEdits", "", "", ""},
+	} {
+		t.Run(c.decision+"/"+c.mode, func(t *testing.T) {
+			m, p := fixture(t)
+			s, _ := m.Create("claude", t.TempDir(), "x")
+			if err := m.SetOptions(s.ID, Options{Mode: "plan", Model: "opus"}); err != nil {
+				t.Fatal(err)
+			}
+			_ = m.Start(s.ID)
+			r := m.sessions[s.ID]
+			r.applied = m.options(s.ID)
+			m.receive(s.ID, r.generation, map[string]any{"type": "control_request", "request_id": "9", "request": map[string]any{"subtype": "can_use_tool", "tool_name": "ExitPlanMode", "input": map[string]any{"plan": "1. Do it"}}})
+			if err := m.ReplyDecision(s.ID, "9", c.decision, "", nil, c.mode); err != nil {
+				t.Fatal(err)
+			}
+			resp := obj(obj(obj(p.in[len(p.in)-1]["response"]))["response"])
+			o := m.options(s.ID)
+			if c.decision == "deny" {
+				if resp["behavior"] != "deny" || resp["updatedPermissions"] != nil || o.Mode != "plan" {
+					t.Fatalf("denied plan: %v, options %+v", resp, o)
+				}
+				return
+			}
+			perms, _ := resp["updatedPermissions"].([]any)
+			if resp["behavior"] != "allow" || len(perms) != 1 || obj(perms[0])["type"] != "setMode" || obj(perms[0])["mode"] != c.setMode || obj(perms[0])["destination"] != "session" {
+				t.Fatalf("reply: %v", resp)
+			}
+			if o.Mode != "default" || o.Permissions != c.permissions || o.Model != "opus" || claudePermissionMode(o) != c.next {
+				t.Fatalf("options after approval: %+v", o)
+			}
+			if tel := m.Telemetry(s.ID); tel.Pending || tel.Effective.Mode != "default" {
+				t.Fatalf("telemetry: pending %v, effective %+v", tel.Pending, tel.Effective)
+			}
+		})
+	}
+	m, _ := fixture(t)
+	s, _ := m.Create("claude", t.TempDir(), "x")
+	_ = m.Start(s.ID)
+	m.receive(s.ID, m.sessions[s.ID].generation, map[string]any{"type": "control_request", "request_id": "9", "request": map[string]any{"subtype": "can_use_tool", "tool_name": "ExitPlanMode", "input": map[string]any{}}})
+	if err := m.ReplyDecision(s.ID, "9", "allow", "", nil, "bypassPermissions"); err == nil {
+		t.Fatal("accepted a mode the plan choices do not offer")
 	}
 }
 

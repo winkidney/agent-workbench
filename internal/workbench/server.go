@@ -817,6 +817,8 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 				ID, Decision, Message string
 				Allow                 bool
 				Answers               map[string]any
+				// The permission mode an approved Claude plan continues in.
+				Mode string
 			}
 			err = decode(w, r, &v)
 			if err == nil {
@@ -826,7 +828,7 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 						v.Decision = "allow"
 					}
 				}
-				err = m.ReplyDecision(id, v.ID, v.Decision, v.Message, v.Answers)
+				err = m.ReplyDecision(id, v.ID, v.Decision, v.Message, v.Answers, v.Mode)
 			}
 		default:
 			http.NotFound(w, r)
