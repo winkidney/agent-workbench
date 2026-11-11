@@ -53,7 +53,7 @@ The interface runs at `agent.localhost:PORT`. Each preview gets its own random o
   From public addresses only `agent.localhost:PORT` is served, and it signs in. Installs from before the setting keep pairing if it was on, and are otherwise `off`.
 - **Secrets:** the pairing code (`pairing-code`) and the username and password (`access-password.json`) are files in the data directory with mode 0600, compared in constant time. Failed sign-ins are limited to 10 per minute per client address.
 - **Sessions** use a host-only, HttpOnly, SameSite=Strict cookie after pairing, kept in memory for 12 hours; changing the mode or the password ends them.
-- **Changes** (`POST`, `PUT`, `PATCH`, `DELETE`) must carry an `Origin` equal to the requested host.
+- **Changes** (`POST`, `PUT`, `PATCH`, `DELETE`) must carry an `Origin` equal to `http://` plus the requested host. Requests that sign in may also come from an origin listed in `allowed_origins` (Settings → Allowed origins: `scheme://host[:port]`, normalized, at most 20), such as an HTTPS tunnel's address; that also covers proxies that rewrite `Host`. This computer, while it skips sign-in, only accepts its own origin, so a listed site can never drive it from this computer's browser.
 - **Files:** the interface opens files only inside a session's launch directory; `..` and symlinks that lead outside are refused. The folder browser for new sessions lists directories inside the home directory only.
 - **Agents** keep their own permission systems: approvals are forwarded to the page, never answered automatically; unknown control requests are declined.
 - The workbench is not designed to be exposed through a public tunnel. That would need HTTPS origins and a preview domain of its own.

@@ -7,12 +7,15 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"html"
 	"math/big"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -70,6 +73,106 @@ func loadLocalSignin(db *sql.DB) (bool, error) {
 		return false, nil
 	}
 	return v == "true", err
+}
+
+// Allowed origins are other addresses the workbench is opened from, such as
+// an HTTPS tunnel (https://ai.example.com): pages there may make changes.
+const maxAllowedOrigins = 20
+
+// normalizeOrigin returns scheme://host[:port] in the form browsers send in
+// Origin (lowercase, no default port, no slash), or false for anything else:
+// paths, queries, user info, wildcards, "null".
+func normalizeOrigin(v string) (string, bool) {
+	u, err := url.Parse(strings.TrimSpace(v))
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil ||
+		(u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" || u.Opaque != "" ||
+		strings.Contains(u.Host, "*") {
+		return "", false
+	}
+	host, port := strings.ToLower(u.Hostname()), u.Port()
+	if host == "" {
+		return "", false
+	}
+	if (u.Scheme == "https" && port == "443") || (u.Scheme == "http" && port == "80") {
+		port = ""
+	}
+	if strings.Contains(host, ":") {
+		host = "[" + host + "]"
+	}
+	if port != "" {
+		host += ":" + port
+	}
+	return u.Scheme + "://" + host, true
+}
+
+// cleanOrigins validates and normalizes a list from Settings.
+func cleanOrigins(list []string) ([]string, error) {
+	out := []string{}
+	for _, v := range list {
+		if strings.TrimSpace(v) == "" {
+			continue
+		}
+		o, ok := normalizeOrigin(v)
+		if !ok {
+			return nil, fmt.Errorf("%q is not an origin like https://example.com", strings.TrimSpace(v))
+		}
+		if !slices.Contains(out, o) {
+			out = append(out, o)
+		}
+	}
+	if len(out) > maxAllowedOrigins {
+		return nil, fmt.Errorf("at most %d allowed origins", maxAllowedOrigins)
+	}
+	return out, nil
+}
+
+func loadAllowedOrigins(db *sql.DB) ([]string, error) {
+	var v string
+	err := db.QueryRow("SELECT value FROM settings WHERE key='allowed_origins'").Scan(&v)
+	if err == sql.ErrNoRows {
+		return []string{}, nil
+	}
+	if err != nil {
+		return []string{}, err
+	}
+	var list []string
+	if json.Unmarshal([]byte(v), &list) != nil {
+		return []string{}, nil
+	}
+	if list, err = cleanOrigins(list); err != nil {
+		return []string{}, nil
+	}
+	return list, nil
+}
+
+// originAllowed: changes must come from a page on the host the request
+// names. Requests that sign in may also come from an allowed origin; this
+// computer while it skips sign-in may not, or any page on a listed site
+// could drive it from this computer's browser.
+func (s *Server) originAllowed(r *http.Request, access hostAccess) bool {
+	origin := r.Header.Get("Origin")
+	if strings.EqualFold(origin, "http://"+r.Host) {
+		return true
+	}
+	if access != hostAuth {
+		return false
+	}
+	o, ok := normalizeOrigin(origin)
+	if !ok {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Contains(s.allowedOrigins, o)
+}
+
+// originRefusal explains a refused change; the origin is only repeated in
+// its normalized form.
+func originRefusal(r *http.Request, access hostAccess) string {
+	if o, ok := normalizeOrigin(r.Header.Get("Origin")); ok && access == hostAuth {
+		return "changes from " + o + " are refused: add it to Allowed origins in Settings on the workbench computer"
+	}
+	return "invalid origin"
 }
 
 func saveSettings(db *sql.DB, values map[string]string) error {

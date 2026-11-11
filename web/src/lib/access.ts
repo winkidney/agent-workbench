@@ -66,3 +66,23 @@ export function accessWarning(o: {
   // Pairing: the server keeps the saving browser signed in.
   return "";
 }
+
+// Allowed origins as typed in Settings: one per line (commas and spaces work
+// too); the server validates and normalizes them.
+export function parseOrigins(text: string): string[] {
+  return text
+    .split(/[\s,]+/)
+    .map((v) => v.trim())
+    .filter(Boolean);
+}
+
+// Whether changes made on this page will be refused: it is opened through an
+// address other than its own host (an HTTPS tunnel) that is not allowed.
+export function originBlocked(
+  pageOrigin: string,
+  pageHost: string,
+  allowed: string[],
+): boolean {
+  if (pageOrigin === "http://" + pageHost) return false;
+  return !allowed.includes(pageOrigin.toLowerCase());
+}

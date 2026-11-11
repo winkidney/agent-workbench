@@ -1714,6 +1714,11 @@ textarea {
   margin: 4px 0 0;
   font-size: 12px;
 }
+.origins-input {
+  resize: vertical;
+  min-height: 56px;
+  font: 13px/1.5 var(--mono);
+}
 .secret-row {
   display: flex;
   align-items: center;

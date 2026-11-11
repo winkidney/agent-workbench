@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -425,5 +426,122 @@ func TestSignInOnThisComputerToo(t *testing.T) {
 	}
 	if NewServer(m, s.Assets, s.Host, "").localSignin.Load() {
 		t.Fatal("local sign-in without a method")
+	}
+}
+
+func TestNormalizeOrigin(t *testing.T) {
+	for in, want := range map[string]string{
+		"https://ai.example.com":      "https://ai.example.com",
+		" https://AI.Example.com/ ":   "https://ai.example.com",
+		"https://ai.example.com:443":  "https://ai.example.com",
+		"http://box.lan:80":           "http://box.lan",
+		"http://192.168.1.5:17880":    "http://192.168.1.5:17880",
+		"https://[2001:db8::1]:8443":  "https://[2001:db8::1]:8443",
+		"ai.example.com":              "",
+		"*":                           "",
+		"null":                        "",
+		"https://*.example.com":       "",
+		"https://ai.example.com/app":  "",
+		"https://ai.example.com?x=1":  "",
+		"https://user@ai.example.com": "",
+		"ftp://ai.example.com":        "",
+		"https://":                    "",
+		"javascript:alert(1)":         "",
+	} {
+		got, ok := normalizeOrigin(in)
+		if got != want || ok != (want != "") {
+			t.Errorf("%q: %q %v, want %q", in, got, ok, want)
+		}
+	}
+}
+
+// fromTunnel is a browser on an HTTPS tunnel (cloudflared on this computer):
+// it connects from loopback with Cloudflare's headers and the public Host.
+func fromTunnel(t *testing.T, s *Server, host, origin, method, path, body string, basic ...string) *httptest.ResponseRecorder {
+	t.Helper()
+	r := httptest.NewRequest(method, "http://"+host+path, strings.NewReader(body))
+	r.Host, r.RemoteAddr = host, "127.0.0.1:5000"
+	r.Header.Set("Cf-Connecting-Ip", "203.0.113.7")
+	r.Header.Set("X-Forwarded-For", "203.0.113.7")
+	r.Header.Set("X-Forwarded-Proto", "https")
+	r.Header.Set("Origin", origin)
+	if len(basic) == 2 {
+		r.SetBasicAuth(basic[0], basic[1])
+	}
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, r)
+	return w
+}
+
+func TestAllowedOrigins(t *testing.T) {
+	s, m := authServer(t)
+	setAccess(t, s, `{"remoteAccess":"password","username":"me","password":"correct horse"}`)
+	const tunnel, site = "ai.example.com", "https://ai.example.com"
+	pin := `{"op":"pinSession","id":"codex:a"}`
+	// Reads work through the tunnel; changes from its HTTPS page do not yet.
+	if w := fromTunnel(t, s, tunnel, site, "GET", "/api/sessions", "", "me", "correct horse"); w.Code != 200 {
+		t.Fatalf("read: %d", w.Code)
+	}
+	w := fromTunnel(t, s, tunnel, site, "POST", "/api/sidebar", pin, "me", "correct horse")
+	if w.Code != 403 || !strings.Contains(w.Body.String(), "add it to Allowed origins") || !strings.Contains(w.Body.String(), site) {
+		t.Fatalf("before allowing: %d %s", w.Code, w.Body.String())
+	}
+	// Invalid entries are refused and change nothing.
+	if w := request(t, s, s.Host, "PUT", "/api/settings", `{"remoteAccess":"password","allowedOrigins":["https://ai.example.com/app"]}`, nil); w.Code != 400 {
+		t.Fatalf("invalid origin accepted: %d", w.Code)
+	}
+	settings := setAccess(t, s, `{"remoteAccess":"password","allowedOrigins":["HTTPS://AI.Example.com/", "", "https://ai.example.com:443"]}`)
+	if list, _ := settings["allowedOrigins"].([]any); len(list) != 1 || list[0] != site {
+		t.Fatalf("normalized list: %v", settings["allowedOrigins"])
+	}
+	if w := fromTunnel(t, s, tunnel, site, "POST", "/api/sidebar", pin, "me", "correct horse"); w.Code != 200 {
+		t.Fatalf("after allowing: %d %s", w.Code, w.Body.String())
+	}
+	// Still signed in: an allowed origin is no way around the password.
+	if w := fromTunnel(t, s, tunnel, site, "POST", "/api/sidebar", pin); w.Code != 401 {
+		t.Fatalf("without the password: %d", w.Code)
+	}
+	// Other sites stay refused.
+	if w := fromTunnel(t, s, tunnel, "https://evil.test", "POST", "/api/sidebar", pin, "me", "correct horse"); w.Code != 403 {
+		t.Fatalf("other site: %d", w.Code)
+	}
+	// A tunnel that rewrites Host (cloudflared httpHostHeader, nginx's
+	// default) still works: the origin itself is what is allowed.
+	if w := fromTunnel(t, s, "localhost:17880", site, "POST", "/api/sidebar", pin, "me", "correct horse"); w.Code != 200 {
+		t.Fatalf("rewritten Host: %d", w.Code)
+	}
+	// This computer, while it skips sign-in, never takes changes from
+	// another origin, allowed or not.
+	r := httptest.NewRequest("POST", "http://localhost:17880/api/sidebar", strings.NewReader(pin))
+	r.Host, r.RemoteAddr = "localhost:17880", "127.0.0.1:5000"
+	r.Header.Set("Origin", site)
+	lw := httptest.NewRecorder()
+	s.ServeHTTP(lw, r)
+	if lw.Code != 403 || strings.Contains(lw.Body.String(), "Allowed origins") {
+		t.Fatalf("this computer from an allowed origin: %d %s", lw.Code, lw.Body.String())
+	}
+	// Pairing works through the tunnel too once it is allowed.
+	setAccess(t, s, `{"remoteAccess":"pairing"}`)
+	body, _ := json.Marshal(map[string]string{"code": s.Pairing})
+	if w := fromTunnel(t, s, tunnel, site, "POST", "/api/login", string(body)); w.Code != 200 {
+		t.Fatalf("pairing through the tunnel: %d %s", w.Code, w.Body.String())
+	}
+	// Kept across restarts and when other settings change.
+	restarted := NewServer(m, s.Assets, s.Host, s.Pairing)
+	if restarted.initErr != nil || len(restarted.allowedOrigins) != 1 || restarted.allowedOrigins[0] != site {
+		t.Fatalf("restart: %v %v", restarted.initErr, restarted.allowedOrigins)
+	}
+	// Replaced as a whole when given; an empty list clears it.
+	setAccess(t, s, `{"remoteAccess":"pairing","allowedOrigins":[]}`)
+	if len(s.allowedOrigins) != 0 {
+		t.Fatalf("cleared: %v", s.allowedOrigins)
+	}
+	var tooMany []string
+	for i := 0; i <= maxAllowedOrigins; i++ {
+		tooMany = append(tooMany, fmt.Sprintf("https://a%d.example.com", i))
+	}
+	list, _ := json.Marshal(map[string]any{"remoteAccess": "pairing", "allowedOrigins": tooMany})
+	if w := request(t, s, s.Host, "PUT", "/api/settings", string(list), nil); w.Code != 400 {
+		t.Fatalf("too many: %d", w.Code)
 	}
 }

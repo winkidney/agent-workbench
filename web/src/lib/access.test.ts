@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { accessWarning, newPassword } from "./access";
+import {
+  accessWarning,
+  newPassword,
+  originBlocked,
+  parseOrigins,
+} from "./access";
 
 describe("newPassword", () => {
   it("makes 16 unambiguous characters, different each time", () => {
@@ -67,5 +72,42 @@ describe("accessWarning", () => {
     expect(
       accessWarning({ ...here, localSignin: true, draft: "pairing" }),
     ).toBe("");
+  });
+});
+
+describe("allowed origins", () => {
+  it("reads one per line, commas or spaces", () => {
+    expect(
+      parseOrigins(
+        " https://a.example.com\n\nhttps://b.example.com, http://c.lan:8080 ",
+      ),
+    ).toEqual([
+      "https://a.example.com",
+      "https://b.example.com",
+      "http://c.lan:8080",
+    ]);
+    expect(parseOrigins("")).toEqual([]);
+  });
+  it("knows when this page cannot make changes", () => {
+    const allowed = ["https://ai.example.com"];
+    expect(
+      originBlocked(
+        "http://agent.localhost:17880",
+        "agent.localhost:17880",
+        [],
+      ),
+    ).toBe(false);
+    expect(
+      originBlocked("http://192.168.1.5:17880", "192.168.1.5:17880", []),
+    ).toBe(false);
+    expect(originBlocked("https://ai.example.com", "ai.example.com", [])).toBe(
+      true,
+    );
+    expect(
+      originBlocked("https://ai.example.com", "ai.example.com", allowed),
+    ).toBe(false);
+    expect(
+      originBlocked("https://other.example.com", "other.example.com", allowed),
+    ).toBe(true);
   });
 });

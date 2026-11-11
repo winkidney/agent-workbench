@@ -6,6 +6,8 @@ import {
   DEFAULT_USERNAME,
   accessWarning,
   newPassword,
+  originBlocked,
+  parseOrigins,
   type RemoteAccess,
 } from "../lib/access";
 import { Button } from "./ui/button";
@@ -16,6 +18,7 @@ type Settings = {
   remoteAccess: RemoteAccess;
   localSignin: boolean;
   thisComputer: boolean;
+  allowedOrigins: string[];
   username?: string;
   storageBytes?: number;
   retentionDays?: number;
@@ -47,6 +50,7 @@ export function SettingsDialog({
   const [secrets, setSecrets] = useState<Secrets>({});
   const [draft, setDraft] = useState<RemoteAccess>("off");
   const [localSignin, setLocalSignin] = useState(false);
+  const [origins, setOrigins] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [reveal, setReveal] = useState(false);
@@ -60,6 +64,7 @@ export function SettingsDialog({
     setSecrets(sec);
     setDraft(settings.remoteAccess);
     setLocalSignin(settings.localSignin);
+    setOrigins(settings.allowedOrigins.join("\n"));
     // Defaults the first time; saved only when the password is chosen.
     setUsername(sec.username ?? DEFAULT_USERNAME);
     setPassword(sec.password ?? newPassword());
@@ -99,12 +104,19 @@ export function SettingsDialog({
     setError("");
     setStatus("");
     try {
+      const allowedOrigins = parseOrigins(origins);
       await api(
         "settings",
         "PUT",
         draft === "password"
-          ? { remoteAccess: draft, localSignin, username, password }
-          : { remoteAccess: draft, localSignin },
+          ? {
+              remoteAccess: draft,
+              localSignin,
+              allowedOrigins,
+              username,
+              password,
+            }
+          : { remoteAccess: draft, localSignin, allowedOrigins },
       );
       await load();
       setStatus(
@@ -288,6 +300,40 @@ export function SettingsDialog({
               </p>
             </div>
           )}
+          {draft !== "off" && (
+            <div className="access-secret">
+              <label htmlFor="settings-origins">Allowed origins</label>
+              <textarea
+                id="settings-origins"
+                className="origins-input"
+                rows={2}
+                spellCheck={false}
+                autoCapitalize="off"
+                placeholder="https://ai.example.com"
+                value={origins}
+                onChange={(e) => setOrigins(e.target.value)}
+              />
+              <p className="subtle">
+                Other addresses you open this workbench from, one per line, for
+                example an HTTPS tunnel or reverse proxy. Pages there may make
+                changes once signed in; pages on any other site may not. List
+                only addresses that lead to this workbench. This computer, while
+                it skips sign-in, never takes changes from them.
+              </p>
+            </div>
+          )}
+          {saved &&
+            originBlocked(
+              location.origin,
+              location.host,
+              saved.allowedOrigins,
+            ) && (
+              <p role="alert" className="access-warning">
+                This page ({location.origin}) is not an allowed origin, so
+                changes made here are refused. Add it in Settings on the
+                workbench computer.
+              </p>
+            )}
           {saved?.storageBytes !== undefined && (
             <p className="subtle storage-line">
               Local data:{" "}

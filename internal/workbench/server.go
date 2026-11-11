@@ -39,9 +39,11 @@ type Server struct {
 	// localSignin makes this computer sign in too, for a workbench reached
 	// through a tunnel here (read without the lock by hostAccess).
 	localSignin atomic.Bool
-	auth        map[string]time.Time
-	grants      map[string]grant
-	attempts    map[string][]time.Time
+	// allowedOrigins may make changes besides the page's own host (auth.go).
+	allowedOrigins []string
+	auth           map[string]time.Time
+	grants         map[string]grant
+	attempts       map[string][]time.Time
 	// build identifies the embedded web build, so open pages can tell
 	// they run an older one.
 	build string
@@ -76,6 +78,9 @@ func NewServer(m *Manager, assets fs.FS, host, pairing string) *Server {
 		on, s.initErr = loadLocalSignin(m.store.db)
 		// Without a sign-in method nobody could get in.
 		s.localSignin.Store(on && s.remote != remoteOff)
+	}
+	if s.initErr == nil {
+		s.allowedOrigins, s.initErr = loadAllowedOrigins(m.store.db)
 	}
 	if s.initErr == nil {
 		switch s.remote {
@@ -129,7 +134,7 @@ func (s *Server) authorized(r *http.Request) bool {
 // settings is what the Settings dialog shows; secrets are fetched apart.
 func (s *Server) settings(r *http.Request) map[string]any {
 	s.mu.Lock()
-	out := map[string]any{"remoteAccess": s.remote, "localSignin": s.localSignin.Load(), "thisComputer": thisComputer(r)}
+	out := map[string]any{"remoteAccess": s.remote, "localSignin": s.localSignin.Load(), "thisComputer": thisComputer(r), "allowedOrigins": s.allowedOrigins}
 	if s.user != "" {
 		out["username"] = s.user
 	}
@@ -188,9 +193,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Referrer-Policy", "strict-origin")
 	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-src http://*.localhost:*; frame-ancestors 'none'")
-	// Changes must come from a page on the same host the request names.
-	if r.Method != "GET" && r.Method != "HEAD" && !strings.EqualFold(r.Header.Get("Origin"), "http://"+r.Host) {
-		http.Error(w, "invalid origin", 403)
+	// Changes must come from a page on the same host the request names, or
+	// an allowed origin (auth.go).
+	if r.Method != "GET" && r.Method != "HEAD" && !s.originAllowed(r, access) {
+		http.Error(w, originRefusal(r, access), 403)
 		return
 	}
 	if r.URL.Path == "/api/auth/status" && r.Method == "GET" {
@@ -362,8 +368,10 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 		var input struct {
 			RemoteAccess *string `json:"remoteAccess"`
 			LocalSignin  *bool   `json:"localSignin"`
-			Username     *string `json:"username"`
-			Password     *string `json:"password"`
+			// Allowed origins, replaced as a whole when given.
+			AllowedOrigins *[]string `json:"allowedOrigins"`
+			Username       *string   `json:"username"`
+			Password       *string   `json:"password"`
 		}
 		if err := decode(w, r, &input); err != nil {
 			bad(w, err)
@@ -386,6 +394,15 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 			bad(w, errors.New("signing in on this computer needs a pairing code or a password"))
 			return
 		}
+		origins := s.allowedOrigins
+		if input.AllowedOrigins != nil {
+			var err error
+			if origins, err = cleanOrigins(*input.AllowedOrigins); err != nil {
+				s.mu.Unlock()
+				bad(w, err)
+				return
+			}
+		}
 		if input.Username != nil {
 			user = *input.Username
 		}
@@ -406,7 +423,8 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 			err = s.ensurePairingCode()
 		}
 		if err == nil {
-			err = saveSettings(m.store.db, map[string]string{"remote_access": mode, "local_signin": strconv.FormatBool(local)})
+			list, _ := json.Marshal(origins)
+			err = saveSettings(m.store.db, map[string]string{"remote_access": mode, "local_signin": strconv.FormatBool(local), "allowed_origins": string(list)})
 		}
 		if err != nil {
 			s.mu.Unlock()
@@ -415,6 +433,7 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 		}
 		s.remote = mode
 		s.localSignin.Store(local)
+		s.allowedOrigins = origins
 		if mode != before || changed || local != localBefore {
 			// Sign-ins under the old rules end.
 			s.auth = map[string]time.Time{}
