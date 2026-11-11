@@ -60,6 +60,9 @@ type runtime struct {
 	steering map[string]*steered
 }
 type Manager struct {
+	// closing: the workbench is shutting down (Shutdown); engines it stops
+	// then are asleep, not failed.
+	closing  bool
 	metaMu   sync.Mutex
 	metadata map[string]metadata
 	mu       sync.Mutex
@@ -707,7 +710,7 @@ func (m *Manager) Stop(id string, sleep bool) error {
 	r.proc = nil
 	r.ready = false
 	r.turn = false
-	r.pending = map[string]any{}
+	m.releasePending(r)
 	previews := r.previews
 	if sleep {
 		previews = map[string]*Preview{}
@@ -732,16 +735,18 @@ func (m *Manager) Stop(id string, sleep bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	state := "stopped"
-	if sleep {
+	if sleep || m.closing {
+		// Put away with the workbench, the session resumes on its next message.
 		state = "sleeping"
 	}
-	if len(errs) > 0 {
+	if len(errs) > 0 && !m.closing {
 		state = "error"
 	}
 	m.status(r, state)
 	return errors.Join(errs...)
 }
 func (m *Manager) exited(id string, generation int, err error) {
+	requested := stoppedOnRequest(err)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	r := m.find(id)
@@ -756,13 +761,47 @@ func (m *Manager) exited(id string, generation int, err error) {
 	r.proc = nil
 	r.ready = false
 	r.turn = false
-	r.pending = map[string]any{}
+	m.releasePending(r)
 	state := "sleeping"
-	if err != nil {
+	if err != nil && !requested && !m.closing {
 		state = "error"
 		m.emit(r.session.ID, "error", map[string]any{"message": err.Error()})
 	}
 	m.status(r, state)
+}
+
+// stoppedOnRequest reports engine exits that are stops, not crashes: killed
+// by SIGTERM or SIGINT, or exiting with 143 or 130 after catching them. When
+// the workbench's unit stops, systemd stops the engines bound to it first,
+// and Claude Code exits 143 there (Codex exits 0); the systemd-run clients in
+// the workbench's own cgroup may be terminated as well.
+func stoppedOnRequest(err error) bool {
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) {
+		return false
+	}
+	switch exit.ExitCode() {
+	case 143, 130:
+		return true
+	case -1:
+		s := exit.String()
+		return strings.Contains(s, "signal: terminated") || strings.Contains(s, "signal: interrupt")
+	}
+	return false
+}
+
+// releasePending drops the agent's pending requests (approvals, questions)
+// when its engine is gone, and tells open pages so their cards go away.
+func (m *Manager) releasePending(r *runtime) {
+	keys := make([]string, 0, len(r.pending))
+	for k := range r.pending {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		m.emit(r.session.ID, "approval_resolved", map[string]any{"id": k})
+	}
+	r.pending = map[string]any{}
 }
 func (m *Manager) Sweep() {
 	m.mu.Lock()
@@ -777,11 +816,18 @@ func (m *Manager) Sweep() {
 		_ = m.Stop(id, true)
 	}
 }
+
+// Shutdown stops the engines and previews when the workbench exits. Under
+// systemd the engines' units are bound to the workbench's, so systemd may be
+// stopping them already; either way the sessions are asleep afterwards.
 func (m *Manager) Shutdown() {
 	m.mu.Lock()
+	m.closing = true
 	ids := []string{}
-	for id := range m.sessions {
-		ids = append(ids, id)
+	for id, r := range m.sessions {
+		if r.proc != nil || len(r.previews) > 0 {
+			ids = append(ids, id)
+		}
 	}
 	m.mu.Unlock()
 	for _, id := range ids {
@@ -804,9 +850,32 @@ func (p *systemProcess) Input(v any) error {
 	return json.NewEncoder(p.stdin).Encode(v)
 }
 func (p *systemProcess) Stop() error { return stopUnit(p.unit) }
+
+// systemctl runs a user systemctl command; replaced in tests.
+var systemctl = func(args ...string) (string, error) {
+	out, err := exec.Command("systemctl", append([]string{"--user"}, args...)...).Output()
+	return strings.TrimSpace(string(out)), err
+}
+
+// stopUnit stops an engine's unit. A failed stop still counts when the unit
+// ends up stopped: when the workbench itself stops, systemd stops the units
+// bound to it in the same transaction, and a second stop request can fail.
 func stopUnit(unit string) error {
-	cmd := exec.Command("systemctl", "--user", "stop", unit)
-	return cmd.Run()
+	_, err := systemctl("stop", unit)
+	if err == nil {
+		return nil
+	}
+	for range 30 {
+		state, _ := systemctl("is-active", unit)
+		switch state {
+		case "active", "activating", "deactivating", "reloading", "refreshing":
+			time.Sleep(100 * time.Millisecond)
+		default:
+			// inactive, failed, or no longer known: stopped.
+			return nil
+		}
+	}
+	return err
 }
 func unitArgs(unit, cwd string) []string {
 	return []string{"--user", "--quiet", "--pipe", "--wait", "--collect", "--service-type=exec", "--unit=" + unit, "--working-directory=" + cwd, "--property=KillMode=control-group", "--property=TimeoutStopSec=10s", "--property=BindsTo=" + Service, "--property=After=" + Service, "--setenv=PATH=" + os.Getenv("PATH")}

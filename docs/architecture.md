@@ -21,7 +21,7 @@ An engine stays running between turns and is put to sleep after the idle timeout
 
 ### Processes
 
-- When the workbench runs as the systemd service `agent-workbench.service` (Linux, `start` or `install`), each engine is a transient unit (`agent-workbench-session-<id>.service`) with `KillMode=control-group` and `BindsTo=agent-workbench.service`. "Busy" means the unit's cgroup has processes the engine did not have when it became ready.
+- When the workbench runs as the systemd service `agent-workbench.service` (Linux, `start` or `install`), each engine is a transient unit (`agent-workbench-session-<id>.service`) with `KillMode=control-group` and `BindsTo=agent-workbench.service`. When the workbench's unit stops, systemd stops the engines first; an engine that ends because it was asked to (SIGTERM/SIGINT, or exit 143/130 after catching them, as Claude Code does) or while the workbench closes is put to sleep, not marked as failed, and its pending approvals and questions are released (they stay answerable later). "Busy" means the unit's cgroup has processes the engine did not have when it became ready.
 - Everywhere else (macOS, Windows, Linux without a systemd user manager) an engine is a child process. Unix keeps it and everything it starts in a process group (descendants that leave the group are tracked through the process table); Windows uses a Job Object with kill-on-close. Stopping a session signals the whole tree and kills what is left after ten seconds.
 - Managed preview servers follow the same rules.
 

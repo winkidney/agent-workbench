@@ -12,6 +12,7 @@ import {
   type State,
 } from "./reducer";
 import { loadInitial } from "./useTranscript";
+import { askStates } from "./questions";
 import { shapeUserText } from "./claude";
 import {
   salient,
@@ -930,5 +931,48 @@ describe("Codex async questions in the transcript", () => {
       { title: "What should the button say?", options: undefined },
     ]);
     expect(s.blocks.get("plain")!.questions).toBeUndefined();
+  });
+});
+
+describe("questions cut off when the engine stops", () => {
+  it("turns Claude's waiting AskUserQuestion into an answerable one", () => {
+    const live = applyEvents(
+      emptyState(),
+      [
+        ev("native", {
+          type: "assistant",
+          uuid: "a",
+          message: {
+            id: "m",
+            content: [
+              {
+                type: "tool_use",
+                id: "ask",
+                name: "AskUserQuestion",
+                input: {
+                  questions: [
+                    {
+                      question: "Which size should the logo be?",
+                      header: "Size",
+                      multiSelect: false,
+                      options: [{ label: "Small" }, { label: "Large" }],
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        }),
+      ],
+      { agent: "claude", history: false },
+    );
+    const order = (s: State) => s.keys.map((k) => s.blocks.get(k)!);
+    // Waiting on the approval card while the engine runs.
+    expect(live.blocks.get("ask")!.tool!.status).toBe("running");
+    expect(askStates(order(live)).get("ask")!.status).toBe("pending");
+    // The engine stopped (status sleeping, stopped or error): settled.
+    const after = settled(live);
+    expect(after.blocks.get("ask")!.tool!.status).toBe("interrupted");
+    expect(askStates(order(after)).get("ask")!.status).toBe("unanswered");
   });
 });

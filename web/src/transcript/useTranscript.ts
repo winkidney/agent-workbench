@@ -259,6 +259,10 @@ export function useTranscript(
           setTurnStarted(null);
           if (busy.current) scheduleReconcile();
         }
+        // The engine is gone: nothing it ran is still running, and a
+        // question it was waiting on becomes answerable later.
+        if (["sleeping", "stopped", "error"].includes(status))
+          dispatch({ type: "settle" });
         busy.current = BUSY.includes(status);
       }
     }
