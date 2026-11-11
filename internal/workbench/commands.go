@@ -275,7 +275,8 @@ func (m *Manager) RunCommand(id, name, args string) (CommandResult, error) {
 		m.notice(id, mcpSummary(v))
 		return res, nil
 	case "fork":
-		v, err := m.rpc(id, "thread/fork", map[string]any{"threadId": thread})
+		// Only the new thread's id is used, as with thread/resume.
+		v, err := m.rpc(id, "thread/fork", map[string]any{"threadId": thread, "excludeTurns": true})
 		if err != nil {
 			return res, err
 		}

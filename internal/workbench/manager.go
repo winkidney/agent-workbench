@@ -417,6 +417,10 @@ func (m *Manager) receive(id string, generation int, v map[string]any) {
 			if r.session.NativeID != "" {
 				method = "thread/resume"
 				params["threadId"] = r.session.NativeID
+				// Only the thread's settings are read from the result; the
+				// history comes from thread/turns/list. Codex 0.167 sends a
+				// deprecation notice on every resume that returns all turns.
+				params["excludeTurns"] = true
 			}
 			_ = r.proc.Input(map[string]any{"id": "thread", "method": method, "params": params})
 		case "thread":

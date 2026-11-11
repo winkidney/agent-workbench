@@ -28,6 +28,21 @@ func codexSession(t *testing.T, m *Manager) (Session, *[]string) {
 	return s, &calls
 }
 
+// Resuming reads only the thread's settings: asking for all turns makes
+// Codex 0.167 send a deprecation notice on every resume of a paginated thread.
+func TestCodexResumeSkipsTheFullHistory(t *testing.T) {
+	m, p := fixture(t)
+	s, _ := codexSession(t, m)
+	if err := m.Start(s.ID); err != nil {
+		t.Fatal(err)
+	}
+	m.receive(s.ID, m.sessions[s.ID].generation, map[string]any{"id": "init", "result": map[string]any{}})
+	resume := obj(sentMethod(p, "thread/resume")["params"])
+	if resume["threadId"] != "thread-1" || resume["excludeTurns"] != true {
+		t.Fatalf("thread/resume params: %v", resume)
+	}
+}
+
 func TestArchiveUnarchiveAndDeleteUseCodexThreadRequests(t *testing.T) {
 	m, p := fixture(t)
 	s, calls := codexSession(t, m)

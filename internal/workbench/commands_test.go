@@ -232,6 +232,9 @@ func TestCodexCommandsDriveTheAppServer(t *testing.T) {
 	if res, err := m.RunCommand(id, "fork", ""); err != nil || res.Session != "codex:forked" {
 		t.Fatalf("fork: %+v %v", res, err)
 	}
+	if fork := obj(sentMethod(p, "thread/fork")["params"]); fork["excludeTurns"] != true {
+		t.Fatalf("fork asked for the full history: %v", fork)
+	}
 	// The fork stays loaded in this engine, so the engine goes to sleep.
 	m.mu.Lock()
 	asleep := r.proc == nil
