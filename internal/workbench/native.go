@@ -1,0 +1,740 @@
+package workbench
+
+import (
+	"bufio"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+)
+
+type NativeCatalog struct {
+	mu                    sync.Mutex
+	cached                []Session
+	paths                 map[string]string
+	updated               time.Time
+	CodexHome, ClaudeHome string
+}
+
+func NewNativeCatalog() *NativeCatalog {
+	home, _ := os.UserHomeDir()
+	a, b := os.Getenv("CODEX_HOME"), os.Getenv("CLAUDE_CONFIG_DIR")
+	if a == "" {
+		a = filepath.Join(home, ".codex")
+	}
+	if b == "" {
+		b = filepath.Join(home, ".claude")
+	}
+	return &NativeCatalog{CodexHome: a, ClaudeHome: b, paths: map[string]string{}}
+}
+func nativeKey(agent, id string) string { return agent + ":" + id }
+func (c *NativeCatalog) List() ([]Session, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if time.Since(c.updated) < 5*time.Second {
+		return append([]Session{}, c.cached...), nil
+	}
+	out := []Session{}
+	paths := map[string]string{}
+	dbPath := filepath.Join(c.CodexHome, "state_5.sqlite")
+	if _, err := os.Stat(dbPath); err == nil {
+		db, err := sql.Open("sqlite", "file:"+filepath.ToSlash(dbPath)+"?mode=ro")
+		if err != nil {
+			return nil, err
+		}
+		db.SetMaxOpenConns(1)
+		// Archived threads too: the sidebar shows them on request.
+		rows, err := db.Query(`SELECT id,cwd,coalesce(nullif(name,''),title,''),updated_at,source,rollout_path,archived FROM threads ORDER BY updated_at DESC`)
+		if err != nil {
+			db.Close()
+			return nil, fmt.Errorf("unsupported Codex metadata: %w", err)
+		}
+		for rows.Next() {
+			var s Session
+			var timestamp int64
+			var source, path string
+			var archived int
+			if err := rows.Scan(&s.NativeID, &s.Cwd, &s.Title, &timestamp, &source, &path, &archived); err != nil {
+				continue
+			}
+			s.Archived = archived != 0
+			s.Agent = "codex"
+			s.ID = nativeKey(s.Agent, s.NativeID)
+			s.Updated = time.Unix(timestamp, 0).UTC().Format(time.RFC3339)
+			s.Status = "sleeping"
+			s.Source = source
+			if strings.Contains(source, "subagent") {
+				var value map[string]any
+				_ = json.Unmarshal([]byte(source), &value)
+				s.ParentID = str(obj(obj(obj(value["subagent"])["thread_spawn"]))["parent_thread_id"])
+				if s.ParentID == "" {
+					continue
+				}
+				s.ParentID = nativeKey("codex", s.ParentID)
+			}
+			paths[s.ID] = path
+			out = append(out, s)
+		}
+		rows.Close()
+		db.Close()
+	}
+	directories, _ := os.ReadDir(filepath.Join(c.ClaudeHome, "projects"))
+	for _, dir := range directories {
+		if !dir.IsDir() {
+			continue
+		}
+		files, _ := filepath.Glob(filepath.Join(c.ClaudeHome, "projects", dir.Name(), "*.jsonl"))
+		for _, path := range files {
+			s, ok := readClaudeMetadata(path)
+			if !ok {
+				continue
+			}
+			paths[s.ID] = path
+			out = append(out, s)
+			agents, _ := filepath.Glob(filepath.Join(c.ClaudeHome, "projects", dir.Name(), s.NativeID, "subagents", "agent-*.jsonl"))
+			for _, agent := range agents {
+				child := readClaudeSubagent(agent, s)
+				paths[child.ID] = agent
+				out = append(out, child)
+			}
+		}
+	}
+	namespaces := map[string]string{}
+	for i := range out {
+		cwd := out[i].Cwd
+		key, ok := namespaces[cwd]
+		if !ok {
+			key = workspaceNamespace(cwd)
+			namespaces[cwd] = key
+		}
+		out[i].Workspace = key
+		out[i].Origin = sessionOrigin(out[i])
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Updated > out[j].Updated })
+	c.cached = out
+	c.paths = paths
+	c.updated = time.Now()
+	return append([]Session{}, out...), nil
+}
+
+// readClaudeSubagent lists a Task / subagent transcript as a read-only child
+// of the session that launched it.
+func readClaudeSubagent(path string, parent Session) Session {
+	agent := strings.TrimSuffix(filepath.Base(path), ".jsonl")
+	child := Session{
+		Agent:    "claude",
+		NativeID: parent.NativeID + ":" + agent,
+		ParentID: parent.ID,
+		Cwd:      parent.Cwd,
+		Status:   "sleeping",
+		Source:   "subagent",
+		ReadOnly: true,
+		Title:    agent,
+	}
+	child.ID = nativeKey("claude", child.NativeID)
+	if info, err := os.Stat(path); err == nil {
+		child.Updated = info.ModTime().UTC().Format(time.RFC3339)
+	}
+	var meta struct{ Description, AgentType string }
+	if b, err := os.ReadFile(strings.TrimSuffix(path, ".jsonl") + ".meta.json"); err == nil && json.Unmarshal(b, &meta) == nil {
+		if meta.Description != "" {
+			child.Title = meta.Description
+		} else if meta.AgentType != "" {
+			child.Title = meta.AgentType
+		}
+	}
+	return child
+}
+
+var temporaryRoots = []string{os.TempDir(), "/tmp", "/var/tmp"}
+
+// pathOrigin classifies a launch directory: temporary directories and the
+// home / Codex app chat folders are not projects.
+func pathOrigin(ns string) string {
+	within := func(root string) bool {
+		if root == "" {
+			return false
+		}
+		root = filepath.Clean(root)
+		return ns == root || strings.HasPrefix(ns, root+string(filepath.Separator))
+	}
+	for _, tmp := range temporaryRoots {
+		if within(tmp) || within(workspaceNamespace(tmp)) {
+			return "temporary"
+		}
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		home = workspaceNamespace(home)
+		if ns == home || within(filepath.Join(home, "Documents", "Codex")) {
+			return "chat"
+		}
+	}
+	return "project"
+}
+
+func sessionOrigin(s Session) string {
+	if s.Agent == "codex" && s.Source == "exec" {
+		return "automation"
+	}
+	return pathOrigin(s.Workspace)
+}
+
+func readClaudeMetadata(path string) (Session, bool) {
+	file, err := os.Open(path)
+	if err != nil {
+		return Session{}, false
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return Session{}, false
+	}
+	id := strings.TrimSuffix(filepath.Base(path), ".jsonl")
+	if strings.HasPrefix(id, "agent-") {
+		return Session{}, false
+	}
+	s := Session{Agent: "claude", NativeID: id, ID: nativeKey("claude", id), Status: "sleeping", Updated: info.ModTime().UTC().Format(time.RFC3339), Source: "cli"}
+	var reader io.Reader = file
+	if info.Size() > 262144 {
+		head := make([]byte, 131072)
+		n, _ := file.ReadAt(head, 0)
+		tail := make([]byte, 131072)
+		k, _ := file.ReadAt(tail, info.Size()-131072)
+		reader = io.MultiReader(strings.NewReader(string(head[:n])+"\n"), strings.NewReader(string(tail[:k])))
+	}
+	scan := bufio.NewScanner(reader)
+	scan.Buffer(make([]byte, 65536), 4*1024*1024)
+	for scan.Scan() {
+		var v map[string]any
+		if json.Unmarshal(scan.Bytes(), &v) != nil {
+			continue
+		}
+		// The first recorded cwd is the launch directory; later records follow `cd`s.
+		if cwd := str(v["cwd"]); cwd != "" && s.Cwd == "" {
+			s.Cwd = cwd
+		}
+		if str(v["type"]) == "custom-title" {
+			s.Title = str(v["customTitle"])
+		}
+		if s.Title == "" && v["type"] == "user" && v["isMeta"] != true {
+			content := obj(v["message"])["content"]
+			s.Title = sessionTitle(nativeText(content))
+		}
+	}
+	if s.Title == "" {
+		s.Title = id
+	}
+	if s.Cwd == "" {
+		s.Cwd = decodeClaudeProject(filepath.Base(filepath.Dir(path)))
+	}
+	return s, s.Cwd != ""
+}
+
+var claudeUnsafe = regexp.MustCompile(`[^A-Za-z0-9]`)
+
+// claudeProjectName is how Claude Code names a project folder after its launch directory.
+func claudeProjectName(dir string) string { return claudeUnsafe.ReplaceAllString(dir, "-") }
+
+// decodeClaudeProject resolves a project folder name back to an existing
+// directory. The encoding is lossy, so the result must encode back exactly.
+func decodeClaudeProject(name string) string {
+	var walk func(dir, rest string) string
+	walk = func(dir, rest string) string {
+		if rest == "" {
+			return dir
+		}
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return ""
+		}
+		for _, e := range entries {
+			if !e.IsDir() {
+				continue
+			}
+			enc := claudeProjectName(e.Name())
+			if rest == enc {
+				return filepath.Join(dir, e.Name())
+			}
+			if strings.HasPrefix(rest, enc+"-") {
+				if found := walk(filepath.Join(dir, e.Name()), rest[len(enc)+1:]); found != "" {
+					return found
+				}
+			}
+		}
+		return ""
+	}
+	if !strings.HasPrefix(name, "-") {
+		return ""
+	}
+	found := walk("/", name[1:])
+	if found == "" || claudeProjectName(found) != name {
+		return ""
+	}
+	return found
+}
+
+// Files returns the native transcript path of each listed session.
+func (c *NativeCatalog) Files() map[string]string {
+	if _, err := c.List(); err != nil {
+		return nil
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make(map[string]string, len(c.paths))
+	for id, p := range c.paths {
+		if p != "" && !filepath.IsAbs(p) {
+			p = filepath.Join(c.CodexHome, p)
+		}
+		out[id] = p
+	}
+	return out
+}
+
+// IndexActivity runs one bounded pass of the related-project index.
+func (m *Manager) IndexActivity(budget int64) {
+	list, err := m.catalog.List()
+	if err != nil {
+		return
+	}
+	m.activity.Scan(list, m.catalog.Files(), budget)
+}
+
+func (c *NativeCatalog) Find(id string) (Session, bool) {
+	list, err := c.List()
+	if err != nil {
+		return Session{}, false
+	}
+	for _, s := range list {
+		if s.ID == id {
+			return s, true
+		}
+	}
+	return Session{}, false
+}
+func (c *NativeCatalog) Busy(s Session) bool {
+	if s.Agent == "codex" {
+		return fileLocked(filepath.Join(c.CodexHome, "thread-writer-locks", s.NativeID+".lock"))
+	}
+	return c.ClaudeBusyExcept(s, nil)
+}
+
+// ClaudeBusyExcept is whether a live Claude process other than ours (the
+// processes of the engine this workbench runs) holds the session.
+func (c *NativeCatalog) ClaudeBusyExcept(s Session, ours func(pid int) bool) bool {
+	_, ok := c.claudeOwner(s, ours)
+	return ok
+}
+
+// ClaudeStatus is what the Claude process holding the session reports about
+// itself ("busy" while a turn runs, "idle" while it waits), or "" when no
+// live process holds it or it does not say.
+func (c *NativeCatalog) ClaudeStatus(s Session) string {
+	status, _ := c.claudeOwner(s, nil)
+	return status
+}
+
+// claudeProcessNames are what a Claude process is called: the native binary
+// or node. Off Linux, where Claude's recorded start time cannot be compared,
+// the name guards against a reused PID.
+var claudeProcessNames = []string{"claude", "node"}
+
+// claudeOwner finds the live Claude process registered for the session.
+func (c *NativeCatalog) claudeOwner(s Session, ours func(pid int) bool) (string, bool) {
+	files, _ := filepath.Glob(filepath.Join(c.ClaudeHome, "sessions", "*.json"))
+	for _, file := range files {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			continue
+		}
+		var v struct {
+			PID       int             `json:"pid"`
+			ProcStart json.RawMessage `json:"procStart"`
+			SessionID string          `json:"sessionId"`
+			Status    string          `json:"status"`
+		}
+		if json.Unmarshal(data, &v) != nil || v.SessionID != s.NativeID || v.PID <= 0 || (ours != nil && ours(v.PID)) {
+			continue
+		}
+		if processMatches(v.PID, strings.Trim(string(v.ProcStart), "\"")) {
+			return v.Status, true
+		}
+	}
+	return "", false
+}
+func (c *NativeCatalog) History(s Session, before string, limit int) (HistoryPage, error) {
+	_, err := c.List()
+	if err != nil {
+		return HistoryPage{}, err
+	}
+	if s.Agent == "codex" {
+		return codexHistory(s, before, limit)
+	}
+	c.mu.Lock()
+	path := c.paths[s.ID]
+	c.mu.Unlock()
+	if path == "" {
+		return HistoryPage{}, errors.New("native transcript not found")
+	}
+	return readClaudeHistory(path, s, before, limit)
+}
+
+func nativeText(v any) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	parts, _ := v.([]any)
+	text := []string{}
+	for _, part := range parts {
+		p := obj(part)
+		switch str(p["type"]) {
+		case "text", "input_text", "output_text":
+			text = append(text, str(p["text"]))
+		case "tool_use":
+			b, _ := json.Marshal(p["input"])
+			text = append(text, "["+str(p["name"])+"] "+string(b))
+		case "tool_result":
+			text = append(text, nativeText(p["content"]))
+		}
+	}
+	return strings.Join(text, "\n")
+}
+
+type codexRequest func(id, method string, params any) (map[string]any, error)
+
+// codexClient is a read-only app-server connection. It never resumes a
+// thread or calls a model; Close kills its process group.
+type codexClient struct {
+	cmd   *exec.Cmd
+	group *procGroup
+	in    io.WriteCloser
+	enc   *json.Encoder
+	lines chan map[string]any
+	mu    sync.Mutex
+}
+
+func startCodexClient(name string) (*codexClient, error) {
+	cmd := exec.Command("codex", "app-server")
+	in, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, err
+	}
+	out, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	group, err := startGroup(cmd)
+	if err != nil {
+		return nil, err
+	}
+	c := &codexClient{cmd: cmd, group: group, in: in, enc: json.NewEncoder(in), lines: make(chan map[string]any, 16)}
+	go func() {
+		scan := bufio.NewScanner(out)
+		scan.Buffer(make([]byte, 65536), 16*1024*1024)
+		for scan.Scan() {
+			var v map[string]any
+			// Only responses are read; notifications are dropped.
+			if json.Unmarshal(scan.Bytes(), &v) == nil && v["id"] != nil {
+				c.lines <- v
+			}
+		}
+		close(c.lines)
+	}()
+	if _, err := c.request("init", "initialize", map[string]any{"clientInfo": map[string]any{"name": name, "version": "0.1.0"}}); err != nil {
+		c.Close()
+		return nil, err
+	}
+	_ = c.enc.Encode(map[string]any{"method": "initialized"})
+	return c, nil
+}
+
+func (c *codexClient) request(id, method string, params any) (map[string]any, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if err := c.enc.Encode(map[string]any{"id": id, "method": method, "params": params}); err != nil {
+		return nil, err
+	}
+	timeout := time.After(20 * time.Second)
+	for {
+		select {
+		case v, ok := <-c.lines:
+			if !ok {
+				return nil, errors.New("codex app-server exited")
+			}
+			if str(v["id"]) != id {
+				continue
+			}
+			if v["error"] != nil {
+				return nil, fmt.Errorf("codex %s: %v", method, v["error"])
+			}
+			return obj(v["result"]), nil
+		case <-timeout:
+			return nil, fmt.Errorf("codex %s timed out", method)
+		}
+	}
+}
+
+func (c *codexClient) Close() {
+	c.in.Close()
+	c.group.Kill(c.group.PIDs())
+	_ = c.cmd.Wait()
+	c.group.Release()
+	// Unblock the reader if it is waiting to deliver a late response.
+	for range c.lines {
+	}
+}
+
+// withCodexClient runs fn against a short-lived app-server.
+func withCodexClient(name string, fn func(codexRequest) error) error {
+	c, err := startCodexClient(name)
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+	return fn(c.request)
+}
+
+// A short-lived read-only protocol client: never resumes a thread or calls a model.
+func codexHistory(s Session, before string, limit int) (HistoryPage, error) {
+	var page HistoryPage
+	err := withCodexClient("workbench_history", func(request codexRequest) error {
+		var e error
+		page, e = codexHistoryPage(request, s, before, limit)
+		return e
+	})
+	return page, err
+}
+
+func codexHistoryPage(request codexRequest, s Session, before string, limit int) (HistoryPage, error) {
+	// Turns are listed newest first; the opaque Codex cursor pages toward older turns.
+	var turns []any
+	cursor := strings.TrimPrefix(before, "codex:")
+	legacy := strings.HasPrefix(before, "legacy:")
+	next := ""
+	if !legacy {
+		count := 0
+		for {
+			params := map[string]any{"threadId": s.NativeID, "limit": 10, "sortDirection": "desc", "itemsView": "full"}
+			if cursor != "" {
+				params["cursor"] = cursor
+			}
+			page, e := request("turns", "thread/turns/list", params)
+			if e != nil {
+				if cursor != "" {
+					return HistoryPage{}, e
+				}
+				legacy = true
+				break
+			}
+			data, _ := page["data"].([]any)
+			for _, turn := range data {
+				turns = append(turns, turn)
+				items, _ := obj(turn)["items"].([]any)
+				count += len(items) + 1
+			}
+			next = str(page["nextCursor"])
+			cursor = next
+			if next == "" || count >= limit {
+				break
+			}
+		}
+		for i, j := 0, len(turns)-1; i < j; i, j = i+1, j-1 {
+			turns[i], turns[j] = turns[j], turns[i]
+		}
+	}
+	if legacy {
+		read, e := request("legacy", "thread/read", map[string]any{"threadId": s.NativeID, "includeTurns": true})
+		if e != nil {
+			return HistoryPage{}, e
+		}
+		turns, _ = obj(read["thread"])["turns"].([]any)
+	}
+	events := codexTurnEvents(s, turns)
+	if legacy {
+		start, end := pageBounds(len(events), strings.TrimPrefix(before, "legacy:"), limit)
+		page := HistoryPage{Events: events[start:end], HasMore: start > 0}
+		if start > 0 {
+			page.Before = "legacy:" + strconv.Itoa(start)
+		}
+		return page, nil
+	}
+	page := HistoryPage{Events: events, HasMore: next != ""}
+	if next != "" {
+		page.Before = "codex:" + next
+	}
+	return page, nil
+}
+
+// codexTurnEvents renders chronological Codex turns as history events: each
+// item, then the turn summary.
+func codexTurnEvents(s Session, turns []any) []Event {
+	events := []Event{}
+	for _, raw := range turns {
+		turn := obj(raw)
+		items, _ := turn["items"].([]any)
+		prompted := false
+		for _, item := range items {
+			bounded := boundJSON(item)
+			// A user message after the turn's first was steered into it.
+			if v, ok := bounded.(map[string]any); ok && v["type"] == "userMessage" {
+				if prompted {
+					v["workbenchSteered"] = true
+				}
+				prompted = true
+			}
+			b, _ := json.Marshal(map[string]any{"method": "item/completed", "history": true, "params": map[string]any{"turnId": turn["id"], "item": bounded}})
+			events = append(events, Event{Session: s.ID, Kind: "native", Data: b})
+		}
+		summary := map[string]any{"id": turn["id"], "status": turn["status"], "error": turn["error"], "durationMs": turn["durationMs"]}
+		b, _ := json.Marshal(map[string]any{"method": "turn/completed", "history": true, "params": map[string]any{"turn": summary}})
+		events = append(events, Event{Session: s.ID, Kind: "native", Data: b})
+	}
+	return events
+}
+
+func (m *Manager) find(id string) *runtime {
+	if r := m.sessions[id]; r != nil {
+		return r
+	}
+	for _, r := range m.sessions {
+		if r.session.ID == id {
+			return r
+		}
+	}
+	return nil
+}
+func (m *Manager) Attach(id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.find(id) != nil {
+		return nil
+	}
+	s, ok := m.catalog.Find(id)
+	if !ok {
+		return errors.New("native session not found")
+	}
+	m.sessions[id] = &runtime{session: s, pending: map[string]any{}, previews: map[string]*Preview{}, last: time.Now()}
+	return nil
+}
+func (m *Manager) NativeList() ([]Session, error) {
+	list, err := m.catalog.List()
+	if err != nil {
+		return nil, err
+	}
+	m.mu.Lock()
+	for i, s := range list {
+		if related := m.activity.Related(s.ID); len(related) > 0 {
+			list[i].Related = related
+		}
+		if r := m.find(s.ID); r != nil && r.proc != nil {
+			list[i].Status = r.session.Status
+			if o, ok := r.proc.(processOwner); ok && s.Agent == "claude" && m.catalog.ClaudeBusyExcept(s, o.Owns) {
+				list[i].Status = "external"
+				list[i].ReadOnly = true
+			}
+		} else if m.catalog.Busy(s) {
+			list[i].Status = "external"
+			list[i].ReadOnly = true
+		}
+	}
+	for _, r := range m.sessions {
+		if r.proc == nil || r.session.NativeID == "" {
+			continue
+		}
+		found := false
+		for _, s := range list {
+			if s.ID == r.session.ID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			list = append([]Session{r.session}, list...)
+		}
+	}
+	m.mu.Unlock()
+	// What other clients are doing, read from the tails of their records.
+	for i, s := range list {
+		if s.Status != "external" {
+			continue
+		}
+		m.catalog.mu.Lock()
+		path := m.catalog.paths[s.ID]
+		m.catalog.mu.Unlock()
+		if running, _ := m.externalRunning(s, path); path != "" && running {
+			list[i].Status = "external_running"
+		}
+	}
+	return list, nil
+}
+
+func (c *NativeCatalog) Workspaces() ([]string, error) {
+	list, err := c.List()
+	if err != nil {
+		return nil, err
+	}
+	set := map[string]bool{}
+	for _, s := range list {
+		set[s.Workspace] = true
+	}
+	db, err := sql.Open("sqlite", "file:"+filepath.Join(c.CodexHome, "state_5.sqlite")+"?mode=ro")
+	if err == nil {
+		defer db.Close()
+		rows, e := db.Query("SELECT path FROM project_roots")
+		if e == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var path string
+				if rows.Scan(&path) == nil {
+					set[workspaceNamespace(path)] = true
+				}
+			}
+		}
+	}
+	out := []string{}
+	for path := range set {
+		// Temporary and chat directories never become empty project folders.
+		if path != "" && pathOrigin(path) == "project" {
+			out = append(out, path)
+		}
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+// Namespace identity resolves path aliases without rewriting the native launch cwd.
+// Resolve existing ancestors too, so deleted/moved workspaces still have stable keys.
+func workspaceNamespace(cwd string) string {
+	if cwd == "" {
+		return ""
+	}
+	abs, err := filepath.Abs(filepath.Clean(cwd))
+	if err != nil {
+		return filepath.Clean(cwd)
+	}
+	probe := abs
+	tail := []string{}
+	for {
+		if resolved, e := filepath.EvalSymlinks(probe); e == nil {
+			for i := len(tail) - 1; i >= 0; i-- {
+				resolved = filepath.Join(resolved, tail[i])
+			}
+			return resolved
+		}
+		parent := filepath.Dir(probe)
+		if parent == probe {
+			return abs
+		}
+		tail = append(tail, filepath.Base(probe))
+		probe = parent
+	}
+}

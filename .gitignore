@@ -1,0 +1,12 @@
+/bin/
+/web/node_modules/
+/web/dist/*
+!/web/dist/.gitkeep
+/test-results/
+/artifacts/
+
+/.playwright-cli/
+/output/
+/web/*.tsbuildinfo
+/web/.vitest/
+/dist/

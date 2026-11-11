@@ -1,0 +1,140 @@
+# Agent Workbench
+
+A local-first web workbench for the Claude Code and Codex CLIs you already use.
+
+[![CI](https://github.com/winkidney/agent-workbench/actions/workflows/ci.yml/badge.svg)](https://github.com/winkidney/agent-workbench/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/winkidney/agent-workbench)](https://github.com/winkidney/agent-workbench/releases)
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/hero-dark.png">
+  <img alt="Agent Workbench: a Claude Code session with tool calls and a diff, the project sidebar and the files panel" src="docs/screenshots/hero-light.png">
+</picture>
+
+Agent Workbench runs on your machine next to `claude` and `codex` and gives both a browser interface. It drives the official CLIs through their own protocols (Claude Code's stream-json mode and the Codex app-server), so your logins, settings, MCP servers, skills and project rules keep working, and every conversation stays in the CLI's own records. Open it from any browser on the machine or your local network, including a phone.
+
+## Features
+
+**Every session in one place**
+- All Claude Code and Codex sessions on the machine, grouped by the project they were started in, with subagent sessions nested under their parent.
+- Search, pins, a live "Active" list, and archived or hidden sessions out of the way.
+- Sessions are the CLIs' own: continue one here or in a terminal (`claude --resume`, `codex resume`). A session another client is running is followed live, read-only.
+
+**Live control**
+- Replies, thinking and tool calls stream in and look like each CLI's terminal UI: its colors, diffs and ANSI output.
+- Press Enter during a turn to **steer** it: Codex takes the message at its next step (`turn/steer`); Claude takes it in at its next step, as its own TUI does, with **Send now** when you can't wait.
+- Queue follow-ups for after the turn, interrupt with Esc, and answer approvals and questions from the keyboard.
+- Model, effort, speed, plan mode and permissions per session, shown as pills that always show the value in effect.
+
+**Commands and skills**
+- `/` commands and `$` skills with completion: Claude Code's own commands, and the Codex TUI commands that make sense outside a terminal (`/compact`, `/review`, `/goal`, `/fork`, `/mcp`, `/diff`, …).
+- `/plan` and `/default` switch plan mode in both agents.
+
+**Files and previews**
+- Paths in replies open the file, resolved from where the agent was when it wrote them.
+- Images and videos open in a zoomable viewer; HTML, PDF, SVG and local dev servers open in an isolated preview panel.
+- Show any file in your desktop file manager.
+
+**Status and usage**
+- A turn clock, live tokens per second, context usage and the provider's quota windows.
+
+**Anywhere on your network**
+- Use it by IP address or local host name from other devices; turn on a pairing code to require login.
+- Layouts for desktop and phone, light and dark.
+
+**Packaged for macOS, Windows and Linux**
+- One binary. `agent-workbench install` starts it at login (systemd user unit, launchd agent or Run key).
+
+| Steering a running turn | Commands | Phone |
+| --- | --- | --- |
+| ![A running Codex turn with a steered message and a queued message](docs/screenshots/steer.png) | ![The / command menu](docs/screenshots/commands.png) | ![The phone layout in dark mode](docs/screenshots/mobile.png) |
+
+## Quick start
+
+**Requirements:** the [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI and/or the [Codex](https://github.com/openai/codex) CLI, installed and logged in. On Windows, Claude Code also needs Git for Windows.
+
+**Install a release.** Download the archive for your platform from [Releases](https://github.com/winkidney/agent-workbench/releases), unpack it, and run `install`:
+
+```sh
+# Linux (or use the .deb / .rpm package, then run `agent-workbench install` as yourself)
+tar -xzf agent-workbench_*_linux_amd64.tar.gz
+./agent-workbench install
+
+# macOS (universal binary; the builds are not signed yet)
+tar -xzf agent-workbench_*_macos_universal.tar.gz
+xattr -dr com.apple.quarantine agent-workbench
+./agent-workbench install
+```
+
+```powershell
+# Windows (PowerShell, in the unpacked folder)
+.\agent-workbench.exe install
+```
+
+Then open **http://agent.localhost:17880**. `install` copies the binary to your user's program folder, starts the workbench now and at every login; run it again with a newer release to upgrade. See [docs/install.md](docs/install.md) for details, uninstalling and platform notes.
+
+**Build from source** (Go 1.24+, Node.js 22+):
+
+```sh
+git clone https://github.com/winkidney/agent-workbench.git
+cd agent-workbench
+make build
+./bin/agent-workbench start      # or: ./bin/agent-workbench install
+```
+
+**First steps**
+- Pick a session in the sidebar, or press **+** to start one: choose Claude or Codex, a project folder, and type the first message.
+- During a turn, Enter steers and the queue button keeps a message for after the turn; Esc interrupts.
+- Type `/` for commands, `$` for skills. Click a path in a reply to open it.
+
+More in [docs/usage.md](docs/usage.md).
+
+## Command line
+
+```text
+agent-workbench start       start in the background (default)
+agent-workbench stop        stop (ends managed sessions and previews)
+agent-workbench status      whether it runs, where, and the login start
+agent-workbench install     copy the binary, start at login, start now (also upgrades)
+agent-workbench uninstall   remove the login start (--purge also deletes data)
+agent-workbench serve       run in the foreground
+agent-workbench doctor      check claude, codex and the platform
+agent-workbench version
+```
+
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `--listen HOST:PORT` | `0.0.0.0:17880` | Listen address; `127.0.0.1:17880` keeps it to this machine. |
+| `--data-dir PATH` | per OS, see below | Private state: the session index, settings, event cache. |
+| `--idle DURATION` | `5m` | Put an idle engine to sleep after this long. |
+| `--env NAME` | | `install` only: also pass this environment variable to the service. |
+
+Data lives in `~/.local/state/agent-workbench` on Linux (or `$XDG_STATE_HOME`), `~/Library/Application Support/agent-workbench` on macOS, and `%LOCALAPPDATA%\agent-workbench` on Windows. Conversations themselves stay in the CLIs' records (`~/.claude`, `~/.codex`, or `CLAUDE_CONFIG_DIR` / `CODEX_HOME`).
+
+## Security
+
+The workbench can run agents that read and change files and run commands as you, so treat access to it like access to your shell.
+
+- It never reads the CLIs' credential files and never writes their conversation records; approvals and permissions are the CLIs' own.
+- By default it answers on all interfaces. Browsers on this machine and on private networks can use it by IP address or local host name; with pairing turned on (Settings), every other browser must enter the pairing code. Any other domain name always needs the code, which blocks DNS-rebinding attacks.
+- Changes must come from a page on the same origin. Previews run on separate `p-*.agent.localhost` origins and never receive the workbench's cookies.
+- It is not meant to be exposed to the internet directly.
+
+See [SECURITY.md](SECURITY.md) to report a vulnerability, and [docs/architecture.md](docs/architecture.md#security-model) for the full model.
+
+## How it works
+
+A Go server runs each agent's CLI as a child process (on Linux under systemd, each one as its own unit) and talks to it over stdin and stdout: Claude Code with `-p --input-format stream-json --output-format stream-json`, Codex with `codex app-server`. History is read from the CLIs' records, and a small SQLite database keeps the session index and a short event cache. The React interface is embedded in the binary and receives live updates over server-sent events. Details are in [docs/architecture.md](docs/architecture.md).
+
+Tested with Claude Code 2.1.322 and Codex 0.167.
+
+## Documentation
+
+- [Installing, upgrading and uninstalling](docs/install.md)
+- [Using the workbench](docs/usage.md)
+- [Architecture, API and security model](docs/architecture.md)
+- [Contributing](CONTRIBUTING.md) and [verification notes](docs/verification.md)
+
+## License
+
+[MIT](LICENSE)

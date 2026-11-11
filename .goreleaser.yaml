@@ -1,0 +1,82 @@
+# Release builds: `make dist` locally (snapshot), and the release workflow on
+# a v* tag. See docs/install.md for what users do with the files.
+version: 2
+project_name: agent-workbench
+
+before:
+  hooks:
+    # The web app is embedded in the binary.
+    - npm --prefix web ci
+    - npm --prefix web run build
+
+builds:
+  - id: cli
+    main: ./cmd/agent-workbench
+    binary: agent-workbench
+    # modernc.org/sqlite is pure Go, so every target cross-compiles.
+    env: [CGO_ENABLED=0]
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags: ["-s -w -X main.version={{ .Version }}"]
+  # The same program for the Windows GUI subsystem: the login start and
+  # background runs use it, so no console window opens.
+  - id: windowless
+    main: ./cmd/agent-workbench
+    binary: agent-workbenchw
+    env: [CGO_ENABLED=0]
+    goos: [windows]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags: ["-s -w -H=windowsgui -X main.version={{ .Version }}"]
+
+universal_binaries:
+  # One macOS binary for Apple silicon and Intel; it keeps the cli id so
+  # the archive picks it up.
+  - id: cli
+    ids: [cli]
+    replace: true
+
+archives:
+  - ids: [cli, windowless]
+    # Windows archives also carry agent-workbenchw.exe.
+    allow_different_binary_count: true
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ if eq .Os "darwin" }}macos{{ else }}{{ .Os }}{{ end }}_{{ if eq .Arch "all" }}universal{{ else }}{{ .Arch }}{{ end }}
+    files:
+      - docs/install.md
+
+nfpms:
+  - ids: [cli]
+    package_name: agent-workbench
+    file_name_template: "{{ .ConventionalFileName }}"
+    formats: [deb, rpm]
+    bindir: /usr/bin
+    description: Local-first web workbench for Claude Code and Codex.
+    maintainer: agent-workbench developers
+    homepage: https://github.com/winkidney/agent-workbench
+    license: MIT
+    contents:
+      - src: docs/install.md
+        dst: /usr/share/doc/agent-workbench/install.md
+    scripts:
+      postinstall: packaging/postinstall.sh
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot"
+
+changelog:
+  use: git
+  sort: asc
+
+release:
+  draft: false
+  prerelease: auto

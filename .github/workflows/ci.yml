@@ -1,0 +1,73 @@
+# Tests. Pushes and pull requests run on Linux; macOS and Windows runners
+# (billed at higher rates for private repositories) run on manual dispatch
+# and from the release workflow.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      all-platforms:
+        description: Also test on macOS and Windows
+        type: boolean
+        default: true
+  workflow_call:
+    inputs:
+      all-platforms:
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(inputs.all-platforms && '["ubuntu-latest","macos-latest","windows-latest"]' || '["ubuntu-latest"]') }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      # The binary embeds the web build.
+      - name: Web build
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+      - name: Web tests
+        if: runner.os == 'Linux'
+        working-directory: web
+        run: npm test
+      # Lets the Linux tests use systemd user units like a desktop login.
+      - name: Start a systemd user manager
+        if: runner.os == 'Linux'
+        continue-on-error: true
+        run: |
+          sudo loginctl enable-linger "$USER"
+          echo "XDG_RUNTIME_DIR=/run/user/$(id -u)" >> "$GITHUB_ENV"
+          for i in $(seq 1 30); do [ -S "/run/user/$(id -u)/bus" ] && break; sleep 1; done
+      - run: go vet ./...
+      - name: Go tests
+        if: runner.os != 'Windows'
+        run: go test -race ./...
+      # The race detector needs cgo on Windows.
+      - name: Go tests (Windows)
+        if: runner.os == 'Windows'
+        run: go test ./...
+      # Registers and removes a real login start on the throwaway runner.
+      - name: Install and uninstall
+        env:
+          AGENT_WORKBENCH_INSTALL_TEST: "1"
+        run: go test -run 'TestInstallUninstall|TestStartStatusStop' -v ./cmd/agent-workbench

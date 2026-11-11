@@ -1,0 +1,1 @@
+try{const t=localStorage.getItem('workbench-theme')||'system';const dark=t==='dark'||t==='system'&&matchMedia('(prefers-color-scheme: dark)').matches;document.documentElement.classList.toggle('dark',dark);document.documentElement.style.colorScheme=dark?'dark':'light'}catch{}
