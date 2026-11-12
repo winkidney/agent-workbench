@@ -40,6 +40,7 @@ import {
   type PrefsOp,
   type Project,
   type Session,
+  needsYou,
 } from "./tree";
 
 export const statusLabels: Record<string, string> = {
@@ -915,7 +916,7 @@ export function Sidebar({
             title="Active"
             count={model.active.length}
             badge={(() => {
-              const n = model.active.filter((x) => x.session.attention).length;
+              const n = model.active.filter(needsYou).length;
               return n ? `${n} need${n === 1 ? "s" : ""} you` : undefined;
             })()}
             forceOpen={model.searching}

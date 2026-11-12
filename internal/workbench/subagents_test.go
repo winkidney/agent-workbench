@@ -10,6 +10,7 @@ import (
 	goruntime "runtime"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 )
 
@@ -441,5 +442,106 @@ func TestCodexSubagentThreadsAreNamedByTheirPath(t *testing.T) {
 		if !ok || s.Title != want || s.ParentID != "codex:main" {
 			t.Fatalf("%s: %q %q", id, s.Title, s.ParentID)
 		}
+	}
+}
+
+func TestOwnSubagentsFollowTheEngine(t *testing.T) {
+	posixOnly(t)
+	m, p, r, _ := codexReady(t)
+	responder(t, m, p, r)("thread/goal/get", map[string]any{})
+	root := t.TempDir()
+	codex := filepath.Join(root, "codex")
+	os.MkdirAll(filepath.Join(codex, "thread-writer-locks"), 0o700)
+	db, err := sql.Open("sqlite", filepath.Join(codex, "state_5.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	spawn, _ := json.Marshal(map[string]any{"subagent": map[string]any{"thread_spawn": map[string]any{"parent_thread_id": "th", "agent_path": "/root/inspect"}}})
+	if _, err := db.Exec(`CREATE TABLE threads(id TEXT,cwd TEXT,name TEXT,title TEXT,updated_at INTEGER,source TEXT,rollout_path TEXT,archived INTEGER);INSERT INTO threads VALUES('th','/w','Main','',10,'cli','',0),('kid','/w','','',11,?,'',0)`, string(spawn)); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	m.catalog.CodexHome = codex
+	m.catalog.ClaudeHome = filepath.Join(root, "claude")
+	// The engine holds the subagent thread's writer lock, as Codex does.
+	f, _ := os.Create(filepath.Join(codex, "thread-writer-locks", "kid.lock"))
+	defer f.Close()
+	release := holdLock(f)
+	defer release()
+	status := func() (string, bool) {
+		t.Helper()
+		m.catalog.mu.Lock()
+		m.catalog.updated = time.Time{}
+		m.catalog.mu.Unlock()
+		list, err := m.NativeList()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, s := range list {
+			if s.ID == "codex:kid" {
+				return s.Status, s.ReadOnly
+			}
+		}
+		t.Fatal("subagent not listed")
+		return "", false
+	}
+	// Unknown to the engine: by its lock, another client.
+	if st, _ := status(); st != "external" && st != "external_running" {
+		t.Fatalf("before: %s", st)
+	}
+	recv := func(v map[string]any) { m.receive(r.session.ID, r.generation, v) }
+	recv(map[string]any{"method": "turn/started", "params": map[string]any{"threadId": "kid", "turn": map[string]any{"id": "k1"}}})
+	if st, ro := status(); st != "running" || !ro {
+		t.Fatalf("its turn: %s %v", st, ro)
+	}
+	recv(map[string]any{"method": "turn/completed", "params": map[string]any{"threadId": "kid", "turn": map[string]any{"id": "k1", "status": "completed"}}})
+	if st, ro := status(); st != "idle" || !ro {
+		t.Fatalf("after its turn: %s %v", st, ro)
+	}
+	// Viewing the subagent's page (no engine of its own) changes nothing.
+	if err := m.Attach("codex:kid"); err != nil {
+		t.Fatal(err)
+	}
+	if st, _ := status(); st != "idle" {
+		t.Fatalf("while viewed: %s", st)
+	}
+	// The engine gone, the lock decides again.
+	m.exited(r.session.ID, r.generation, nil)
+	if st, _ := status(); st != "external" && st != "external_running" {
+		t.Fatalf("after the engine: %s", st)
+	}
+}
+
+func TestOwnClaudeSubagentRunsWithItsTask(t *testing.T) {
+	m, _, r := claudeReady(t)
+	root := t.TempDir()
+	project := filepath.Join(root, "claude", "projects", "enc")
+	os.MkdirAll(filepath.Join(project, "native-1", "subagents"), 0o700)
+	os.WriteFile(filepath.Join(project, "native-1.jsonl"), []byte(`{"type":"user","uuid":"u","sessionId":"native-1","cwd":"/w","message":{"content":"hello"}}`+"\n"), 0o600)
+	os.WriteFile(filepath.Join(project, "native-1", "subagents", "agent-a9.jsonl"), []byte(`{"type":"user","uuid":"s","isSidechain":true,"message":{"content":"work"}}`+"\n"), 0o600)
+	m.catalog.ClaudeHome = filepath.Join(root, "claude")
+	m.catalog.CodexHome = filepath.Join(root, "codex")
+	status := func() string {
+		m.catalog.mu.Lock()
+		m.catalog.updated = time.Time{}
+		m.catalog.mu.Unlock()
+		list, _ := m.NativeList()
+		for _, s := range list {
+			if s.ID == claudeSubagentSession("native-1", "a9") {
+				return s.Status
+			}
+		}
+		return "(not listed)"
+	}
+	if st := status(); st != "sleeping" {
+		t.Fatalf("before: %s", st)
+	}
+	m.receive(r.session.ID, r.generation, map[string]any{"type": "system", "subtype": "task_started", "task_id": "a9", "tool_use_id": "toolu_B", "task_type": "local_agent", "is_backgrounded": true, "description": "Check"})
+	if st := status(); st != "running" {
+		t.Fatalf("while its task runs: %s", st)
+	}
+	m.receive(r.session.ID, r.generation, map[string]any{"type": "system", "subtype": "task_notification", "task_id": "a9", "status": "completed", "summary": "done"})
+	if st := status(); st != "sleeping" {
+		t.Fatalf("after its task: %s", st)
 	}
 }

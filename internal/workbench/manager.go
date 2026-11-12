@@ -91,8 +91,10 @@ type runtime struct {
 	// What the user would likely type next, made after the last turn
 	// (suggest.go).
 	suggestion string
-	// Codex: the subagent threads this thread started, with their paths.
-	children map[string]string
+	// Codex: the subagent threads this thread started, with their paths,
+	// and those running a turn now (subagents.go).
+	children  map[string]string
+	childBusy map[string]bool
 }
 type Manager struct {
 	// closing: the workbench is shutting down (Shutdown); engines it stops
@@ -725,6 +727,18 @@ func (m *Manager) childRecord(r *runtime, child string, v map[string]any) {
 	switch method {
 	case "serverRequest/resolved":
 		m.requestResolved(r, params)
+	case "turn/started", "turn/completed":
+		// Its own turns: the sidebar shows it at work under this session.
+		if r.childBusy == nil {
+			r.childBusy = map[string]bool{}
+		}
+		r.childBusy[child] = method == "turn/started"
+		if r.children == nil {
+			r.children = map[string]string{}
+		}
+		if _, ok := r.children[child]; !ok {
+			r.children[child] = ""
+		}
 	case "item/started", "item/completed":
 		if data := codexChildRecord(child, method, params); data != nil {
 			m.flushDelta(r)
@@ -990,7 +1004,7 @@ func (m *Manager) stop(id string, sleep, background bool) error {
 	r.ready = false
 	r.turn = false
 	r.suggestion = ""
-	r.children = nil
+	r.children, r.childBusy = nil, nil
 	m.releasePending(r)
 	clearTasks(r)
 	previews := r.previews
@@ -1044,7 +1058,7 @@ func (m *Manager) exited(id string, generation int, err error) {
 	r.ready = false
 	r.turn = false
 	r.suggestion = ""
-	r.children = nil
+	r.children, r.childBusy = nil, nil
 	m.releasePending(r)
 	clearTasks(r)
 	state := "sleeping"

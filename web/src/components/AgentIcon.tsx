@@ -2,24 +2,27 @@ import { AlertTriangle, BellRing, Hand } from "lucide-react";
 import { ATTENTION_LABEL } from "../attention";
 import { PixelChase, PixelDots, PixelMonitor, Pixels, PixelSvg } from "./pixel";
 
-// Generic agent marks in pixels (not vendor logos): a coral starburst for
-// Claude and a slate prompt tile for Codex. 16×16; drawn at 16 or 48.
+// Agent marks in pixels. Claude is the figure Claude Code draws on its own
+// welcome screen (" ▐▛███▜▌ / ▝▜█████▛▘ /   ▘▘ ▝▝ "), its quarter blocks
+// laid out as pixels with each row doubled, as a terminal cell is twice as
+// tall as wide: eyes, arms and four legs. Codex is a slate prompt tile.
+// 16×16; drawn at 16 or 48.
 export const CLAUDE_ICON = [
   "................",
-  ".......CC.......",
-  "..C....CC....C..",
-  "...C...CC...C...",
-  "....C..CC..C....",
-  ".....C.CC.C.....",
-  "......CCCC......",
-  ".CCCCCCCCCCCCCC.",
-  ".CCCCCCCCCCCCCC.",
-  "......CCCC......",
-  ".....C.CC.C.....",
-  "....C..CC..C....",
-  "...C...CC...C...",
-  "..C....CC....C..",
-  ".......CC.......",
+  "................",
+  "................",
+  "..CCCCCCCCCCCC..",
+  "..CCCCCCCCCCCC..",
+  "..CC.CCCCCC.CC..",
+  "..CC.CCCCCC.CC..",
+  "CCCCCCCCCCCCCCCC",
+  "CCCCCCCCCCCCCCCC",
+  "..CCCCCCCCCCCC..",
+  "..CCCCCCCCCCCC..",
+  "...C.C....C.C...",
+  "...C.C....C.C...",
+  "................",
+  "................",
   "................",
 ];
 export const CODEX_ICON = [

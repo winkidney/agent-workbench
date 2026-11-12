@@ -162,6 +162,15 @@ export type SidebarModel = {
   searching: boolean;
 };
 
+const isActive = (s: Session) => ACTIVE.includes(s.status) || !!s.attention;
+// A subsession at work, or waiting for the user.
+const atWork = (s: Session) =>
+  [...BUSY, "external_running"].includes(s.status) || !!s.attention;
+
+// Whether a session or one of its subsessions waits for the user.
+export const needsYou = (n: Node): boolean =>
+  !!n.session.attention || n.children.some(needsYou);
+
 // Sessions waiting for the user come first, then those at work.
 const activeRank = (s: Session) =>
   s.attention
@@ -406,17 +415,37 @@ export function buildSidebar(
   other.temporary.sort(byUpdated);
 
   const flat = [...nodes.values()].filter((n) => matches(n.session));
+  // Pinned sessions keep their subsessions under them, as in projects.
   const pinned = prefs.pinnedSessions
     .map((id) => flat.find((n) => n.session.id === id))
+    .filter((n): n is Node => !!n);
+  // Subsessions (subagents) stay under their parent here too: a session is
+  // listed when it is active or one of its subsessions is at work or needs
+  // you, with those subsessions under it, ranked by the most urgent of them.
+  // Subagents done and idle stay in the project tree only.
+  const family = (n: Node, sub = false): Node | null => {
+    const kids = n.children
+      .map((c) => family(c, true))
+      .filter((x): x is Node => !!x);
+    const listed = sub ? atWork(n.session) : isActive(n.session);
+    if (!kids.length && !(listed && matches(n.session))) return null;
+    return { ...n, children: kids };
+  };
+  const rankOf = (n: Node): number =>
+    Math.min(
+      isActive(n.session) ? activeRank(n.session) : 9,
+      ...n.children.map(rankOf),
+    );
+  const latestOf = (n: Node): string =>
+    n.children
+      .map(latestOf)
+      .reduce((a, b) => (b > a ? b : a), n.session.updated);
+  const active = roots
+    .map((n) => family(n))
     .filter((n): n is Node => !!n)
-    .map((n) => ({ ...n, children: [] }));
-  const active = flat
-    .filter((n) => ACTIVE.includes(n.session.status) || !!n.session.attention)
     .sort(
-      (a, b) =>
-        activeRank(a.session) - activeRank(b.session) || byUpdated(a, b),
-    )
-    .map((n) => ({ ...n, children: [] }));
+      (a, b) => rankOf(a) - rankOf(b) || latestOf(b).localeCompare(latestOf(a)),
+    );
   return {
     pinned,
     active,

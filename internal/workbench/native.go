@@ -670,6 +670,27 @@ func (m *Manager) NativeList() ([]Session, error) {
 			list[i].ReadOnly = true
 		}
 	}
+	// Subagents of an engine here: running while at work, else idle; read
+	// only, as their parent session takes the messages.
+	index := make(map[string]int, len(list))
+	for i, s := range list {
+		index[s.ID] = i
+	}
+	for _, r := range m.sessions {
+		for id, busy := range ownSubagents(r) {
+			// Unless it runs an engine of its own (only viewed: none).
+			if own := m.find(id); own != nil && own.proc != nil {
+				continue
+			}
+			if i, ok := index[id]; ok {
+				list[i].Status = "idle"
+				if busy {
+					list[i].Status = "running"
+				}
+				list[i].ReadOnly = true
+			}
+		}
+	}
 	for _, r := range m.sessions {
 		if r.proc == nil || r.session.NativeID == "" {
 			continue

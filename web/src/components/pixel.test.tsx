@@ -7,16 +7,17 @@ import {
   GLYPHS,
   LogoLockup,
   LogoMark,
-  SPARK,
+  CLAWD,
   TILE,
   wordmark,
 } from "./Logo";
 
 const square = (grid: string[], n: number) =>
   grid.length === n && grid.every((row) => row.length === n);
+const leftRight = (grid: string[]) =>
+  grid.every((row) => row === [...row].reverse().join(""));
 const mirrored = (grid: string[]) =>
-  grid.every((row) => row === [...row].reverse().join("")) &&
-  grid.join() === [...grid].reverse().join();
+  leftRight(grid) && grid.join() === [...grid].reverse().join();
 
 describe("pixel art", () => {
   it("draws runs as rectangles, merging rows that repeat", () => {
@@ -36,12 +37,14 @@ describe("pixel art", () => {
   it("keeps every grid whole and the agent marks symmetric", () => {
     expect(square(CLAUDE_ICON, 16) && square(CODEX_ICON, 16)).toBe(true);
     expect(square(MONITOR, 8)).toBe(true);
-    expect(mirrored(CLAUDE_ICON)).toBe(true);
+    // Claude's figure faces you: left and right match.
+    expect(leftRight(CLAUDE_ICON)).toBe(true);
+    expect(leftRight(CLAWD)).toBe(true);
     // The tile's outline is symmetric; its prompt is cut out of it.
     expect(mirrored(CODEX_ICON.map((r) => r.replace(/o/g, "X")))).toBe(true);
-    expect(SPARK.every((r) => r.length === 6)).toBe(true);
+    expect(CLAWD.every((r) => r.length === 9)).toBe(true);
     expect(TILE.every((r) => r.length === 5)).toBe(true);
-    expect(BENCH.every((r) => r.length === 13)).toBe(true);
+    expect(BENCH.every((r) => r.length === 15)).toBe(true);
     for (const [ch, g] of Object.entries(GLYPHS)) {
       expect(g.length, ch).toBe(7);
       expect(new Set(g.map((r) => r.length)).size, ch).toBe(1);
@@ -84,7 +87,7 @@ describe("pixel art", () => {
     const lockup = renderToStaticMarkup(<LogoLockup />);
     expect(lockup).toContain('aria-label="Agent Workbench"');
     // Mark, gap and "workbench." at two CSS pixels each.
-    expect(lockup).toContain('width="128"');
+    expect(lockup).toContain('width="132"');
     expect(lockup).toContain('height="18"');
     expect(renderToStaticMarkup(<LogoMark scale={3} />)).toContain(
       'width="48"',

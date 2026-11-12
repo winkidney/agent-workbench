@@ -104,7 +104,7 @@ HTML and dev-server previews use `p-*.agent.localhost` addresses in a browser on
 
 ## The sidebar
 
-- **Agent icons:** the coral pixel burst is Claude, the slate `>_` tile is Codex.
+- **Agent icons:** Claude is the orange pixel figure Claude Code shows on its own welcome screen, and Codex is the slate `>_` tile.
 - **Status icons:** the icon at the right end of each row shows what the session is doing:
   - Running: a block chasing round a ring of pixels.
   - Connecting: three blocks lighting in turn.
@@ -117,6 +117,10 @@ HTML and dev-server previews use `p-*.agent.localhost` addresses in a browser on
 - **Sessions that need you** (an approval, a question, a plan to decide on, including Codex's async questions and "Implement this plan?") get a filled bell badge and a highlighted row, come first under **Active** even while their engine sleeps, and the Active header counts them ("2 need you"). The tab title shows the count, as in "(2) Agent Workbench"; on narrow screens a dot on the sessions button points to them while the sidebar is closed.
 - **Desktop notifications** announce a session that starts needing you while the page is in the background. Turn them on or off per browser in the "⋯" menu (Desktop notifications); turning them on asks the browser for permission. They need https or localhost.
 - **Active** lists sessions that are running, waiting, loaded or in use elsewhere. **Pinned** keeps the sessions you pin, in pin order.
+- **Subagents in Active and Pinned.** As in the project tree, subagents (Claude's Agent calls, Codex's spawned threads) appear under their parent session, not as separate rows:
+  - A parent is listed while it or one of its subagents is at work. Its row shows "N sub" and opens to the subagents that are running or waiting for you; finished subagents stay in the project tree.
+  - A family that needs you comes first.
+  - The subagents of a session this workbench runs show as running while they work and idle afterwards, not as "in another client". Their pages are read only, and their parent session takes the messages.
 - **Projects** groups sessions by the directory they were started in (moving elsewhere inside the session doesn't change that), nests subdirectories, and folds shared path prefixes into one folder. A session that worked across several subprojects shows them on a second line (`↗ api, web`) and is listed under each of them as related.
 - **Other** holds sessions that are not project work: `codex exec` runs, temporary directories, and chats from the home directory or the Codex app.
 - **Search** (press `/`) matches titles, projects and agents; separate words with spaces.

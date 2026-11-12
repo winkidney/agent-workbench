@@ -561,3 +561,26 @@ func (m *Manager) subagentOf(r *runtime, v any) map[string]any {
 	}
 	return info
 }
+
+// ownSubagents is the state of the subagent sessions an engine here runs
+// (m.mu held), by session id: true while at work. Their records are locked
+// by this engine, which the session list would otherwise take for another
+// client.
+func ownSubagents(r *runtime) map[string]bool {
+	out := map[string]bool{}
+	if r.proc == nil || r.session.NativeID == "" {
+		return out
+	}
+	if r.session.Agent == "codex" {
+		for thread := range r.children {
+			out[nativeKey("codex", thread)] = r.childBusy[thread]
+		}
+		return out
+	}
+	for _, t := range r.tasks {
+		if t.Source == "claude" && t.Kind == "agent" && t.Status == "running" {
+			out[claudeSubagentSession(r.session.NativeID, t.ID)] = true
+		}
+	}
+	return out
+}

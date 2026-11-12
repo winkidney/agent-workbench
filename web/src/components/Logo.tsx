@@ -1,12 +1,18 @@
 import { Pixels, PixelSvg } from "./pixel";
 
-// The workbench's mark: two agents on a bench. Claude's coral spark (C) and
-// Codex's slate tile (X, with a prompt and cursor cut out) sit on the bench
-// (#). 13×9 pixels.
-export const SPARK = [".C.C.C", "..CCC.", ".CCCCC", "..CCC.", ".C.C.C"];
+// The workbench's mark: two agents on a bench. Claude's figure (C, a small
+// Claude Code mascot: eyes, arms, four legs) and Codex's slate tile (X, with
+// a prompt and cursor cut out) sit on the bench (#). 15×9 pixels.
+export const CLAWD = [
+  ".CCCCCCC.",
+  ".C.CCC.C.",
+  "CCCCCCCCC",
+  ".CCCCCCC.",
+  ".C.C.C.C.",
+];
 export const TILE = ["XXXXX", "XoXXX", "XXoXX", "XoXoX", "XXXXX"];
-export const BENCH = ["#############", ".#.........#.", ".#.........#."];
-export const MARK_W = 13;
+export const BENCH = ["###############", ".#...........#.", ".#...........#."];
+export const MARK_W = 15;
 export const MARK_H = 9;
 
 const COLORS = {
@@ -40,13 +46,13 @@ export function wordmark(word: string): { x: number; glyph: string[] }[] {
   });
 }
 
-// The mark's parts; the spark and the tile hop (and the cursor blinks)
+// The mark's parts; the figure and the tile hop (and the cursor blinks)
 // while the pointer is on the logo.
 function MarkParts({ x = 0, y = 0 }: { x?: number; y?: number }) {
   return (
     <>
-      <Pixels grid={SPARK} palette={COLORS} x={x} y={y} className="px-hop" />
-      <g transform={`translate(${x + 7} ${y})`}>
+      <Pixels grid={CLAWD} palette={COLORS} x={x} y={y} className="px-hop" />
+      <g transform={`translate(${x + 10} ${y})`}>
         <g className="px-hop px-hop-late">
           <Pixels grid={TILE} palette={COLORS} />
           <Pixels
@@ -108,7 +114,7 @@ export function LogoMark({
 }) {
   return (
     <PixelSvg w={16} h={16} scale={scale} label={label} className="logo">
-      <MarkParts x={1} y={3} />
+      <MarkParts x={0} y={3} />
     </PixelSvg>
   );
 }

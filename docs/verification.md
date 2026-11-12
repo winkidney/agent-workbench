@@ -419,3 +419,23 @@ These are maintainer notes on how each feature of Agent Workbench was verified, 
   - The tab icon is served as `image/svg+xml`.
   - The test session was deleted afterwards.
 
+## Subagents under their parent in the sidebar, and Claude's icon
+
+- Before:
+  - Active and Pinned listed sessions flat. A Codex session's spawned threads (each with `parentId` from its `thread_spawn`) showed as rows of their own next to the parent, and the count included them.
+  - The subagent threads of a session this workbench ran were shown as "running in another client", because the writer lock held by our own app-server looked like another client's.
+  - Claude's pixel starburst, striped in coral, read as a flag.
+- Change:
+  - **Active:** built from families. A parent is listed when it or a subagent is at work or needs the user, with those subagents under it (folded, "N sub"). Families are ranked by their most urgent member and their latest activity. A subagent whose parent is not listed stands alone, and a search that finds a subagent shows it under its parent.
+  - **Pinned:** a pinned parent keeps its subsessions.
+  - **Status of our own subagents:** the engine tracks its subagents' turns (Codex `turn/started` / `turn/completed` on the child thread) and its Claude agent tasks. The session list shows those subagents as running or idle, read only, unless one runs an engine of its own. Viewing a subagent's page does not count as that. Every subagent page reads "Subagent transcript · read only".
+  - **Claude's icon:** Claude is now the figure from Claude Code's welcome screen (` ▐▛███▜▌ / ▝▜█████▛▘ /   ▘▘ ▝▝ `), its quarter blocks laid out as pixels with rows doubled. The logo's agent is a 9×5 version, so the mark is 15 wide and the lockup 132 px; the tab icon follows.
+- New tests:
+  - Go race: a subagent thread whose lock the engine holds shows as another client until the engine sees its turn, then running, then idle, read only; viewing its page changes nothing; after the engine exits the lock decides again. A Claude subagent is running while its agent task runs and sleeping after.
+  - Vitest: families in Active (only working subagents under a parent, a parent asleep while its subagent works, an orphan alone, search, a subagent that needs you counting for its family), pinned parents keeping subsessions, the figure's left-right symmetry, and the new mark sizes.
+- Real checks (dev instance, test sessions in scratch folders, deleted afterwards):
+  - A Codex session spawned two subagents running `sleep`. While they ran, both were "running", read only, and listed under the parent. Their page showed the read-only placeholder and "Subagent of …". After they finished, the parent stayed in Active without them.
+  - A real session running in another client showed its three subagent threads folded under it as "3 sub".
+  - A Claude background subagent showed as running under its parent ("1 sub") and was sleeping after.
+  - Screenshots at 4× device pixels of the figure (16 px), the logo and the rows.
+

@@ -30,6 +30,8 @@ type ComposerSession = {
   archived?: boolean;
   status: string;
   source?: string;
+  // A subagent's session: the parent session takes its messages.
+  parentId?: string;
 };
 
 // Unsent drafts survive switching sessions.
@@ -258,7 +260,7 @@ export function Composer({
           placeholder={
             suggestion
               ? suggestion
-              : session.source === "subagent"
+              : session.source === "subagent" || session.parentId
                 ? "Subagent transcript · read only; continue in the parent session"
                 : session.archived
                   ? "Archived · unarchive to continue"

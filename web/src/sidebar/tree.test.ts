@@ -3,6 +3,7 @@ import {
   applyOp,
   buildSidebar,
   emptyPrefs,
+  needsYou,
   relativeTime,
   resumeCommand,
   type Project,
@@ -72,6 +73,67 @@ describe("sidebar tree", () => {
       "claude:b",
       "claude:c",
     ]);
+  });
+
+  it("keeps subagents under their parent in the active list", () => {
+    const list = [
+      s("codex:p", "/w/app", "2026-11-10T09:00:00Z", { status: "running" }),
+      s("codex:k1", "/w/app", "2026-11-10T09:05:00Z", {
+        status: "external_running",
+        parentId: "codex:p",
+        title: "ui_architecture",
+      }),
+      s("codex:k2", "/w/app", "2026-11-10T09:06:00Z", {
+        status: "external",
+        parentId: "codex:p",
+        title: "state_contracts",
+      }),
+      // Done and asleep: not listed as at work.
+      s("codex:k3", "/w/app", "2026-11-10T09:01:00Z", {
+        parentId: "codex:p",
+        title: "save_domains",
+      }),
+      // A parent asleep while its subagent still works.
+      s("claude:q", "/w/app", "2026-11-09T09:00:00Z"),
+      s("claude:q:agent-a1", "/w/app", "2026-11-09T09:10:00Z", {
+        status: "running",
+        parentId: "claude:q",
+      }),
+      // A subagent whose parent is not listed stands alone.
+      s("codex:orphan", "/w/app", "2026-11-08T09:00:00Z", {
+        status: "idle",
+        parentId: "codex:gone",
+      }),
+    ];
+    const tree = (m: ReturnType<typeof buildSidebar>) =>
+      m.active.map((n) => [n.session.id, n.children.map((c) => c.session.id)]);
+    // Only subagents at work hang under it; idle ones stay in the project.
+    expect(tree(buildSidebar(list, emptyPrefs()))).toEqual([
+      ["codex:p", ["codex:k1"]],
+      ["claude:q", ["claude:q:agent-a1"]],
+      ["codex:orphan", []],
+    ]);
+    // Searching for a subagent shows it under its parent.
+    expect(
+      tree(buildSidebar(list, emptyPrefs(), { query: "architecture" })),
+    ).toEqual([["codex:p", ["codex:k1"]]]);
+    // A subagent that needs you counts for its family, which comes first.
+    const asking = list.map((x) =>
+      x.id === "claude:q:agent-a1" ? { ...x, attention: "approval" } : x,
+    );
+    const m = buildSidebar(asking, emptyPrefs());
+    expect(m.active[0].session.id).toBe("claude:q");
+    expect(m.active.filter(needsYou).map((n) => n.session.id)).toEqual([
+      "claude:q",
+    ]);
+    // A pinned parent keeps its subsessions.
+    const pinned = buildSidebar(
+      list,
+      applyOp(emptyPrefs(), "pinSession", "codex:p"),
+    );
+    expect(pinned.pinned[0].children.map((c) => c.session.id)).toEqual(
+      expect.arrayContaining(["codex:k1", "codex:k2", "codex:k3"]),
+    );
   });
 
   it("keeps pin order and puts pinned projects first", () => {
