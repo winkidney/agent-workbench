@@ -49,14 +49,14 @@ Agent Workbench runs on your machine next to `claude` and `codex` and gives both
 - Layouts for desktop and phone.
 
 **Themes**
-- Light, dark or system mode, with any of nine color themes: Default (each CLI's own colors), Everforest, Gruvbox, Solarized, Paper (sepia), Catppuccin, Rosé Pine, Nord and Tokyo Night. A theme colors the interface, code highlighting and terminal output alike.
+- Light, dark or system mode, with any of ten color themes: Default (each CLI's own colors), Everforest, Gruvbox, Solarized, Paper (sepia), Catppuccin, Rosé Pine, Nord, Tokyo Night and Darcula (JetBrains' Darcula and IntelliJ Light). A theme colors the interface, code highlighting and terminal output alike.
 
 **Packaged for macOS, Windows and Linux**
 - One binary. `agent-workbench install` starts it at login (systemd user unit, launchd agent or Run key).
 
 | Steering a running turn | Commands | Phone |
 | --- | --- | --- |
-| ![A running Codex turn with a steered message and a queued message](docs/screenshots/steer.png) | ![The / command menu](docs/screenshots/commands.png) | ![The phone layout in dark mode](docs/screenshots/mobile.png) |
+| ![A running Claude Code turn with a steered message and a queued message](docs/screenshots/steer.png) | ![The / command menu](docs/screenshots/commands.png) | ![The phone layout in dark mode](docs/screenshots/mobile.png) |
 
 ## Quick start
 

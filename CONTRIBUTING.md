@@ -59,7 +59,7 @@ Optional acceptance scripts in `scripts/` use real agents or the real service:
 
 ## Screenshots
 
-The images in `docs/screenshots/` come from a demo project (`/tmp/aw-demo/acme-shop`) and sessions created only for them, on a development instance, captured with Playwright at 1440×900 (390×800 for the phone). Before saving, check that the page text shows nothing from your own machine: user names, home paths, host names, other projects.
+The images in `docs/screenshots/` come from a demo project (`/dev/shm/aw-demo/acme-shop`; a project under `/tmp` would be listed as temporary, not under Projects) with a placeholder git author, and sessions created only for them, on a development instance, captured with Playwright at 1440×900 (390×844 at 2× for the phone). The sidebar search is set to the project's folder (`aw-demo`), so only its sessions show. Before saving, check that the page text shows nothing from your own machine: user names, home paths, host names, addresses, other projects, your own skills and commands. Delete the sessions afterwards.
 
 ## Releases
 
