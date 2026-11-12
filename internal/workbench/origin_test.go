@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -137,5 +138,119 @@ func TestWorkspacesSkipTemporaryAndChatRoots(t *testing.T) {
 	}
 	if len(list) != 1 || list[0] != workspaceNamespace(work) {
 		t.Fatalf("workspaces %v", list)
+	}
+}
+
+// A first prompt with a screenshot is longer than the head that used to be
+// read; the cwd and title then came from the tail: a subproject the shell
+// had cd'd into, and a tool's output.
+func TestClaudeCreatedInSurvivesALargeFirstPrompt(t *testing.T) {
+	posixOnly(t)
+	root := realTempDir(t)
+	launch := filepath.Join(root, "workspace")
+	sub := filepath.Join(launch, "subproject")
+	os.MkdirAll(sub, 0700)
+	path := filepath.Join(root, "claude", "projects", claudeProjectName(launch), "s1.jsonl")
+	records := []map[string]any{
+		{"type": "permission-mode", "permissionMode": "auto"},
+		{"type": "user", "uuid": "u", "cwd": launch, "message": map[string]any{"role": "user", "content": []any{
+			map[string]any{"type": "image", "source": map[string]any{"type": "base64", "media_type": "image/png", "data": strings.Repeat("A", 300<<10)}},
+			map[string]any{"type": "text", "text": "analyse flicker"},
+		}}},
+	}
+	for i := 0; i < 200; i++ {
+		records = append(records, map[string]any{"type": "user", "uuid": fmt.Sprint("r", i), "cwd": sub, "message": map[string]any{"role": "user", "content": []any{
+			map[string]any{"type": "tool_result", "tool_use_id": "t", "content": strings.Repeat("277: path := x ", 100)},
+		}}})
+	}
+	writeJSONL(t, path, records...)
+	if s, ok := readClaudeMetadata(path); !ok || s.Cwd != launch || s.Title != "analyse flicker" {
+		t.Fatalf("cwd %q title %q ok=%v", s.Cwd, s.Title, ok)
+	}
+	// A rename since, in the tail, still names it.
+	writeJSONL(t, path, append(records, map[string]any{"type": "custom-title", "customTitle": "Flicker"})...)
+	if s, _ := readClaudeMetadata(path); s.Title != "Flicker" || s.Cwd != launch {
+		t.Fatalf("renamed: cwd %q title %q", s.Cwd, s.Title)
+	}
+}
+
+// A session forked from another project starts with that project's
+// records; it was created where its project folder says.
+func TestClaudeCreatedInIsItsProjectFolder(t *testing.T) {
+	posixOnly(t)
+	root := realTempDir(t)
+	launch := filepath.Join(root, "workspace")
+	other := filepath.Join(root, "elsewhere")
+	os.MkdirAll(launch, 0700)
+	os.MkdirAll(other, 0700)
+	path := filepath.Join(root, "claude", "projects", claudeProjectName(launch), "fork.jsonl")
+	writeJSONL(t, path,
+		map[string]any{"type": "user", "uuid": "t", "cwd": other, "message": map[string]any{"content": []any{map[string]any{"type": "tool_result", "content": "ok"}}}},
+		map[string]any{"type": "user", "uuid": "u", "cwd": other, "message": map[string]any{"content": []any{map[string]any{"type": "text", "text": "carry on"}}}},
+	)
+	s, ok := readClaudeMetadata(path)
+	if !ok || s.Cwd != launch {
+		t.Fatalf("cwd %q ok=%v", s.Cwd, ok)
+	}
+	// A tool result is not a prompt.
+	if s.Title != "carry on" {
+		t.Fatalf("title %q", s.Title)
+	}
+}
+
+// Codex keeps the cwd of a thread's latest turn in its index; the thread
+// belongs where its record says it was created.
+func TestCodexWorkspaceIsWhereTheThreadWasCreated(t *testing.T) {
+	posixOnly(t)
+	root := realTempDir(t)
+	created := filepath.Join(root, "created")
+	moved := filepath.Join(root, "moved")
+	os.MkdirAll(created, 0700)
+	os.MkdirAll(moved, 0700)
+	home := filepath.Join(root, "codex")
+	record := func(cwd string) []byte {
+		var b strings.Builder
+		for _, v := range []map[string]any{
+			{"type": "session_meta", "payload": map[string]any{"id": "x", "cwd": cwd, "base_instructions": strings.Repeat("i", 100<<10)}},
+			{"type": "turn_context", "payload": map[string]any{"cwd": moved}},
+		} {
+			raw, _ := json.Marshal(v)
+			b.Write(raw)
+			b.WriteByte('\n')
+		}
+		return []byte(b.String())
+	}
+	dir := filepath.Join(home, "sessions", "2026", "11", "01")
+	os.MkdirAll(dir, 0700)
+	plain := filepath.Join(dir, "rollout-a.jsonl")
+	os.WriteFile(plain, record(created), 0600)
+	packed := filepath.Join(dir, "rollout-b.jsonl")
+	writeZstd(t, packed+".zst", record(created))
+	codexIndex(t, home,
+		[]any{"a", plain, 1, 30, "cli", moved, "Plain", "", 0, "hi", 1, "paginated"},
+		[]any{"b", packed, 1, 20, "cli", moved, "Packed", "", 0, "hi", 1, "paginated"},
+		[]any{"c", filepath.Join(dir, "rollout-gone.jsonl"), 1, 10, "cli", moved, "Gone", "", 0, "hi", 1, "legacy"},
+	)
+	c := NewNativeCatalog()
+	c.CodexHome = home
+	c.ClaudeHome = filepath.Join(root, "claude")
+	list, err := c.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"codex:a": created, "codex:b": created, "codex:c": moved}
+	for _, s := range list {
+		w, ok := want[s.ID]
+		if !ok {
+			continue
+		}
+		// It still runs where Codex last worked.
+		if s.Workspace != workspaceNamespace(w) || s.Cwd != moved {
+			t.Fatalf("%s: workspace %q cwd %q", s.ID, s.Workspace, s.Cwd)
+		}
+		delete(want, s.ID)
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing %v", want)
 	}
 }

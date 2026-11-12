@@ -1,7 +1,6 @@
 package workbench
 
 import (
-	"bufio"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -33,12 +32,14 @@ type NativeCatalog struct {
 	// What the last refreshes read: Codex's threads for its index's stamp,
 	// Claude's transcripts by path for their size and time, and the list's
 	// positions by id.
-	codexRows   []Session
-	codexPaths  map[string]string
-	codexSeen   string
-	claudeFiles map[string]claudeFile
-	claudeOrder []string
-	byID        map[string]int
+	codexRows  []Session
+	codexPaths map[string]string
+	codexSeen  string
+	// Where each Codex thread was created, by id: it never changes.
+	codexOrigins map[string]string
+	claudeFiles  map[string]claudeFile
+	claudeOrder  []string
+	byID         map[string]int
 }
 
 func NewNativeCatalog() *NativeCatalog {
@@ -121,13 +122,17 @@ func (c *NativeCatalog) refreshLocked() error {
 		out = append(out, e.s)
 		paths[e.s.ID] = f
 	}
+	// A session belongs where it was created; its cwd may have moved since.
 	namespaces := map[string]string{}
 	for i := range out {
-		cwd := out[i].Cwd
-		key, ok := namespaces[cwd]
+		dir := out[i].Workspace
+		if dir == "" {
+			dir = out[i].Cwd
+		}
+		key, ok := namespaces[dir]
 		if !ok {
-			key = workspaceNamespace(cwd)
-			namespaces[cwd] = key
+			key = workspaceNamespace(dir)
+			namespaces[dir] = key
 		}
 		out[i].Workspace = key
 		out[i].Origin = sessionOrigin(out[i])
@@ -160,6 +165,9 @@ func (c *NativeCatalog) codexRowsLocked() (bool, error) {
 		return false, nil
 	}
 	rows, paths := []Session{}, map[string]string{}
+	origins := make(map[string]string, len(c.codexOrigins))
+	var created originReader
+	defer created.Close()
 	if db, err := openCodexState(path); err == nil {
 		defer db.Close()
 		// Archived threads too: the sidebar shows them on request.
@@ -202,10 +210,22 @@ func (c *NativeCatalog) codexRowsLocked() (bool, error) {
 				s.ParentID = nativeKey("codex", s.ParentID)
 			}
 			paths[s.ID] = rollout.String
+			// Its index's cwd is where its latest turn ran: the directory
+			// it was created in is in its record.
+			origin, known := c.codexOrigins[s.NativeID]
+			if !known {
+				if file, ok := codexRecord(c.CodexHome, rollout.String); ok {
+					origin = created.createdIn(file)
+				}
+			}
+			if origin != "" {
+				origins[s.NativeID] = origin
+				s.Workspace = origin
+			}
 			rows = append(rows, s)
 		}
 	}
-	c.codexRows, c.codexPaths, c.codexSeen = rows, paths, stamp
+	c.codexRows, c.codexPaths, c.codexSeen, c.codexOrigins = rows, paths, stamp, origins
 	return true, nil
 }
 
@@ -349,40 +369,87 @@ func readClaudeMetadata(path string) (Session, bool) {
 		return Session{}, false
 	}
 	s := Session{Agent: "claude", NativeID: id, ID: nativeKey("claude", id), Status: "sleeping", Updated: info.ModTime().UTC().Format(time.RFC3339), Source: "cli"}
-	var reader io.Reader = file
-	if info.Size() > 262144 {
-		head := make([]byte, 131072)
-		n, _ := file.ReadAt(head, 0)
-		tail := make([]byte, 131072)
-		k, _ := file.ReadAt(tail, info.Size()-131072)
-		reader = io.MultiReader(strings.NewReader(string(head[:n])+"\n"), strings.NewReader(string(tail[:k])))
-	}
-	scan := bufio.NewScanner(reader)
-	scan.Buffer(make([]byte, 65536), 4*1024*1024)
-	for scan.Scan() {
+	var firstCwd, prompt, custom string
+	read := func(line []byte, head bool) {
 		var v map[string]any
-		if json.Unmarshal(scan.Bytes(), &v) != nil {
-			continue
+		if json.Unmarshal(line, &v) != nil {
+			return
 		}
-		// The first recorded cwd is the launch directory; later records follow `cd`s.
-		if cwd := str(v["cwd"]); cwd != "" && s.Cwd == "" {
-			s.Cwd = cwd
+		// Only the head tells where the session was created: later records
+		// follow the `cd`s of its shell.
+		if cwd := str(v["cwd"]); head && cwd != "" && firstCwd == "" {
+			firstCwd = cwd
 		}
 		if str(v["type"]) == "custom-title" {
-			s.Title = str(v["customTitle"])
+			custom = str(v["customTitle"])
 		}
-		if s.Title == "" && v["type"] == "user" && v["isMeta"] != true {
-			content := obj(v["message"])["content"]
-			s.Title = sessionTitle(nativeText(content))
+		if prompt == "" && v["type"] == "user" && v["isMeta"] != true {
+			prompt = sessionTitle(claudePrompt(obj(v["message"])["content"]))
 		}
+	}
+	// The head is whole lines, however long: a first prompt with images
+	// can be megabytes. The tail, for a rename since, starts at a line.
+	const part = 131072
+	head := newLineReader(file)
+	var consumed int64
+	for consumed < part && head.Scan() {
+		consumed += int64(len(head.Bytes())) + 1
+		read(head.Bytes(), true)
+	}
+	if from := info.Size() - part; head.Err() == nil && consumed < info.Size() {
+		skip := from > consumed
+		if !skip {
+			from = consumed
+		}
+		tail := newLineReader(io.NewSectionReader(file, from, info.Size()-from))
+		for tail.Scan() {
+			if skip {
+				skip = false
+				continue
+			}
+			read(tail.Bytes(), false)
+		}
+	}
+	s.Title = custom
+	if s.Title == "" {
+		s.Title = prompt
 	}
 	if s.Title == "" {
 		s.Title = id
 	}
-	if s.Cwd == "" {
-		s.Cwd = decodeClaudeProject(filepath.Base(filepath.Dir(path)))
-	}
+	s.Cwd = claudeCreatedIn(filepath.Base(filepath.Dir(path)), firstCwd)
 	return s, s.Cwd != ""
+}
+
+// claudeCreatedIn is the directory a Claude session was created in: Claude
+// Code keeps it in the project folder named after that directory. The name
+// is lossy, so the first recorded cwd gives it when it names that folder; a
+// session forked from another project starts with the other one's records.
+func claudeCreatedIn(folder, firstCwd string) string {
+	if firstCwd != "" && claudeProjectName(firstCwd) == folder {
+		return firstCwd
+	}
+	if dir := decodeClaudeProject(folder); dir != "" {
+		return dir
+	}
+	// Gone, or a name too long that Claude Code shortened.
+	return firstCwd
+}
+
+// claudePrompt is the text a person wrote in a user record; tool results are
+// user records too, and are not prompts.
+func claudePrompt(content any) string {
+	if s, ok := content.(string); ok {
+		return s
+	}
+	parts, _ := content.([]any)
+	text := []string{}
+	for _, part := range parts {
+		if p := obj(part); str(p["type"]) == "text" {
+			text = append(text, str(p["text"]))
+		}
+	}
+	return strings.Join(text, "\n")
 }
 
 var claudeUnsafe = regexp.MustCompile(`[^A-Za-z0-9]`)

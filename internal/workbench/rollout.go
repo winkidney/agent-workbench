@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -51,6 +52,53 @@ func codexRecord(home, recorded string) (recordFile, bool) {
 		}
 	}
 	return recordFile{}, false
+}
+
+// originReader reads where Codex threads were created. It keeps one
+// decoder: setting one up costs several times reading a first line.
+type originReader struct{ dec *zstd.Decoder }
+
+// createdIn is the directory a Codex thread was created in: the cwd of its
+// record's first line, session_meta. "" when it cannot be read yet.
+func (o *originReader) createdIn(f recordFile) string {
+	file, err := os.Open(f.Path)
+	if err != nil {
+		return ""
+	}
+	defer file.Close()
+	var r io.Reader = file
+	if f.Zstd {
+		if o.dec == nil {
+			// One goroutine: nothing reads a file after it is closed.
+			if o.dec, err = zstd.NewReader(nil, zstd.WithDecoderConcurrency(1), zstd.WithDecoderLowmem(true), zstd.WithDecoderMaxWindow(recordMaxWindow)); err != nil {
+				return ""
+			}
+		}
+		if o.dec.Reset(file) != nil {
+			return ""
+		}
+		r = o.dec
+	}
+	lines := newLineReader(r)
+	if !lines.Scan() {
+		return ""
+	}
+	var first struct {
+		Type    string `json:"type"`
+		Payload struct {
+			Cwd string `json:"cwd"`
+		} `json:"payload"`
+	}
+	if json.Unmarshal(lines.Bytes(), &first) != nil || first.Type != "session_meta" {
+		return ""
+	}
+	return first.Payload.Cwd
+}
+
+func (o *originReader) Close() {
+	if o.dec != nil {
+		o.dec.Close()
+	}
 }
 
 // homeRelative is a record's path inside a Codex home: from its sessions/
