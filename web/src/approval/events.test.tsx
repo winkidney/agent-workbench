@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { content, fields, parseElicitation } from "./elicitation";
 import { parseRequest, permissionItems } from "./ApprovalCard";
-import { ElicitationForm } from "./Elicitation";
+import { ElicitationForm } from "./ElicitationForm";
 import { applyEvents, emptyState } from "../transcript/reducer";
 import { changedFiles } from "../transcript/codex";
 import { toolSummary } from "../transcript/summarize";

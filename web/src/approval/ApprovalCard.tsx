@@ -20,7 +20,7 @@ import { DiffView } from "../transcript/Timeline";
 import { Markdown } from "../transcript/Markdown";
 import { useEnv } from "../transcript/media";
 import { Choices } from "./Choices";
-import { ElicitationForm } from "./Elicitation";
+import { ElicitationForm } from "./ElicitationForm";
 import { parseElicitation, type Elicitation } from "./elicitation";
 
 export type Decision = "allow" | "allowAlways" | "deny" | "cancel";
