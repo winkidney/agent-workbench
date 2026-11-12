@@ -459,3 +459,20 @@ These are maintainer notes on how each feature of Agent Workbench was verified, 
 - **Tests:** the theme suite, with a light and a dark block, every token, and contrast floors for text, conversation, syntax and terminal colors, also covers Darcula.
 - **Real checks:** a session's tool output, a reply with a heading, inline code, a link and a TypeScript block, and the theme menu, in dark and light. The test session was deleted.
 
+## Agent and status icons at one size
+
+- Before: the status icons were 8×8 grids drawn at 2 CSS pixels each, so their pixels were twice as coarse as the agent icons' (16×16 at 1 each). The monitor was 16×14 and the chase filled its whole 16×16 square, so both looked bigger and heavier than Claude's figure (16×10) and the Codex tile (14×14).
+- Change (`components/pixel.tsx`, `AgentIcon.tsx`):
+  - **One spec** for the agent icons and the pixel status icons: a 16×16 grid at one CSS pixel each; ink within the middle 14×14, 14 wide and centered vertically; strokes and blocks 2 pixels thick.
+  - **Monitor:** 14×10, the same box as Claude's figure, with a 2-pixel frame. The cursor (2×2) and the typing line (8×2, in steps of 2) keep their sizes.
+  - **Running:** 14×14, eight 4×4 dots with their corners cut and 1-pixel gaps. A tool's row in the transcript keeps the 8×8 ring, so its pixels stay whole.
+  - **Connecting:** three of the same dots, 14×4, centered.
+  - **Claude's figure:** the arms are one pixel shorter on each side, so it is 14 wide. The Codex tile already matched.
+  - Each icon is one grid of characters, with its animated parts lettered. Waiting, error, needs-you, idle and background icons are unchanged.
+- New tests (Vitest): each sidebar icon is 16×16, with ink 14 wide within the middle 14×14 and centered; Claude's figure and the monitor fill the same box; each of the eight dots has 12 pixels; the transcript's ring stays 8×8.
+- Real checks (dev instance with empty Claude and Codex homes; the session list was stubbed in the browser with one session per state):
+  - In the sidebar, the agent icons and the running, connecting and monitor icons all measured 14 px wide.
+  - At 1× and 2× device pixels, the drawn icons on each row share the same vertical center. For example, Claude's figure and the monitor fill the same rows.
+  - Screenshots at 4× device pixels: Default theme light and dark, Darcula dark and light.
+  - The busy monitor's typing frames show the line at 2, 4, 6 and 8 px.
+  - Reduced motion: two screenshots 450 ms apart were identical.

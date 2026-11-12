@@ -106,13 +106,14 @@ HTML and dev-server previews use `p-*.agent.localhost` addresses in a browser on
 
 - **Agent icons:** Claude is the orange pixel figure Claude Code shows on its own welcome screen, and Codex is the slate `>_` tile.
 - **Status icons:** the icon at the right end of each row shows what the session is doing:
-  - Running: a block chasing round a ring of pixels.
-  - Connecting: three blocks lighting in turn.
+  - Running: a bright dot running round a ring of eight.
+  - Connecting: three dots lighting in turn.
   - Waiting for approval: a hand.
   - Open in another client: a pixel monitor with a blinking cursor; when a turn is running there, text types across its screen.
   - Error: a triangle.
   - Engine loaded: a dot.
   - Otherwise, the time of the last activity.
+- **One size:** the agent icons and the pixel status icons share one spec, so they look the same size: 14 pixels wide, centered in a 16-pixel square, with the same pixel size and 2-pixel strokes.
 - **Reduced motion:** with the system's reduce-motion setting on, the animations stop and hold a frame that still shows the state.
 - **Sessions that need you** (an approval, a question, a plan to decide on, including Codex's async questions and "Implement this plan?") get a filled bell badge and a highlighted row, come first under **Active** even while their engine sleeps, and the Active header counts them ("2 need you"). The tab title shows the count, as in "(2) Agent Workbench"; on narrow screens a dot on the sessions button points to them while the sidebar is closed.
 - **Desktop notifications** announce a session that starts needing you while the page is in the background. Turn them on or off per browser in the "⋯" menu (Desktop notifications); turning them on asks the browser for permission. They need https or localhost.

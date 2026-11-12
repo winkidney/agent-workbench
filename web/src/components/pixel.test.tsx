@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { MONITOR, pixelRects } from "./pixel";
+import {
+  CHASE,
+  CHASE_SMALL,
+  DOTS,
+  inkBounds,
+  MONITOR,
+  PixelChase,
+  pixelRects,
+} from "./pixel";
 import { AgentIcon, CLAUDE_ICON, CODEX_ICON, StatusIcon } from "./AgentIcon";
 import {
   BENCH,
@@ -36,7 +44,6 @@ describe("pixel art", () => {
 
   it("keeps every grid whole and the agent marks symmetric", () => {
     expect(square(CLAUDE_ICON, 16) && square(CODEX_ICON, 16)).toBe(true);
-    expect(square(MONITOR, 8)).toBe(true);
     // Claude's figure faces you: left and right match.
     expect(leftRight(CLAUDE_ICON)).toBe(true);
     expect(leftRight(CLAWD)).toBe(true);
@@ -50,6 +57,30 @@ describe("pixel art", () => {
       expect(new Set(g.map((r) => r.length)).size, ch).toBe(1);
     }
     expect(wordmark("work").map((l) => l.x)).toEqual([0, 6, 11, 16]);
+  });
+
+  it("draws the sidebar's icons to one spec", () => {
+    const icons = { CLAUDE_ICON, CODEX_ICON, MONITOR, CHASE, DOTS };
+    for (const [name, grid] of Object.entries(icons)) {
+      // 16×16 at one CSS pixel each.
+      expect(square(grid, 16), name).toBe(true);
+      // Ink 14 wide within the middle 14×14, centred.
+      const b = inkBounds(grid);
+      expect(b.left, name).toBe(1);
+      expect(b.w, name).toBe(14);
+      expect(b.top, name).toBeGreaterThanOrEqual(1);
+      expect(b.h, name).toBeLessThanOrEqual(14);
+      expect(16 - b.top - b.h, name).toBe(b.top);
+    }
+    // Claude's figure and the monitor fill the same box.
+    expect(inkBounds(MONITOR)).toEqual(inkBounds(CLAUDE_ICON));
+    // Eight dots of 12 pixels round the ring; the small ring stays 8×8.
+    for (const part of "abcdefgh")
+      expect(CHASE.join("").split(part).length - 1, part).toBe(12);
+    expect(square(CHASE_SMALL, 8)).toBe(true);
+    expect(renderToStaticMarkup(<PixelChase size={8} />)).toContain(
+      'width="8"',
+    );
   });
 
   it("names the agents unless decorative, at sizes of whole pixels", () => {

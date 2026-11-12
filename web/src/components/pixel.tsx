@@ -112,19 +112,84 @@ export function PixelSvg({
 
 const fill = { "#": "currentColor" };
 
-// Working: a bright block runs clockwise round a ring of eight, with a
-// fading tail. 8×8; size 8 or 16.
-const RING = [
-  [0, 0],
-  [3, 0],
-  [6, 0],
-  [6, 3],
-  [6, 6],
-  [3, 6],
-  [0, 6],
-  [0, 3],
+// The sidebar's icons share one spec (AgentIcon.tsx too): a 16×16 grid at
+// one CSS pixel each, ink within the middle 14×14, 14 wide and centred
+// vertically, strokes and blocks 2 pixels thick.
+
+// The box the ink of a grid fills: characters that are not ".".
+export function inkBounds(grid: string[]) {
+  let top = Infinity;
+  let left = Infinity;
+  let bottom = -1;
+  let right = -1;
+  grid.forEach((row, y) =>
+    [...row].forEach((ch, x) => {
+      if (ch === ".") return;
+      top = Math.min(top, y);
+      bottom = Math.max(bottom, y);
+      left = Math.min(left, x);
+      right = Math.max(right, x);
+    }),
+  );
+  return { top, left, w: right - left + 1, h: bottom - top + 1 };
+}
+
+// One part of a grid whose parts are lettered: only that letter is drawn.
+function Part({
+  grid,
+  part,
+  className,
+  style,
+}: {
+  grid: string[];
+  part: string;
+  className: string;
+  style: CSSProperties;
+}) {
+  return (
+    <Pixels
+      grid={grid}
+      palette={{ [part]: "currentColor" }}
+      className={className}
+      style={style}
+    />
+  );
+}
+
+// Working: a bright dot runs clockwise round a ring of eight (a to h), with
+// a fading tail. 14×14 dots of 4 with corners cut, so the 1-pixel gaps
+// between them still show.
+export const CHASE = [
+  "................",
+  "..aa...bb...cc..",
+  ".aaaa.bbbb.cccc.",
+  ".aaaa.bbbb.cccc.",
+  "..aa...bb...cc..",
+  "................",
+  "..hh........dd..",
+  ".hhhh......dddd.",
+  ".hhhh......dddd.",
+  "..hh........dd..",
+  "................",
+  "..gg...ff...ee..",
+  ".gggg.ffff.eeee.",
+  ".gggg.ffff.eeee.",
+  "..gg...ff...ee..",
+  "................",
 ];
-// Without motion: the bright block and its tail, held.
+// The same ring at 8×8, for a tool's line in the transcript.
+export const CHASE_SMALL = [
+  "aa.bb.cc",
+  "aa.bb.cc",
+  "........",
+  "hh....dd",
+  "hh....dd",
+  "........",
+  "gg.ff.ee",
+  "gg.ff.ee",
+];
+const RING = "abcdefgh";
+// Without motion: the bright dot and its tail, held.
 const REST = [1, 0.25, 0.25, 0.25, 0.25, 0.25, 0.4, 0.65];
 export function PixelChase({
   size = 16,
@@ -133,15 +198,16 @@ export function PixelChase({
   size?: number;
   label?: string;
 }) {
+  // Below 16 the small ring keeps whole pixels.
+  const grid = size < 16 ? CHASE_SMALL : CHASE;
+  const n = grid.length;
   return (
-    <PixelSvg w={8} h={8} scale={size / 8} label={label} className="px-anim">
-      {RING.map(([x, y], i) => (
-        <Pixels
-          key={i}
-          grid={["##", "##"]}
-          palette={fill}
-          x={x}
-          y={y}
+    <PixelSvg w={n} h={n} scale={size / n} label={label} className="px-anim">
+      {[...RING].map((part, i) => (
+        <Part
+          key={part}
+          grid={grid}
+          part={part}
           className="px-chase"
           style={
             {
@@ -155,7 +221,25 @@ export function PixelChase({
   );
 }
 
-// Connecting: three blocks light in turn.
+// Connecting: three dots, the chase's, light in turn.
+export const DOTS = [
+  "................",
+  "................",
+  "................",
+  "................",
+  "................",
+  "................",
+  "..aa...bb...cc..",
+  ".aaaa.bbbb.cccc.",
+  ".aaaa.bbbb.cccc.",
+  "..aa...bb...cc..",
+  "................",
+  "................",
+  "................",
+  "................",
+  "................",
+  "................",
+];
 export function PixelDots({
   size = 16,
   label,
@@ -164,14 +248,12 @@ export function PixelDots({
   label?: string;
 }) {
   return (
-    <PixelSvg w={8} h={8} scale={size / 8} label={label} className="px-anim">
-      {[0, 3, 6].map((x, i) => (
-        <Pixels
-          key={x}
-          grid={["##", "##"]}
-          palette={fill}
-          x={x}
-          y={3}
+    <PixelSvg w={16} h={16} scale={size / 16} label={label} className="px-anim">
+      {[..."abc"].map((part, i) => (
+        <Part
+          key={part}
+          grid={DOTS}
+          part={part}
           className="px-step"
           style={
             {
@@ -185,19 +267,30 @@ export function PixelDots({
   );
 }
 
+// A small screen on a stand: 14×10, the size of Claude's figure.
 export const MONITOR = [
-  "########",
-  "#......#",
-  "#......#",
-  "#......#",
-  "########",
-  "...##...",
-  ".######.",
-  "........",
+  "................",
+  "................",
+  "................",
+  ".##############.",
+  ".##############.",
+  ".##..........##.",
+  ".##..........##.",
+  ".##..........##.",
+  ".##..........##.",
+  ".##############.",
+  ".##############.",
+  ".......##.......",
+  "....########....",
+  "................",
+  "................",
+  "................",
 ];
+// Where the cursor (2×2) and a line of text (8×2) sit on the screen.
+export const CURSOR_AT = [4, 6];
 
-// Another client has the session: a small screen, its cursor blinking; with
-// a turn running there, text types out across it.
+// Another client has the session: its cursor blinks; with a turn running
+// there, text types out across the screen.
 export function PixelMonitor({
   size = 16,
   label,
@@ -207,19 +300,26 @@ export function PixelMonitor({
   label?: string;
   busy?: boolean;
 }) {
+  const [x, y] = CURSOR_AT;
   return (
-    <PixelSvg w={8} h={8} scale={size / 8} label={label} className="px-anim">
+    <PixelSvg w={16} h={16} scale={size / 16} label={label} className="px-anim">
       <Pixels grid={MONITOR} palette={fill} />
       {busy ? (
         <Pixels
-          grid={["####"]}
+          grid={["########", "########"]}
           palette={fill}
-          x={2}
-          y={2}
+          x={x}
+          y={y}
           className="px-type"
         />
       ) : (
-        <Pixels grid={["#"]} palette={fill} x={2} y={2} className="px-blink" />
+        <Pixels
+          grid={["##", "##"]}
+          palette={fill}
+          x={x}
+          y={y}
+          className="px-blink"
+        />
       )}
     </PixelSvg>
   );
