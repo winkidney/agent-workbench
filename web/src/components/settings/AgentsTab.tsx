@@ -425,7 +425,12 @@ function SignInRow({
     <div className="agent-signin">
       <div className="agent-signin-head">
         <span className={shown.home.signIn?.signedIn ? "ok" : "subtle"}>
-          {status || (shown.home.exists ? "" : "The folder does not exist yet")}
+          {status ||
+            (shown.home.exists
+              ? ""
+              : shown.home.source === "setting"
+                ? "The folder does not exist"
+                : "Not signed in yet")}
         </span>
         {!active && (
           <span className="agent-signin-start">
@@ -447,7 +452,9 @@ function SignInRow({
               type="button"
               variant="outline"
               size="sm"
-              disabled={dirty || !view.home.exists}
+              disabled={
+                dirty || (view.home.source === "setting" && !view.home.exists)
+              }
               title={dirty ? "Save first: sign-in uses the saved folder" : ""}
               onClick={() => void start()}
             >

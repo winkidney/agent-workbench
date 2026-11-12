@@ -121,7 +121,7 @@ func TestFilePreviewsAreRowsThatExpire(t *testing.T) {
 		t.Fatalf("%d previews in memory", n)
 	}
 	found := m.FindPreview(first.ID)
-	if found == nil || found.Entry != "/a.html" || found.root != root || found.secret != first.secret || found.URL != first.URL {
+	if found == nil || found.Entry != "/a.html" || found.root != session.Cwd || found.secret != first.secret || found.URL != first.URL {
 		t.Fatalf("found %+v", found)
 	}
 	// Removed with its row.

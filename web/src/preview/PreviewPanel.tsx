@@ -52,6 +52,7 @@ function storedViewport(): ViewportId {
 export function PreviewPanel({
   session,
   tabs,
+  opening,
   files,
   expanded,
   onExpand,
@@ -59,6 +60,8 @@ export function PreviewPanel({
 }: {
   session: string;
   tabs: PreviewTabsApi;
+  // Something is being opened into a tab.
+  opening?: boolean;
   files: ReactNode;
   expanded: boolean;
   onExpand: (expanded: boolean) => void;
@@ -111,6 +114,13 @@ export function PreviewPanel({
           </div>
         ))}
       </div>
+      {opening && (
+        <div
+          className="preview-progress"
+          role="progressbar"
+          aria-label="Opening"
+        />
+      )}
       {active ? (
         <TabView
           key={`${session}:${state.active}:${tabLabel(active)}`}
@@ -176,6 +186,10 @@ function TabView({
   const root = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
   const frameName = `preview-frame-${load}`;
+  // The frame is loading its page (shown on the reload button and as a
+  // bar), and a stopped service is being started.
+  const [frameBusy, setFrameBusy] = useState(true);
+  const [starting, setStarting] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -235,9 +249,24 @@ function TabView({
   // A page on its preview origin is signed in by posting its grant into
   // the frame.
   useEffect(() => {
-    if (view.kind !== "page" || view.mode !== "origin") return;
-    submitGrant(view.preview, view.grant, frameName);
+    if (view.kind !== "page") return;
+    setFrameBusy(view.mode !== "unavailable");
+    // A page that never says it loaded stops showing as loading.
+    const t = window.setTimeout(() => setFrameBusy(false), 20000);
+    if (view.mode === "origin")
+      submitGrant(view.preview, view.grant, frameName);
+    return () => clearTimeout(t);
   }, [view]);
+  const frameLoaded = (e: React.SyntheticEvent<HTMLIFrameElement>) => {
+    // The empty page a frame starts with is not the page.
+    try {
+      if (e.currentTarget.contentWindow?.location.href === "about:blank")
+        return;
+    } catch {
+      // Another origin: the page itself.
+    }
+    setFrameBusy(false);
+  };
 
   useLayoutEffect(() => {
     const el = stage.current;
@@ -297,6 +326,10 @@ function TabView({
         onError(e);
       });
   };
+  const busy =
+    view.kind === "loading" ||
+    starting ||
+    (view.kind === "page" && view.mode !== "unavailable" && frameBusy);
   const canNewTab =
     !!page &&
     (!!page.preview.fileUrl || page.mode === "origin") &&
@@ -331,10 +364,11 @@ function TabView({
           variant="ghost"
           size="icon"
           aria-label="Reload"
-          title="Reload"
+          title={busy ? "Loading…" : "Reload"}
+          aria-busy={busy}
           onClick={() => setLoad((n) => n + 1)}
         >
-          <RefreshCw size={14} />
+          <RefreshCw size={14} className={busy ? "spin" : undefined} />
         </Button>
         <Button
           variant="ghost"
@@ -383,7 +417,8 @@ function TabView({
           <X size={14} />
         </Button>
       </div>
-      <div className="preview-stage" ref={stage}>
+      <div className="preview-stage" ref={stage} aria-busy={busy}>
+        {busy && <div className="preview-progress" aria-hidden />}
         {view.kind === "loading" && <p className="preview-note">Loading…</p>}
         {view.kind === "error" && (
           <p className="preview-note warn">
@@ -398,7 +433,9 @@ function TabView({
             </p>
             <Button
               size="sm"
-              onClick={() =>
+              disabled={starting}
+              onClick={() => {
+                setStarting(true);
                 api<{ preview: Preview; grant: string }>("previews", "POST", {
                   session,
                   kind: "service",
@@ -410,9 +447,10 @@ function TabView({
                     setLoad((n) => n + 1);
                   })
                   .catch(onError)
-              }
+                  .finally(() => setStarting(false));
+              }}
             >
-              Start again
+              {starting ? "Starting…" : "Start again"}
             </Button>
           </div>
         )}
@@ -428,6 +466,7 @@ function TabView({
             title="Preview"
             name={frameName}
             className={"preview-frame" + (width ? " sized" : "")}
+            onLoad={frameLoaded}
             style={
               width
                 ? {

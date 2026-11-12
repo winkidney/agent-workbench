@@ -30,6 +30,15 @@ type NativeCatalog struct {
 	// startCodex starts a read-only app-server (the manager's chosen
 	// program and home); replaced in tests.
 	startCodex func(name string) (*codexClient, error)
+	// What the last refreshes read: Codex's threads for its index's stamp,
+	// Claude's transcripts by path for their size and time, and the list's
+	// positions by id.
+	codexRows   []Session
+	codexPaths  map[string]string
+	codexSeen   string
+	claudeFiles map[string]claudeFile
+	claudeOrder []string
+	byID        map[string]int
 }
 
 func NewNativeCatalog() *NativeCatalog {
@@ -76,24 +85,95 @@ func nativeKey(agent, id string) string { return agent + ":" + id }
 func (c *NativeCatalog) List() ([]Session, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if time.Since(c.updated) < 5*time.Second {
-		return append([]Session{}, c.cached...), nil
+	if err := c.refreshLocked(); err != nil {
+		return nil, err
 	}
-	out := []Session{}
-	paths := map[string]string{}
-	if db, err := openCodexState(c.codexStatePath()); err == nil {
-		// Archived threads too: the sidebar shows them on request.
-		rows, err := db.Query(`SELECT id,cwd,coalesce(nullif(name,''),title,''),updated_at,source,rollout_path,archived FROM threads ORDER BY updated_at DESC`)
-		if err != nil {
-			db.Close()
-			return nil, fmt.Errorf("unsupported Codex metadata: %w", err)
+	return append([]Session{}, c.cached...), nil
+}
+
+// refreshLocked reads the native records again, at most every 5 s, and
+// only what changed: Codex's index when its database did, a Claude
+// transcript when its size or time did (c.mu held).
+func (c *NativeCatalog) refreshLocked() error {
+	if time.Since(c.updated) < 5*time.Second && c.cached != nil {
+		return nil
+	}
+	codexChanged, err := c.codexRowsLocked()
+	if err != nil {
+		return err
+	}
+	claudeChanged := c.claudeRowsLocked()
+	c.updated = time.Now()
+	if !codexChanged && !claudeChanged && c.cached != nil {
+		return nil
+	}
+	out := make([]Session, 0, len(c.codexRows)+len(c.claudeOrder))
+	out = append(out, c.codexRows...)
+	paths := make(map[string]string, cap(out))
+	for id, p := range c.codexPaths {
+		paths[id] = p
+	}
+	for _, f := range c.claudeOrder {
+		e := c.claudeFiles[f]
+		if !e.ok {
+			continue
 		}
-		for rows.Next() {
+		out = append(out, e.s)
+		paths[e.s.ID] = f
+	}
+	namespaces := map[string]string{}
+	for i := range out {
+		cwd := out[i].Cwd
+		key, ok := namespaces[cwd]
+		if !ok {
+			key = workspaceNamespace(cwd)
+			namespaces[cwd] = key
+		}
+		out[i].Workspace = key
+		out[i].Origin = sessionOrigin(out[i])
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Updated > out[j].Updated })
+	byID := make(map[string]int, len(out))
+	for i, s := range out {
+		byID[s.ID] = i
+	}
+	c.cached, c.paths, c.byID = out, paths, byID
+	return nil
+}
+
+// codexStamp tells whether Codex's index changed: its database and log.
+func codexStamp(path string) string {
+	stamp := ""
+	for _, p := range []string{path, path + "-wal"} {
+		if info, err := os.Stat(p); err == nil {
+			stamp += fmt.Sprintf("%d:%d;", info.Size(), info.ModTime().UnixNano())
+		}
+	}
+	return stamp
+}
+
+// codexRowsLocked reads Codex's threads when its index changed.
+func (c *NativeCatalog) codexRowsLocked() (bool, error) {
+	path := c.codexStatePath()
+	stamp := path + "|" + codexStamp(path)
+	if stamp == c.codexSeen && c.codexRows != nil {
+		return false, nil
+	}
+	rows, paths := []Session{}, map[string]string{}
+	if db, err := openCodexState(path); err == nil {
+		defer db.Close()
+		// Archived threads too: the sidebar shows them on request.
+		list, err := db.Query(`SELECT id,cwd,coalesce(nullif(name,''),title,''),updated_at,source,rollout_path,archived FROM threads ORDER BY updated_at DESC`)
+		if err != nil {
+			return false, fmt.Errorf("unsupported Codex metadata: %w", err)
+		}
+		defer list.Close()
+		for list.Next() {
 			var s Session
 			// Any column may be NULL in a row Codex is still filling in.
-			var cwd, title, source, path sql.NullString
+			var cwd, title, source, rollout sql.NullString
 			var timestamp, archived sql.NullInt64
-			if err := rows.Scan(&s.NativeID, &cwd, &title, &timestamp, &source, &path, &archived); err != nil || s.NativeID == "" {
+			if err := list.Scan(&s.NativeID, &cwd, &title, &timestamp, &source, &rollout, &archived); err != nil || s.NativeID == "" {
 				continue
 			}
 			s.Cwd, s.Title = cwd.String, title.String
@@ -121,11 +201,43 @@ func (c *NativeCatalog) List() ([]Session, error) {
 				}
 				s.ParentID = nativeKey("codex", s.ParentID)
 			}
-			paths[s.ID] = path.String
-			out = append(out, s)
+			paths[s.ID] = rollout.String
+			rows = append(rows, s)
 		}
-		rows.Close()
-		db.Close()
+	}
+	c.codexRows, c.codexPaths, c.codexSeen = rows, paths, stamp
+	return true, nil
+}
+
+// claudeFile is what a Claude transcript said, for its size and time.
+type claudeFile struct {
+	size, mod int64
+	// A subagent's: its parent, which names it.
+	parent, parentCwd string
+	s                 Session
+	ok                bool
+}
+
+// claudeRowsLocked reads the Claude transcripts that are new or changed;
+// the others are as last read. Transcripts gone are forgotten.
+func (c *NativeCatalog) claudeRowsLocked() bool {
+	seen := make(map[string]claudeFile, len(c.claudeFiles))
+	order := make([]string, 0, len(c.claudeOrder))
+	changed := false
+	look := func(path string, read func(os.FileInfo) claudeFile) (claudeFile, bool) {
+		info, err := os.Stat(path)
+		if err != nil {
+			return claudeFile{}, false
+		}
+		e, ok := c.claudeFiles[path]
+		if !ok || e.size != info.Size() || e.mod != info.ModTime().UnixNano() {
+			e = read(info)
+			e.size, e.mod = info.Size(), info.ModTime().UnixNano()
+			changed = true
+		}
+		seen[path] = e
+		order = append(order, path)
+		return e, true
 	}
 	directories, _ := os.ReadDir(filepath.Join(c.ClaudeHome, "projects"))
 	for _, dir := range directories {
@@ -134,36 +246,30 @@ func (c *NativeCatalog) List() ([]Session, error) {
 		}
 		files, _ := filepath.Glob(filepath.Join(c.ClaudeHome, "projects", dir.Name(), "*.jsonl"))
 		for _, path := range files {
-			s, ok := readClaudeMetadata(path)
-			if !ok {
+			e, ok := look(path, func(os.FileInfo) claudeFile {
+				s, ok := readClaudeMetadata(path)
+				return claudeFile{s: s, ok: ok}
+			})
+			if !ok || !e.ok {
 				continue
 			}
-			paths[s.ID] = path
-			out = append(out, s)
-			agents, _ := filepath.Glob(filepath.Join(c.ClaudeHome, "projects", dir.Name(), s.NativeID, "subagents", "agent-*.jsonl"))
+			parent := e.s
+			agents, _ := filepath.Glob(filepath.Join(c.ClaudeHome, "projects", dir.Name(), parent.NativeID, "subagents", "agent-*.jsonl"))
 			for _, agent := range agents {
-				child := readClaudeSubagent(agent, s)
-				paths[child.ID] = agent
-				out = append(out, child)
+				if old, ok := c.claudeFiles[agent]; ok && (old.parent != parent.ID || old.parentCwd != parent.Cwd) {
+					delete(c.claudeFiles, agent)
+				}
+				look(agent, func(os.FileInfo) claudeFile {
+					return claudeFile{s: readClaudeSubagent(agent, parent), ok: true, parent: parent.ID, parentCwd: parent.Cwd}
+				})
 			}
 		}
 	}
-	namespaces := map[string]string{}
-	for i := range out {
-		cwd := out[i].Cwd
-		key, ok := namespaces[cwd]
-		if !ok {
-			key = workspaceNamespace(cwd)
-			namespaces[cwd] = key
-		}
-		out[i].Workspace = key
-		out[i].Origin = sessionOrigin(out[i])
+	if len(seen) != len(c.claudeFiles) {
+		changed = true
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Updated > out[j].Updated })
-	c.cached = out
-	c.paths = paths
-	c.updated = time.Now()
-	return append([]Session{}, out...), nil
+	c.claudeFiles, c.claudeOrder = seen, order
+	return changed
 }
 
 // readClaudeSubagent lists a Task / subagent transcript as a read-only child
@@ -377,15 +483,15 @@ func (c *NativeCatalog) path(id string) string {
 	return c.paths[id]
 }
 
+// Find looks a session up by id, without copying the list.
 func (c *NativeCatalog) Find(id string) (Session, bool) {
-	list, err := c.List()
-	if err != nil {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.refreshLocked() != nil {
 		return Session{}, false
 	}
-	for _, s := range list {
-		if s.ID == id {
-			return s, true
-		}
+	if i, ok := c.byID[id]; ok {
+		return c.cached[i], true
 	}
 	return Session{}, false
 }

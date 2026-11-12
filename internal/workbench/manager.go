@@ -253,13 +253,13 @@ func (m *Manager) Start(id string) error {
 	r.pending = map[string]any{}
 	r.rpc = map[string]chan map[string]any{}
 	r.caps, r.steering = nil, nil
+	// The program and home in use; a launcher that needs a program and
+	// finds none says so itself.
 	launched := r.session
-	run, err := m.cli(launched.Agent)
-	var proc Process
-	if err == nil {
+	if run, err := m.cli(launched.Agent); err == nil {
 		launched.run = run
-		proc, err = m.launch(launched, func(v map[string]any) { m.receive(id, generation, v) }, func(err error) { m.exited(id, generation, err) })
 	}
+	proc, err := m.launch(launched, func(v map[string]any) { m.receive(id, generation, v) }, func(err error) { m.exited(id, generation, err) })
 	if err != nil {
 		m.emit(r.session.ID, "error", map[string]any{"message": err.Error()})
 		m.status(r, "error")

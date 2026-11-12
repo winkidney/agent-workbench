@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestNativeCatalogAndHistory(t *testing.T) {
@@ -172,5 +173,68 @@ func TestWorkspaceNamespaceKeepsDistinctDirectoriesAndMissingLeaves(t *testing.T
 	b := filepath.Join(root, "b", "project")
 	if workspaceNamespace(a) == workspaceNamespace(b) {
 		t.Fatal("same basename merged different directories")
+	}
+}
+
+func TestCatalogRereadsOnlyWhatChanged(t *testing.T) {
+	posixOnly(t)
+	root := t.TempDir()
+	codex := filepath.Join(root, "codex")
+	claude := filepath.Join(root, "claude")
+	dir := filepath.Join(claude, "projects", "-work")
+	os.MkdirAll(codex, 0o700)
+	os.MkdirAll(dir, 0o700)
+	line := func(title string) string {
+		return `{"type":"user","uuid":"u","cwd":"/work","message":{"content":"` + title + `"}}` + "\n"
+	}
+	one, two := filepath.Join(dir, "one.jsonl"), filepath.Join(dir, "two.jsonl")
+	os.WriteFile(one, []byte(line("first title")), 0o600)
+	os.WriteFile(two, []byte(line("second")), 0o600)
+	db, _ := sql.Open("sqlite", filepath.Join(codex, "state_5.sqlite"))
+	db.Exec(`CREATE TABLE threads(id TEXT,cwd TEXT,name TEXT,title TEXT,updated_at INTEGER,source TEXT,rollout_path TEXT,archived INTEGER);INSERT INTO threads VALUES('a','/work','A','',10,'cli','',0)`)
+	db.Close()
+	c := NewNativeCatalog()
+	c.CodexHome, c.ClaudeHome = codex, claude
+	if list, _ := c.List(); len(list) != 3 {
+		t.Fatalf("listed %d", len(list))
+	}
+	again := func() []Session {
+		c.mu.Lock()
+		c.updated = time.Time{}
+		c.mu.Unlock()
+		list, _ := c.List()
+		return list
+	}
+	// Same size and time: not read again, though its bytes changed.
+	info, _ := os.Stat(one)
+	os.WriteFile(one, []byte(line("other title")), 0o600)
+	os.Chtimes(one, info.ModTime(), info.ModTime())
+	again()
+	if s, _ := c.Find("claude:one"); s.Title != "first title" {
+		t.Fatalf("an unchanged transcript was read again: %q", s.Title)
+	}
+	// Grown: read again.
+	os.WriteFile(one, []byte(line("a longer, changed title")), 0o600)
+	again()
+	if s, _ := c.Find("claude:one"); s.Title != "a longer, changed title" {
+		t.Fatalf("a changed transcript was not read: %q", s.Title)
+	}
+	// Gone: forgotten. A thread added to Codex's index: listed.
+	os.Remove(two)
+	db, _ = sql.Open("sqlite", filepath.Join(codex, "state_5.sqlite"))
+	db.Exec(`INSERT INTO threads VALUES('b','/work','B','',20,'cli','',0)`)
+	db.Close()
+	list := again()
+	if _, ok := c.Find("claude:two"); ok || len(list) != 3 {
+		t.Fatalf("after changes: %d listed", len(list))
+	}
+	if _, ok := c.Find("codex:b"); !ok {
+		t.Fatal("new Codex thread not listed")
+	}
+	c.mu.Lock()
+	files := len(c.claudeFiles)
+	c.mu.Unlock()
+	if files != 1 {
+		t.Fatalf("%d transcripts remembered", files)
 	}
 }

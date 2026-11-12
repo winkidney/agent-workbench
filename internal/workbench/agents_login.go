@@ -111,9 +111,12 @@ func (m *Manager) StartLogin(agent, method string) (loginState, error) {
 	if err != nil {
 		return loginState{}, err
 	}
-	home, _ := m.agentHome(agent)
-	if err := checkHome(home); err != nil {
-		return loginState{}, err
+	// A chosen home must still be there; the CLI's own default it creates
+	// itself, as on a first sign-in.
+	if home, from := m.agentHome(agent); from == "setting" {
+		if err := checkHome(home); err != nil {
+			return loginState{}, err
+		}
 	}
 	m.cancelLogin(agent)
 	ctx, cancel := context.WithTimeout(context.Background(), loginTimeout)

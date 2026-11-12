@@ -186,6 +186,21 @@ export default function App() {
     catchError,
   );
   const [expanded, setExpanded] = useState(false);
+  // Actions under way, so each shows it was taken: "files", "open",
+  // "service", "stop:<id>".
+  const [working, setWorking] = useState<ReadonlySet<string>>(new Set());
+  const busyWhile = async <T,>(key: string, run: () => Promise<T>) => {
+    setWorking((w) => new Set(w).add(key));
+    try {
+      return await run();
+    } finally {
+      setWorking((w) => {
+        const next = new Set(w);
+        next.delete(key);
+        return next;
+      });
+    }
+  };
   const sidebarPrefs = usePrefs(paired, catchError);
   const receivePrefs = useRef(sidebarPrefs.receive);
   receivePrefs.current = sidebarPrefs.receive;
@@ -442,22 +457,25 @@ export default function App() {
         if (r.native) return refresh();
       })
       .catch(catchError);
-  // Opens a file or service as the session's newest preview tab.
-  const openPreview = async (body: unknown) => {
-    try {
-      const result = await api<{ preview: Preview; grant: string }>(
-        "previews",
-        "POST",
-        body,
-      );
-      previewTabs.open(tabFromPreview(result.preview));
-      setPanel(true);
-      setServiceOpen(false);
-      await refresh();
-    } catch (e) {
-      catchError(e);
-    }
-  };
+  // Opens a file or service as the session's newest preview tab; the
+  // panel shows at once that it is opening.
+  const openPreview = (body: unknown, key = "open") =>
+    busyWhile(key, async () => {
+      if (key === "open") setPanel(true);
+      try {
+        const result = await api<{ preview: Preview; grant: string }>(
+          "previews",
+          "POST",
+          body,
+        );
+        previewTabs.open(tabFromPreview(result.preview));
+        setPanel(true);
+        setServiceOpen(false);
+        await refresh();
+      } catch (e) {
+        catchError(e);
+      }
+    });
   const approvals = transcript.approvals;
   // Sends from the composer, or answers an agent's questions: into the
   // running turn (steer), as the next message, or queued for after the turn.
@@ -1171,6 +1189,7 @@ export default function App() {
             <PreviewPanel
               session={active}
               tabs={previewTabs}
+              opening={working.has("open")}
               expanded={expanded}
               onExpand={setExpanded}
               onError={catchError}
@@ -1187,18 +1206,24 @@ export default function App() {
                     <span>{path || "Working directory"}</span>
                     <button
                       aria-label="Refresh files"
+                      disabled={working.has("files")}
                       onClick={() =>
-                        api<Entry[]>(
-                          "files?session=" +
-                            active +
-                            "&path=" +
-                            encodeURIComponent(path),
+                        void busyWhile("files", () =>
+                          api<Entry[]>(
+                            "files?session=" +
+                              active +
+                              "&path=" +
+                              encodeURIComponent(path),
+                          )
+                            .then(setEntries)
+                            .catch(catchError),
                         )
-                          .then(setEntries)
-                          .catch(catchError)
                       }
                     >
-                      <RefreshCw size={12} />
+                      <RefreshCw
+                        size={12}
+                        className={working.has("files") ? "spin" : undefined}
+                      />
                     </button>
                   </div>
                   <div className="files">
@@ -1217,10 +1242,10 @@ export default function App() {
                               media.map((x) => pathItem(env, x.path)!),
                               at,
                             );
-                          void openPreview({
-                            session: active,
+                          // Its tab opens at once; it loads its page.
+                          previewTabs.open({
                             kind: "file",
-                            path: e.path,
+                            path: e.path.replace(/^\//, ""),
                           });
                         }}
                       >
@@ -1266,13 +1291,20 @@ export default function App() {
                             variant="ghost"
                             size="icon"
                             aria-label="Stop preview service"
+                            disabled={working.has("stop:" + p.id)}
                             onClick={() =>
-                              api("previews/" + p.id, "DELETE")
-                                .then(refresh)
-                                .catch(catchError)
+                              void busyWhile("stop:" + p.id, () =>
+                                api("previews/" + p.id, "DELETE")
+                                  .then(refresh)
+                                  .catch(catchError),
+                              )
                             }
                           >
-                            <X size={13} />
+                            {working.has("stop:" + p.id) ? (
+                              <RefreshCw size={13} className="spin" />
+                            ) : (
+                              <X size={13} />
+                            )}
                           </Button>
                         </div>
                       ))}
@@ -1411,13 +1443,16 @@ export default function App() {
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
-                  void openPreview({
-                    session: active,
-                    kind: "service",
-                    target,
-                    command,
-                    port: Number(port),
-                  });
+                  void openPreview(
+                    {
+                      session: active,
+                      kind: "service",
+                      target,
+                      command,
+                      port: Number(port),
+                    },
+                    "service",
+                  );
                 }}
               >
                 <label htmlFor="target">Existing server URL</label>
@@ -1448,8 +1483,21 @@ export default function App() {
                   Commands run in this working directory. Managed servers stop
                   with the session; existing servers are only disconnected.
                 </p>
-                <Button className="w-full" type="submit">
-                  Open preview <Globe size={15} />
+                <Button
+                  className="w-full"
+                  type="submit"
+                  disabled={working.has("service")}
+                >
+                  {working.has("service") ? (
+                    <>
+                      {command ? "Starting…" : "Connecting…"}{" "}
+                      <RefreshCw size={15} className="spin" />
+                    </>
+                  ) : (
+                    <>
+                      Open preview <Globe size={15} />
+                    </>
+                  )}
                 </Button>
               </form>
               {error && (

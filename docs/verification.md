@@ -571,3 +571,18 @@ These are maintainer notes on how each feature of Agent Workbench was verified, 
     - session rows went from 97 to 75;
     - the 7 creation records without a date went;
     - 1,404 existing sessions were recorded as seen.
+
+### Afterwards: CI, feedback, and rereading the list
+
+- **CI:** the v0.3.15 build failed its tests on every platform. Starting an engine now looked the CLI up first and refused when it was not on PATH, which the CI machines lack (the tests use a fake launcher). Now a launcher that needs a program reports the missing one itself, as before. Signing in from the page also no longer requires a default home that the CLI has not created yet; a chosen home must still exist. The tests now also pass with no `claude` or `codex` on PATH.
+- **Feedback for every preview action.** A slow page served after 2 s was used to watch each one:
+  - The reload button spins and a bar runs over the page until the page has loaded. The empty page a frame starts with does not count as loaded.
+  - Opening from a reply shows the bar in the panel at once.
+  - A file from the list opens its tab at once: 44 ms here.
+  - Refreshing the file list spins its button.
+  - Starting or connecting a server in the dialog says "Starting…" or "Connecting…".
+  - "Start again" and stopping a listed server show that they are working.
+- **Rereading the list.** It is now read again only where something changed.
+  - **Measured** (same session viewed, real records, allocation profiles 30 s apart): v0.3.15 allocated 355 MB in 30 s, 89% of it rereading every transcript and copying the list for each lookup. Now about 3 MB, mostly sending the list to the page.
+  - **New test:** a transcript with the same size and time is not read again, a grown one is, and a deleted one is forgotten. A thread added to Codex's index is listed.
+
