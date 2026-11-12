@@ -92,6 +92,7 @@ export function StatusLine({
     speed: 0,
     tokens: 0,
     phase: "",
+    detail: "",
     mcp: { done: 0, total: 0 },
   });
   useEffect(() => {
@@ -107,6 +108,7 @@ export function StatusLine({
           speed: Number(v.data?.speed) || 0,
           tokens: Number(v.data?.turnTokens) || 0,
           phase: String(v.data?.phase ?? ""),
+          detail: String(v.data?.detail ?? ""),
           mcp: {
             done: Number(v.data?.mcpDone) || 0,
             total: Number(v.data?.mcpTotal) || 0,
@@ -117,7 +119,11 @@ export function StatusLine({
     return () => window.removeEventListener("workbench:telemetry", update);
   }, [sessionId]);
   if (!busy) return null;
-  const shown = statusVerb(verb, live.phase, live.mcp);
+  // What the turn waits on, when the server knows (a retry, a hook, a
+  // check), says more than the activity.
+  const shown =
+    (status !== "waiting" && live.detail) ||
+    statusVerb(verb, live.phase, live.mcp);
   const meta = [
     startedAt ? formatDuration(Math.max(0, now - startedAt)) : null,
     status === "running" && live.tokens > 0

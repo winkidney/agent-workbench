@@ -34,6 +34,8 @@ type Telemetry struct {
 	// is doing (thinking, responding, tool, requesting, compacting).
 	TurnTokens float64 `json:"turnTokens,omitempty"`
 	Phase      string  `json:"phase,omitempty"`
+	// What the turn waits on, in words (an API retry, a hook, a check).
+	Detail string `json:"detail,omitempty"`
 	// While a message waits for MCP servers (phase "mcp"): how many are up.
 	McpDone   int     `json:"mcpDone,omitempty"`
 	McpTotal  int     `json:"mcpTotal,omitempty"`
@@ -391,7 +393,7 @@ func (m *Manager) telemetry(id string) Telemetry {
 		t.Updated = r.last.UTC().Format(time.RFC3339)
 		t.Average = r.average
 		if r.turn {
-			t.TurnTokens, t.Phase = r.turnOut, r.phase
+			t.TurnTokens, t.Phase, t.Detail = r.turnOut, r.phase, r.detail
 		} else if r.phase == "mcp" {
 			t.Phase = r.phase
 			t.McpDone, t.McpTotal = mcpProgress(r)
@@ -434,6 +436,7 @@ func (m *Manager) track(r *runtime, v map[string]any) {
 		r.context = map[string]any{"used": r.usage["inputTokens"], "window": u["modelContextWindow"], "estimated": false}
 	}
 	trackProgress(r, v)
+	trackDetail(r, v)
 	if v["type"] == "system" && v["subtype"] == "status" && str(v["permissionMode"]) != "" {
 		m.claudeModeReported(r, str(v["permissionMode"]))
 	}

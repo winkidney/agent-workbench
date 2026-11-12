@@ -1020,6 +1020,72 @@ p {
   padding: 6px 10px;
   font-size: 12.5px;
 }
+/* Codex asking for more access; an MCP server asking for input. */
+.approval-permissions {
+  margin: 4px 0 8px;
+  padding-left: 18px;
+  list-style: disc;
+  font: 12.5px var(--mono);
+}
+.elicitation {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.elicit-title {
+  font-weight: 600;
+}
+.elicit-message {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.elicit-url {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--info);
+  font: 12.5px var(--mono);
+  overflow-wrap: anywhere;
+}
+.elicit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.elicit-field label {
+  font-size: 12.5px;
+  font-weight: 550;
+}
+.elicit-field input:not([type="checkbox"]) {
+  padding: 6px 10px;
+  font-size: 12.5px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--background);
+  color: var(--foreground);
+}
+.elicit-field small {
+  color: var(--muted-foreground);
+  font-size: 11.5px;
+}
+.elicit-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+}
+.elicit-check input {
+  width: auto;
+  flex: none;
+  margin: 0;
+  padding: 0;
+}
+.elicit-options {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
 /* Above the composer: todos, queue, live status */
 
 .status-line {

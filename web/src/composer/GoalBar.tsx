@@ -61,8 +61,15 @@ export function GoalBar({
   const codex = agent === "codex";
   const meta = goalMeta(goal);
   const run = (args: string) => void onCommand("goal", args).catch(() => {});
-  const clear = () => {
-    if (codex) return run("clear");
+  // Stop: the goal ends and so does the turn pursuing it.
+  const stop = () => {
+    if (codex) {
+      // Cleared first, so Codex does not start the next turn for it.
+      void onCommand("goal", "clear")
+        .then(() => running && onInterrupt())
+        .catch(() => {});
+      return;
+    }
     if (running) {
       setClearAfterStop(true);
       onInterrupt();
@@ -144,13 +151,13 @@ export function GoalBar({
                 className="goal-action"
                 disabled={clearAfterStop}
                 title={
-                  !codex && running
-                    ? "Stop this turn, then clear the goal"
-                    : "Clear the goal"
+                  running
+                    ? "Stop pursuing the goal, and stop the current turn"
+                    : "Stop pursuing the goal"
                 }
-                onClick={clear}
+                onClick={stop}
               >
-                {!codex && running ? "Stop & clear" : "Clear"}
+                Stop
               </button>
             )}
             {done && (

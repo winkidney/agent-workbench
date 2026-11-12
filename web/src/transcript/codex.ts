@@ -13,6 +13,18 @@ import type { Context, Draft } from "./reducer";
 import { asyncQuestions } from "./questions";
 import { unwrapShell } from "./summarize";
 
+// The files a unified diff touches, in order.
+export function changedFiles(diff: string): string[] {
+  const out: string[] = [];
+  for (const line of diff.split("\n")) {
+    const m =
+      /^\+\+\+ (?:b\/)?(.+)$/.exec(line) ??
+      /^diff --git a\/.+ b\/(.+)$/.exec(line);
+    if (m && m[1] !== "/dev/null" && !out.includes(m[1])) out.push(m[1]);
+  }
+  return out;
+}
+
 // What an auto-review looked at, in a few words.
 export function reviewTarget(action: Record<string, unknown>): string {
   switch (action.type) {
@@ -395,6 +407,65 @@ export function applyCodex(
           text: message,
           local: true,
         });
+      return;
+    }
+    // A running MCP tool's progress message.
+    case "item/mcpToolCall/progress":
+      d.patchTool(text(p.itemId), { progress: text(p.message) || undefined });
+      return;
+    // What the turn changed so far, as one diff: shown after the latest
+    // change, so it ends up just before the turn's end.
+    case "turn/diff/updated": {
+      const diff = text(p.diff);
+      const key = "changes:" + text(p.turnId);
+      d.remove(key);
+      if (!diff.trim()) return;
+      const files = changedFiles(diff);
+      d.upsert({
+        key,
+        kind: "tool",
+        local: true,
+        tool: {
+          name: "Changes",
+          nativeType: "turnDiff",
+          input: {
+            files:
+              files.length > 3
+                ? `${files.slice(0, 3).join(", ")} and ${files.length - 3} more`
+                : files.join(", "),
+          },
+          status: "ok",
+          diff,
+        },
+      });
+      return;
+    }
+    // A hook that failed, blocked a step or stopped the turn says so.
+    case "hook/completed": {
+      const run = record(p.run);
+      const status = text(run.status);
+      const said = list(run.entries)
+        .map(record)
+        .filter((e) => ["warning", "error", "stop"].includes(text(e.kind)))
+        .map((e) => text(e.text))
+        .filter(Boolean);
+      if (status === "completed" && !said.length) return;
+      const what =
+        status === "blocked"
+          ? "blocked this step"
+          : status === "stopped"
+            ? "stopped the turn"
+            : status === "failed"
+              ? "failed"
+              : "said";
+      const message = [text(run.statusMessage), ...said].filter(Boolean)[0];
+      d.upsert({
+        key: "hook:" + (text(run.id) || ctx.seq),
+        kind: "notice",
+        tone: status === "completed" ? undefined : "warn",
+        text: `The ${text(run.eventName)} hook ${what}${message ? `: ${message}` : ""}`,
+        local: true,
+      });
       return;
     }
     // Codex's auto-review deciding an approval request in the user's place.

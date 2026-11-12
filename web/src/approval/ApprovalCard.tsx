@@ -20,6 +20,8 @@ import { DiffView } from "../transcript/Timeline";
 import { Markdown } from "../transcript/Markdown";
 import { useEnv } from "../transcript/media";
 import { Choices } from "./Choices";
+import { ElicitationForm } from "./Elicitation";
+import { parseElicitation, type Elicitation } from "./elicitation";
 
 export type Decision = "allow" | "allowAlways" | "deny" | "cancel";
 // The permission mode an approved Claude plan continues in.
@@ -46,7 +48,45 @@ type Parsed =
   | { kind: "tool"; tool: Tool; reason?: string; always: boolean }
   | { kind: "questions"; questions: Question[]; format: "claude" | "codex" }
   | { kind: "plan"; plan: string }
+  // Codex asks for access beyond its sandbox (network, paths).
+  | { kind: "permissions"; items: string[]; reason?: string }
+  // An MCP server asks for input.
+  | { kind: "elicitation"; elicitation: Elicitation }
   | { kind: "unknown" };
+
+// What a Codex permission request asks for, one line each.
+export function permissionItems(permissions: unknown): string[] {
+  const p = record(permissions);
+  const out: string[] = [];
+  if (record(p.network).enabled === true) out.push("Network access");
+  const fs = record(p.fileSystem);
+  const where = (path: unknown) => {
+    const x = record(path);
+    if (x.type === "path") return text(x.path);
+    if (x.type === "glob_pattern") return text(x.pattern);
+    if (x.type === "special") {
+      const v = record(x.value);
+      const kind = text(v.kind);
+      const names: Record<string, string> = {
+        root: "the whole file system",
+        minimal: "system files",
+        project_roots: "the project",
+        tmpdir: "the temporary directory",
+      };
+      return (names[kind] ?? kind) + (v.subpath ? ` (${text(v.subpath)})` : "");
+    }
+    return text(path);
+  };
+  for (const e of list(fs.entries).map(record)) {
+    const access = text(e.access);
+    out.push(
+      `${access === "write" ? "Write" : access === "read" ? "Read" : "No access to"} ${where(e.path)}`,
+    );
+  }
+  for (const r of list(fs.read)) out.push(`Read ${text(r)}`);
+  for (const w of list(fs.write)) out.push(`Write ${text(w)}`);
+  return out;
+}
 
 // Native request → card model. Unknown request types fall back to raw JSON.
 export function parseRequest(
@@ -55,6 +95,8 @@ export function parseRequest(
   lookup: (id: string) => Block | undefined,
 ): Parsed {
   const v = record(request);
+  const elicitation = parseElicitation(agent, request);
+  if (elicitation) return { kind: "elicitation", elicitation };
   if (agent === "claude") {
     const req = record(v.request);
     if (req.subtype !== "can_use_tool") return { kind: "unknown" };
@@ -89,6 +131,12 @@ export function parseRequest(
   }
   const method = text(v.method);
   const p = record(v.params);
+  if (method === "item/permissions/requestApproval")
+    return {
+      kind: "permissions",
+      items: permissionItems(p.permissions),
+      reason: text(p.reason) || undefined,
+    };
   if (method === "item/commandExecution/requestApproval")
     return {
       kind: "tool",
@@ -314,20 +362,27 @@ export function ApprovalCard({
           { label: "Yes, manually approve edits" },
           { label: "No, keep planning", hint: "tell Claude what to change" },
         ]
-      : [
-          { label: "Yes" },
-          ...(parsed.kind === "tool" && parsed.always
-            ? [{ label: "Yes, and don't ask again this session" }]
-            : []),
-          { label: "No", hint: "tell the agent what to do instead" },
-        ];
+      : parsed.kind === "permissions"
+        ? [
+            { label: "Yes, for this turn" },
+            { label: "Yes, for this session" },
+            { label: "No", hint: "Codex continues without it" },
+          ]
+        : [
+            { label: "Yes" },
+            ...(parsed.kind === "tool" && parsed.always
+              ? [{ label: "Yes, and don't ask again this session" }]
+              : []),
+            { label: "No", hint: "tell the agent what to do instead" },
+          ];
   const denyIndex = toolOptions.length - 1;
   const choose = (i: number) => {
     const was = selected;
     setSelected(i);
     if (i === denyIndex) {
       // First choice reveals the optional feedback box; the second sends.
-      if (was !== denyIndex) return;
+      // A permission request takes no feedback.
+      if (was !== denyIndex && parsed.kind !== "permissions") return;
       return void send("deny", feedback.trim() || undefined);
     }
     if (parsed.kind === "plan")
@@ -336,7 +391,12 @@ export function ApprovalCard({
   };
 
   const onKey = (e: React.KeyboardEvent) => {
-    if (parsed.kind === "questions" || parsed.kind === "unknown" || busy)
+    if (
+      parsed.kind === "questions" ||
+      parsed.kind === "elicitation" ||
+      parsed.kind === "unknown" ||
+      busy
+    )
       return;
     const inFeedback = e.target === feedbackRef.current;
     if (e.key === "Escape") {
@@ -364,7 +424,11 @@ export function ApprovalCard({
   };
 
   useEffect(() => {
-    if (selected === denyIndex && parsed.kind !== "questions")
+    if (
+      selected === denyIndex &&
+      parsed.kind !== "questions" &&
+      parsed.kind !== "permissions"
+    )
       feedbackRef.current?.focus();
   }, [selected, denyIndex, parsed.kind]);
 
@@ -375,9 +439,13 @@ export function ApprovalCard({
         ? "Ready to code?"
         : parsed.kind === "tool"
           ? `Allow ${toolTitle(parsed.tool).name}?`
-          : "The agent needs a response";
+          : parsed.kind === "permissions"
+            ? "Allow more access?"
+            : parsed.kind === "elicitation"
+              ? `${parsed.elicitation.server || "An MCP server"} needs input`
+              : "The agent needs a response";
   const Icon =
-    parsed.kind === "questions"
+    parsed.kind === "questions" || parsed.kind === "elicitation"
       ? MessageCircleQuestion
       : parsed.kind === "plan"
         ? ClipboardList
@@ -400,12 +468,34 @@ export function ApprovalCard({
       {parsed.kind === "tool" && parsed.reason && (
         <p className="approval-reason">{parsed.reason}</p>
       )}
+      {parsed.kind === "permissions" && (
+        <>
+          <ul className="approval-permissions">
+            {(parsed.items.length ? parsed.items : ["More access"]).map(
+              (item) => (
+                <li key={item}>{item}</li>
+              ),
+            )}
+          </ul>
+          {parsed.reason && <p className="approval-reason">{parsed.reason}</p>}
+        </>
+      )}
       {parsed.kind === "plan" && (
         <div className="approval-plan">
           <Markdown text={parsed.plan} />
         </div>
       )}
-      {parsed.kind === "questions" ? (
+      {parsed.kind === "elicitation" ? (
+        <ElicitationForm
+          elicitation={parsed.elicitation}
+          busy={busy}
+          onAccept={(content) =>
+            void send("allow", undefined, content ?? undefined)
+          }
+          onDecline={() => void send("deny")}
+          onCancel={() => void send("cancel")}
+        />
+      ) : parsed.kind === "questions" ? (
         <QuestionForm
           questions={parsed.questions}
           busy={busy}
@@ -465,7 +555,7 @@ export function ApprovalCard({
             selected={selected}
             onChoose={choose}
           />
-          {selected === denyIndex && (
+          {selected === denyIndex && parsed.kind !== "permissions" && (
             <Textarea
               ref={feedbackRef}
               className="approval-feedback"

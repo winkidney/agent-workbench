@@ -1,6 +1,10 @@
 package workbench
 
-import "time"
+import (
+	"fmt"
+	"regexp"
+	"time"
+)
 
 // trackProgress keeps the live status line moving between visible output,
 // like the CLIs' own spinners: an estimate of the tokens produced this turn
@@ -88,6 +92,85 @@ func trackProgress(r *runtime, v map[string]any) {
 	case "result":
 		r.phase = ""
 	}
+}
+
+// trackDetail follows what a turn waits on that its phase does not say: an
+// API retry, an automatic permission check, a hook, an auto-review.
+func trackDetail(r *runtime, v map[string]any) {
+	set := func(kind, text string) { r.detailKind, r.detail = kind, text }
+	clear := func(kinds ...string) {
+		for _, k := range kinds {
+			if r.detailKind == k {
+				r.detailKind, r.detail = "", ""
+			}
+		}
+	}
+	p := obj(v["params"])
+	switch str(v["method"]) {
+	case "item/autoApprovalReview/started":
+		set("review", "Auto-review is checking "+reviewTarget(obj(p["action"])))
+	case "item/autoApprovalReview/completed":
+		clear("review")
+	case "hook/started":
+		set("hook", "Running the "+str(obj(p["run"])["eventName"])+" hook")
+	case "hook/completed":
+		clear("hook")
+	case "turn/completed":
+		clear("review", "hook", "retry", "check")
+	}
+	switch str(v["type"]) {
+	case "system":
+		switch str(v["subtype"]) {
+		case "api_retry":
+			what := "Connection error"
+			if s, ok := v["error_status"].(float64); ok {
+				what = fmt.Sprintf("API error %d", int(s))
+			}
+			set("retry", fmt.Sprintf("%s · retrying (attempt %d of %d)", what, int(num(v["attempt"])), int(num(v["max_retries"]))))
+		case "permission_check_status":
+			if str(v["status"]) == "checking" {
+				set("check", "Auto mode is checking this step")
+			} else {
+				clear("check")
+			}
+		case "hook_started":
+			text := "Running the " + str(v["hook_event"]) + " hook"
+			if name := str(v["hook_name"]); name != "" && name != str(v["hook_event"]) {
+				text += ": " + name
+			}
+			set("hook", text)
+		case "hook_response":
+			clear("hook")
+		}
+	case "stream_event", "assistant":
+		clear("retry")
+	case "result":
+		clear("review", "hook", "retry", "check")
+	}
+}
+
+var shellWrapped = regexp.MustCompile(`^(?:/\S*/)?(?:ba|z)?sh\s+-l?c\s+(['"])([\s\S]*)['"]$`)
+
+// reviewTarget names what an auto-review looks at.
+func reviewTarget(action map[string]any) string {
+	switch str(action["type"]) {
+	case "command":
+		cmd := str(action["command"])
+		if m := shellWrapped.FindStringSubmatch(cmd); m != nil {
+			cmd = m[2]
+		}
+		if len(cmd) > 80 {
+			cmd = cmd[:79] + "…"
+		}
+		return cmd
+	case "networkAccess":
+		return "network access to " + str(action["host"])
+	case "applyPatch":
+		return "a file change"
+	case "mcpToolCall":
+		return str(action["server"]) + " · " + str(action["toolName"])
+	}
+	return "a request"
 }
 
 func asList(v any) []any {

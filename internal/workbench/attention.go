@@ -115,3 +115,19 @@ func (m *Manager) DismissPlan(id string) error {
 	m.syncAttention(r)
 	return nil
 }
+
+// elicitationResult answers an MCP elicitation: accept with the content
+// filled in (none for a URL the user opened), decline, or cancel.
+func elicitationResult(decision string, content map[string]any) map[string]any {
+	switch decision {
+	case "allow", "allowAlways":
+		out := map[string]any{"action": "accept"}
+		if len(content) > 0 {
+			out["content"] = content
+		}
+		return out
+	case "cancel":
+		return map[string]any{"action": "cancel"}
+	}
+	return map[string]any{"action": "decline"}
+}

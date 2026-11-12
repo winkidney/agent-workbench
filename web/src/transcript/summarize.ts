@@ -131,11 +131,17 @@ export function toolSummary(t: Tool, diff?: DiffLine[]): Summary {
   switch (t.status) {
     case "running":
       return {
-        lines: [/^(bash|shell)$/i.test(t.name) ? "Running…" : "…"],
+        lines: [
+          t.progress
+            ? oneLine(t.progress, 160)
+            : /^(bash|shell)$/i.test(t.name)
+              ? "Running…"
+              : "…",
+        ],
         tone: "muted",
       };
     case "declined":
-      return { lines: ["Declined"], tone: "muted" };
+      return { lines: [t.note ?? "Declined"], tone: "muted" };
     case "interrupted":
       return { lines: ["Interrupted"], tone: "muted" };
   }

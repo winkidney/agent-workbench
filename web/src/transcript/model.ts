@@ -36,6 +36,10 @@ export type Tool = {
   placeholder?: boolean;
   // Native protocol identity, used by display enhancers only.
   nativeType?: string;
+  // A running tool's latest progress message (Codex MCP tools).
+  progress?: string;
+  // Why a tool did not run (Claude's auto mode blocked it).
+  note?: string;
   raw?: unknown;
   result?: unknown;
 };

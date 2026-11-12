@@ -72,6 +72,9 @@ type runtime struct {
 	// Codex: an async question awaits an answer; a plan-mode turn ended with
 	// a plan that awaits a decision (planSeen: this turn produced one).
 	asking, planReady, planSeen bool
+	// What the turn waits on, in words, when the phase does not say it: an
+	// API retry, a permission check, a hook, an auto-review (progress.go).
+	detail, detailKind string
 	// Background work (background.go): the agents' tasks by id, the extra
 	// processes last seen, Claude output files named before their task
 	// ended, and the Codex terminal poll.
@@ -359,6 +362,7 @@ func (m *Manager) beginTurn(r *runtime) {
 	}
 	r.began = time.Now()
 	r.turnOut, r.phase = 0, "requesting"
+	r.detail, r.detailKind = "", ""
 	r.turn = true
 	r.interrupted = false
 	m.status(r, "running")
@@ -533,11 +537,22 @@ func (m *Manager) receive(id string, generation int, v map[string]any) {
 		case "thread/goal/cleared":
 			m.setGoal(r, nil)
 		}
-		if v["id"] != nil && method != "" {
+		// Codex asks the client for the time (its current-time reminder):
+		// answered here, not a question for the user.
+		if v["id"] != nil && method == "currentTime/read" {
+			_ = r.proc.Input(map[string]any{"id": v["id"], "result": map[string]any{"currentTimeAt": time.Now().Unix()}})
+		} else if v["id"] != nil && method != "" {
 			key := fmt.Sprint(v["id"])
 			r.pending[key] = v
 			m.emit(r.session.ID, "approval", m.approvalData(r, key, v))
 			m.status(r, "waiting")
+		}
+		switch method {
+		case "thread/settings/updated":
+			// Changed by another client or by Codex: the pills follow.
+			r.effective = codexSettingsOptions(obj(params["threadSettings"]))
+		case "thread/name/updated":
+			m.renamed(r, str(params["threadName"]))
 		}
 		if method == "turn/started" {
 			m.emit(r.session.ID, "turn", map[string]any{"id": r.turnID})
@@ -621,6 +636,9 @@ func (m *Manager) receive(id string, generation int, v map[string]any) {
 			if strings.HasPrefix(str(v["subtype"]), "task_") || str(v["subtype"]) == "background_tasks_changed" {
 				m.trackClaudeTask(r, v)
 			}
+			if str(v["subtype"]) == "session_title_changed" {
+				m.renamed(r, str(v["title"]))
+			}
 			if str(v["subtype"]) == "init" {
 				r.caps = map[string]bool{}
 				for _, c := range strs(v["capabilities"]) {
@@ -701,12 +719,33 @@ func (m *Manager) ReplyDecision(id, key, decision, message string, answers map[s
 			result = map[string]any{"answers": answers}
 		case method == "item/commandExecution/requestApproval" || method == "item/fileChange/requestApproval":
 			result = map[string]any{"decision": map[string]string{"allow": "accept", "allowAlways": "acceptForSession", "deny": "decline", "cancel": "cancel"}[decision]}
+		case method == "item/permissions/requestApproval":
+			// Grant what was asked, for this turn or the session; deny grants
+			// nothing (cancel also stops the turn, below).
+			result = map[string]any{"permissions": map[string]any{}}
+			if allow {
+				scope := "turn"
+				if decision == "allowAlways" {
+					scope = "session"
+				}
+				result = map[string]any{"permissions": obj(obj(request["params"])["permissions"]), "scope": scope}
+			}
+		case method == "mcpServer/elicitation/request":
+			result = elicitationResult(decision, answers)
 		default:
 			return errors.New("unsupported agent request; interrupt the turn instead")
 		}
 		reply = map[string]any{"id": request["id"], "result": result}
+		if decision == "cancel" && method == "item/permissions/requestApproval" && r.turnID != "" {
+			defer func() {
+				_ = r.proc.Input(map[string]any{"id": token(), "method": "turn/interrupt", "params": map[string]any{"threadId": r.session.NativeID, "turnId": r.turnID}})
+				r.interrupted = true
+			}()
+		}
+	} else if req := obj(request["request"]); str(req["subtype"]) == "elicitation" {
+		// An MCP server asks the user for input.
+		reply = map[string]any{"type": "control_response", "response": map[string]any{"subtype": "success", "request_id": key, "response": elicitationResult(decision, answers)}}
 	} else {
-		req := obj(request["request"])
 		if str(req["subtype"]) != "can_use_tool" {
 			return errors.New("unsupported control request")
 		}
@@ -1068,7 +1107,8 @@ func agentCommand(s Session) (string, []string, error) {
 	if s.Agent == "codex" {
 		return binary, []string{"app-server"}, nil
 	}
-	args := []string{"-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--include-partial-messages", "--permission-prompt-tool", "stdio"}
+	// Hook events: which hook runs, and when one fails.
+	args := []string{"-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--include-partial-messages", "--include-hook-events", "--permission-prompt-tool", "stdio"}
 	if s.NativeID != "" {
 		args = append(args, "--resume", s.NativeID)
 	} else if s.ExplicitName && s.Title != "" {
@@ -1278,4 +1318,16 @@ func (m *Manager) retryWithoutAutoReview(r *runtime, v map[string]any) bool {
 	_ = m.store.setting("options:"+r.session.ID, o)
 	m.emit(r.session.ID, "notice", map[string]any{"text": "Codex couldn't use auto-review (" + reason + "); approvals will ask you."})
 	return r.proc.Input(retry) == nil
+}
+
+// renamed follows a name the CLI gave the session (m.mu held).
+func (m *Manager) renamed(r *runtime, title string) {
+	if title == "" || title == r.session.Title {
+		return
+	}
+	r.session.Title = title
+	if err := m.store.Save(r.session); err != nil {
+		fmt.Fprintln(os.Stderr, "save session:", err)
+	}
+	m.emit(r.session.ID, "status", r.session)
 }

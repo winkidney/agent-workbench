@@ -90,6 +90,25 @@ func codexTurnOptions(p map[string]any) Options {
 	return o
 }
 
+// codexSettingsOptions reads the settings of a thread/settings/updated
+// notification.
+func codexSettingsOptions(ts map[string]any) Options {
+	o := Options{
+		Model:       str(ts["model"]),
+		Effort:      str(ts["effort"]),
+		Speed:       str(ts["serviceTier"]),
+		Mode:        str(obj(ts["collaborationMode"])["mode"]),
+		Permissions: codexPermissions(obj(ts["sandboxPolicy"]), str(ts["approvalsReviewer"])),
+	}
+	if o.Speed == "" {
+		o.Speed = "default"
+	}
+	if o.Mode == "" {
+		o.Mode = "default"
+	}
+	return o
+}
+
 // codexThreadOptions reads the effective settings from a thread/start or
 // thread/resume result.
 func codexThreadOptions(result map[string]any) Options {

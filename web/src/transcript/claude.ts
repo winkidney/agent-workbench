@@ -341,7 +341,126 @@ export function applyClaude(
           kind: "notice",
           text: "Conversation compacted",
         });
-      return;
+      return systemRecord(d, data, ctx);
+  }
+}
+
+const AUTO_REASONS: Record<string, string> = {
+  outside_reads_blocked: "reads outside the project are blocked",
+  memory_paused: "memory is paused",
+  classifier_transcript_too_long: "the conversation is too long for its check",
+  auto_mode_no_check_in_session: "its safety check does not run here",
+};
+
+const QUIET_HOOKS = new Set([
+  "PreToolUse",
+  "PostToolUse",
+  "PostToolUseFailure",
+  "Stop",
+  "SubagentStop",
+]);
+
+const FALLBACK_TRIGGERS: Record<string, string> = {
+  model_not_found: "the model is not available",
+  permission_denied: "no access to the model",
+  overloaded: "the model is overloaded",
+  server_error: "server errors",
+  last_resort: "an error",
+  model_blocked: "the model is blocked",
+  refusal: "the model declined",
+};
+
+// The system records worth a line in the conversation: warnings, a model
+// switch, a failed hook, a step auto mode blocked, long instructions.
+function systemRecord(d: Draft, data: Record<string, unknown>, ctx: Context) {
+  const key = (name: string) => `${name}:${text(data.uuid) || ctx.seq}`;
+  const notice = (name: string, line: string, warn = false) =>
+    d.upsert({
+      key: key(name),
+      kind: "notice",
+      text: line,
+      tone: warn ? "warn" : undefined,
+      local: true,
+    });
+  switch (text(data.subtype)) {
+    case "permission_denied": {
+      const tool = text(data.tool_use_id);
+      const code = text(data.decision_reason_code);
+      const why =
+        AUTO_REASONS[code] ??
+        (text(data.decision_reason_type) === "classifier"
+          ? "its safety check said no"
+          : text(data.decision_reason_type) || "not allowed");
+      const note = `Blocked by auto mode: ${why}`;
+      if (d.get(tool)?.tool) {
+        d.patchTool(tool, { status: "declined", note });
+        return;
+      }
+      return notice(
+        "denied",
+        `${text(data.tool_name)} ${note.toLowerCase()}`,
+        true,
+      );
+    }
+    case "informational": {
+      const level = text(data.level);
+      if (level === "info") return;
+      return notice(
+        "info",
+        text(data.content),
+        level === "warning" || level === "suggestion",
+      );
+    }
+    case "notification": {
+      const priority = text(data.priority);
+      if (priority !== "high" && priority !== "immediate") return;
+      const line = text(data.text);
+      // Often the same words as an informational line just before.
+      if (d.find((b) => b.kind === "notice" && b.text === line)) return;
+      return d.upsert({
+        key: "notification:" + text(data.key),
+        kind: "notice",
+        text: line,
+        tone: "warn",
+        local: true,
+      });
+    }
+    case "model_fallback":
+    case "model_refusal_fallback":
+    case "model_consent_fallback": {
+      const why = FALLBACK_TRIGGERS[text(data.trigger)];
+      return notice(
+        "fallback",
+        `Switched from ${text(data.original_model)} to ${text(data.fallback_model)}${why ? ` (${why})` : ""}`,
+        true,
+      );
+    }
+    case "hook_response": {
+      const outcome = text(data.outcome);
+      const code = typeof data.exit_code === "number" ? data.exit_code : 0;
+      if (outcome !== "error" && code === 0) return;
+      // A tool hook's refusal shows in the tool's result, a Stop hook's
+      // feedback (a /goal check) in the conversation.
+      if (QUIET_HOOKS.has(text(data.hook_event))) return;
+      const said = (text(data.stderr) || text(data.output) || text(data.stdout))
+        .trim()
+        .split("\n")[0];
+      return notice(
+        "hook",
+        `The ${text(data.hook_event)} hook${text(data.hook_name) && text(data.hook_name) !== text(data.hook_event) ? ` (${text(data.hook_name)})` : ""} failed${code ? ` with exit code ${code}` : ""}${said ? `: ${said}` : ""}`,
+        true,
+      );
+    }
+    case "instruction_size_warning": {
+      const total = Number(data.total_chars) || 0;
+      const limit = Number(data.total_limit_chars) || 0;
+      const files = Number(data.file_count) || 0;
+      return notice(
+        "instructions",
+        `Instruction files (CLAUDE.md and rules${files > 1 ? `, ${files} files` : ""}) are ${total.toLocaleString("en")} characters, over the ${limit.toLocaleString("en")} recommended for this model`,
+        true,
+      );
+    }
   }
 }
 
