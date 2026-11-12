@@ -341,6 +341,15 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, m.Live(id))
 			return
 		}
+		if parts[2] == "background-output" && r.Method == "GET" {
+			text, err := m.TaskOutput(id, r.URL.Query().Get("task"))
+			if err != nil {
+				bad(w, err)
+				return
+			}
+			writeJSON(w, map[string]any{"text": text})
+			return
+		}
 		if parts[2] == "commands" && r.Method == "GET" {
 			// "/" commands and "$" skills for the composer.
 			cat, err := m.Catalog(id)
@@ -808,7 +817,25 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 		case "delete":
 			err = m.Delete(id)
 		case "sleep":
-			err = m.Stop(id, true)
+			// force: stop the background work too, which would otherwise keep
+			// the engine awake.
+			var v struct{ Force bool }
+			_ = json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&v)
+			if v.Force {
+				err = m.SleepStoppingBackground(id)
+			} else {
+				err = m.Stop(id, true)
+			}
+		case "background-stop":
+			var v struct{ Task string }
+			if err = decode(w, r, &v); err == nil {
+				err = m.StopBackground(id, v.Task)
+			}
+		case "to-background":
+			var v struct{ ToolUseID string }
+			if err = decode(w, r, &v); err == nil {
+				err = m.MoveToBackground(id, v.ToolUseID)
+			}
 		case "stop":
 			err = m.Stop(id, false)
 		case "resume":

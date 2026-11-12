@@ -98,7 +98,7 @@ function Fold({
 }
 
 // Tool output with its ANSI colors; plain text skips parsing.
-function AnsiText({ text }: { text: string }) {
+export function AnsiText({ text }: { text: string }) {
   const segments = useMemo(() => parseAnsi(text), [text]);
   if (!hasAnsi(text)) return <>{text}</>;
   return (

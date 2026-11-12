@@ -72,6 +72,19 @@ type runtime struct {
 	// Codex: an async question awaits an answer; a plan-mode turn ended with
 	// a plan that awaits a decision (planSeen: this turn produced one).
 	asking, planReady, planSeen bool
+	// Background work (background.go): the agents' tasks by id, the extra
+	// processes last seen, Claude output files named before their task
+	// ended, and the Codex terminal poll.
+	tasks        map[string]*BackgroundTask
+	taskSeq      int
+	others       []BackgroundTask
+	taskOutputs  map[string]string
+	terminalPoll *time.Timer
+	noTerminals  bool
+	// Claude: foreground tasks by their tool_use id (they can move to the
+	// background once registered), and moves asked for before that.
+	foreground     map[string]string
+	wantBackground map[string]bool
 }
 type Manager struct {
 	// closing: the workbench is shutting down (Shutdown); engines it stops
@@ -115,6 +128,7 @@ func (m *Manager) emit(id, kind string, data any) {
 func (m *Manager) status(r *runtime, state string) {
 	r.session.Status = state
 	r.session.Attention = attentionOf(r)
+	r.session.Background = backgroundOf(r)
 	r.last = time.Now()
 	if err := m.store.Save(r.session); err != nil {
 		fmt.Fprintln(os.Stderr, "save session:", err)
@@ -491,6 +505,7 @@ func (m *Manager) receive(id string, generation int, v map[string]any) {
 			m.status(r, "idle")
 			// The thread's goal; later changes arrive as notifications.
 			_ = r.proc.Input(map[string]any{"id": "goal", "method": "thread/goal/get", "params": map[string]any{"threadId": r.session.NativeID}})
+			m.scheduleTerminalPoll(r, time.Second)
 		}
 		method := str(v["method"])
 		params := obj(v["params"])
@@ -538,6 +553,8 @@ func (m *Manager) receive(id string, generation int, v map[string]any) {
 			}
 		}
 		if method == "turn/completed" {
+			// Commands it left running are listed after the turn.
+			m.scheduleTerminalPoll(r, 300*time.Millisecond)
 			r.turn = false
 			r.pending = map[string]any{}
 			m.status(r, "idle")
@@ -575,6 +592,11 @@ func (m *Manager) receive(id string, generation int, v map[string]any) {
 			}
 			_ = m.store.Save(r.session)
 		}
+		// Claude starts turns itself too (a background task ended, a monitor
+		// reported): they run like the page's.
+		if !r.turn && r.ready && claudeTurnSignal(v) {
+			m.beginTurn(r)
+		}
 		switch str(v["type"]) {
 		case "control_request":
 			key := str(v["request_id"])
@@ -594,7 +616,11 @@ func (m *Manager) receive(id string, generation int, v map[string]any) {
 			if strings.HasPrefix(nativeText(obj(v["message"])["content"]), "Stop hook feedback:") {
 				m.refreshClaudeGoal(r)
 			}
+			noteClaudeOutput(r, v)
 		case "system":
+			if strings.HasPrefix(str(v["subtype"]), "task_") || str(v["subtype"]) == "background_tasks_changed" {
+				m.trackClaudeTask(r, v)
+			}
 			if str(v["subtype"]) == "init" {
 				r.caps = map[string]bool{}
 				for _, c := range strs(v["capabilities"]) {
@@ -815,15 +841,30 @@ func (m *Manager) Interrupt(id string) error {
 	return nil
 }
 func (m *Manager) Stop(id string, sleep bool) error {
+	return m.stop(id, sleep, false)
+}
+
+// SleepStoppingBackground puts an engine to sleep although background work
+// runs: its tasks and processes end with it. A running turn, a pending
+// request or a managed preview still keeps it awake.
+func (m *Manager) SleepStoppingBackground(id string) error {
+	return m.stop(id, true, true)
+}
+
+func (m *Manager) stop(id string, sleep, background bool) error {
 	m.mu.Lock()
 	r := m.find(id)
 	if r == nil {
 		m.mu.Unlock()
 		return errors.New("session not found")
 	}
-	if sleep && (r.turn || len(r.pending) > 0 || hasServicePreviews(r) || processBusy(r.proc)) {
+	if sleep && (r.turn || len(r.pending) > 0 || hasServicePreviews(r)) {
 		m.mu.Unlock()
 		return errors.New("session has active work or previews")
+	}
+	if sleep && !background && processBusy(r.proc) {
+		m.mu.Unlock()
+		return errors.New("background work is running; stop it, or sleep stopping it")
 	}
 	m.flushDelta(r)
 	if len(r.queue) > 0 && !r.queuePaused {
@@ -835,6 +876,7 @@ func (m *Manager) Stop(id string, sleep bool) error {
 	r.ready = false
 	r.turn = false
 	m.releasePending(r)
+	clearTasks(r)
 	previews := r.previews
 	if sleep {
 		previews = map[string]*Preview{}
@@ -886,6 +928,7 @@ func (m *Manager) exited(id string, generation int, err error) {
 	r.ready = false
 	r.turn = false
 	m.releasePending(r)
+	clearTasks(r)
 	state := "sleeping"
 	if err != nil && !requested && !m.closing {
 		state = "error"
@@ -928,6 +971,7 @@ func (m *Manager) releasePending(r *runtime) {
 	r.pending = map[string]any{}
 }
 func (m *Manager) Sweep() {
+	m.refreshAllOthers()
 	m.mu.Lock()
 	ids := []string{}
 	for id, r := range m.sessions {
@@ -969,6 +1013,7 @@ type systemProcess struct {
 	unit     string
 	mu       sync.Mutex
 	baseline map[string]bool
+	main     int
 }
 
 func (p *systemProcess) Input(v any) error {
@@ -1139,7 +1184,31 @@ func (p *systemProcess) processes() map[string]bool {
 	}
 	return out
 }
-func (p *systemProcess) MarkReady() { p.baseline = p.processes() }
+func (p *systemProcess) MarkReady() {
+	p.baseline = p.processes()
+	if p.main == 0 {
+		b, _ := exec.Command("systemctl", "--user", "show", p.unit, "--property=MainPID", "--value").Output()
+		p.main, _ = strconv.Atoi(strings.TrimSpace(string(b)))
+	}
+}
+
+// RootPID is the engine's main process in its unit.
+func (p *systemProcess) RootPID() int { return p.main }
+
+// ExtraPIDs are the unit's processes that were not there when the engine
+// became ready.
+func (p *systemProcess) ExtraPIDs() []int {
+	now := p.processes()
+	out := []int{}
+	for id := range now {
+		if p.baseline != nil && !p.baseline[id] {
+			if pid, err := strconv.Atoi(id); err == nil {
+				out = append(out, pid)
+			}
+		}
+	}
+	return out
+}
 func (p *systemProcess) Busy() bool {
 	now := p.processes()
 	if now == nil || p.baseline == nil {

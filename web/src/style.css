@@ -1053,6 +1053,185 @@ p {
   white-space: nowrap;
   font-size: 11.5px;
 }
+/* Work running outside the turns, above the composer. */
+.bg-ring {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in oklch, var(--info) 30%, transparent);
+  border-top-color: var(--info);
+  animation: spin 2.4s linear infinite;
+}
+.bg-tray {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 5px 6px 5px 10px;
+  margin-top: 6px;
+  font-size: 12px;
+}
+.bg-tray:not(.live) .bg-ring {
+  animation: none;
+  border-color: var(--border);
+}
+.bg-head-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.bg-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--muted-foreground);
+  font: 11.5px var(--mono);
+  text-align: left;
+}
+.bg-summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bg-tray.live .bg-summary {
+  color: var(--foreground);
+}
+.bg-head .fold-chevron {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.bg-list {
+  margin: 6px 0 2px;
+  max-height: 320px;
+  overflow: auto;
+}
+.bg-task + .bg-task {
+  border-top: 1px solid var(--border);
+}
+.bg-task-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 28px;
+  min-width: 0;
+}
+.bg-kind {
+  flex-shrink: 0;
+  color: var(--info);
+}
+.bg-task:not(.running) .bg-kind {
+  color: var(--muted-foreground);
+}
+.bg-task.failed .bg-kind {
+  color: var(--destructive);
+}
+.bg-kind-label {
+  flex-shrink: 0;
+  width: 58px;
+  color: var(--muted-foreground);
+  font: 11px var(--mono);
+}
+.bg-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 11.5px var(--mono);
+}
+.bg-task:not(.running) .bg-title {
+  color: var(--muted-foreground);
+}
+.bg-time,
+.bg-state {
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+  font: 11px var(--mono);
+  white-space: nowrap;
+}
+.bg-state {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bg-task.failed .bg-state {
+  color: var(--destructive);
+}
+.bg-task.completed .bg-state {
+  color: var(--success);
+}
+.bg-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.bg-actions .goal-action {
+  gap: 4px;
+}
+.bg-task-summary {
+  margin: 0 0 6px 20px;
+  color: var(--muted-foreground);
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+.bg-output {
+  margin: 2px 0 8px 20px;
+  max-height: 220px;
+  overflow: auto;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--muted);
+  font: 11.5px/1.5 var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.bg-output-note,
+.bg-error {
+  margin: 2px 0 8px 20px;
+  color: var(--muted-foreground);
+  font-size: 11.5px;
+}
+.bg-error {
+  color: var(--destructive);
+}
+.status-icon.background {
+  position: relative;
+  width: auto;
+  min-width: 16px;
+  gap: 3px;
+}
+.bg-count {
+  color: var(--info);
+  font: 600 10px var(--mono);
+}
+.status-background {
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--background);
+  color: var(--muted-foreground);
+  font: 11px var(--mono);
+  padding: 0 6px;
+  line-height: 1.6;
+}
+.status-background:hover {
+  color: var(--foreground);
+  background: var(--muted);
+}
+/* Narrow screens: the command and its time; the rest in the details. */
+@media (max-width: 550px) {
+  .bg-kind-label,
+  .bg-state {
+    display: none;
+  }
+}
 /* The session's /goal above the composer. */
 .goal-bar {
   border: 1px solid var(--border);
@@ -3485,6 +3664,7 @@ body.resizing iframe {
   .spin,
   .status-icon.waiting svg,
   .status-icon.needs-you,
+  .bg-ring,
   .status-glyph {
     animation: none;
   }

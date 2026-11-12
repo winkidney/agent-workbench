@@ -3,6 +3,7 @@ package workbench
 import (
 	"errors"
 	"strings"
+	"time"
 )
 
 // queued is a follow-up typed while a turn was running. The workbench owns the
@@ -45,6 +46,9 @@ func (m *Manager) Enqueue(id, text string) (bool, error) {
 // turnEnded runs with m.mu held after a turn settles. Interrupted or failed
 // turns pause the queue instead of sending the next message.
 func (m *Manager) turnEnded(r *runtime, failed bool) {
+	// What the turn left running, once its own processes have exited.
+	id := r.session.ID
+	time.AfterFunc(time.Second, func() { m.refreshAllOthers(id) })
 	interrupted := r.interrupted
 	r.interrupted = false
 	if len(r.queue) == 0 {

@@ -60,6 +60,7 @@ export function Composer({
   onCommand,
   onAction,
   onInterrupt,
+  onBackground,
 }: {
   session: ComposerSession;
   running: boolean;
@@ -74,6 +75,8 @@ export function Composer({
   // A command the page carries out, such as /new.
   onAction: (action: string, args: string) => void;
   onInterrupt: () => void;
+  // Ctrl+B: move what the turn waits on to the background (Claude).
+  onBackground?: () => void;
 }) {
   const ctl = useAgentControls({ session });
   const [prompt, setPromptState] = useState(() => drafts.get(session.id) ?? "");
@@ -284,6 +287,17 @@ export function Composer({
                 setDismissed(true);
                 return;
               }
+            }
+            if (
+              onBackground &&
+              e.ctrlKey &&
+              !e.altKey &&
+              !e.metaKey &&
+              e.key.toLowerCase() === "b"
+            ) {
+              e.preventDefault();
+              onBackground();
+              return;
             }
             if (
               e.key === "Enter" &&

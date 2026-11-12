@@ -71,11 +71,14 @@ export function StatusLine({
   status,
   startedAt,
   verb,
+  onBackground,
 }: {
   sessionId: string;
   status: string;
   startedAt: number | null;
   verb: string;
+  // Moves the command or subagent the turn waits on to the background.
+  onBackground?: () => void;
 }) {
   const busy = [
     "running",
@@ -140,6 +143,16 @@ export function StatusLine({
       <span className="status-meta" aria-hidden>
         ({meta.join(" · ")})
       </span>
+      {onBackground && status === "running" && (
+        <button
+          type="button"
+          className="status-background"
+          title="Move it to the background and keep going (Ctrl+B)"
+          onClick={onBackground}
+        >
+          ⌃B background
+        </button>
+      )}
     </div>
   );
 }

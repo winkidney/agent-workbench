@@ -37,7 +37,10 @@ type Session struct {
 	// Attention: what the session waits for from the user (attention.go);
 	// computed, not stored.
 	Attention string `json:"attention,omitempty"`
-	Updated   string `json:"updated"`
+	// Background: how many tasks or processes run outside its turns
+	// (background.go); computed, not stored.
+	Background int    `json:"background,omitempty"`
+	Updated    string `json:"updated"`
 	// ExplicitName: the user typed a name, so it is written as the native name.
 	ExplicitName bool `json:"-"`
 }

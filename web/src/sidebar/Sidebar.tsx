@@ -336,7 +336,11 @@ const SessionRow = memo(function SessionRow({
                   <span className="session-name">
                     <Highlight text={node.title} query={actions.query} />
                   </span>
-                  <StatusIcon status={s.status} attention={s.attention} />
+                  <StatusIcon
+                    status={s.status}
+                    attention={s.attention}
+                    background={s.background}
+                  />
                 </span>
                 <span className="session-sub">
                   {[
@@ -358,8 +362,12 @@ const SessionRow = memo(function SessionRow({
                 {node.children.length > 0 && !open && (
                   <span className="session-kids">{node.children.length}</span>
                 )}
-                {statusLabel[s.status] || s.attention ? (
-                  <StatusIcon status={s.status} attention={s.attention} />
+                {statusLabel[s.status] || s.attention || s.background ? (
+                  <StatusIcon
+                    status={s.status}
+                    attention={s.attention}
+                    background={s.background}
+                  />
                 ) : (
                   <span className="session-time">
                     {relativeTime(s.updated, actions.now)}

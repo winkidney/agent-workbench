@@ -44,6 +44,12 @@ import { ApprovalCard, type Decision } from "./approval/ApprovalCard";
 import { StatusLine, activity, turnClock } from "./composer/StatusLine";
 import { GoalBar } from "./composer/GoalBar";
 import { goalChanged, useGoal } from "./composer/goal";
+import { BackgroundTray } from "./composer/BackgroundTray";
+import {
+  backgroundChanged,
+  backgroundable,
+  useBackground,
+} from "./composer/background";
 import { QueueList } from "./composer/QueueList";
 import { TodoPanel, latestPlan } from "./composer/TodoPanel";
 import type { WorkbenchEvent } from "./transcript/model";
@@ -163,6 +169,9 @@ export default function App() {
     current?.status ?? "",
   );
   const goal = useGoal(current?.id);
+  const background = useBackground(current?.id);
+  // Asked before putting an engine with background work to sleep.
+  const [sleepAsk, setSleepAsk] = useState(false);
   const transcript = useTranscript(
     current
       ? { id: current.id, agent: current.agent, status: current.status }
@@ -356,6 +365,25 @@ export default function App() {
   );
   const waiting = useAttention(titled, paired, (id) => selectSession(id));
   const waitingElsewhere = waiting.some((s) => s.id !== active);
+  // The Claude command or subagent a running turn waits on, which Ctrl+B or
+  // the status line's button moves to the background.
+  const backgroundTool = useMemo(() => {
+    if (current?.agent !== "claude" || current.status !== "running")
+      return undefined;
+    const keys = transcript.state.keys.slice(-40);
+    return backgroundable(keys.map((k) => transcript.state.blocks.get(k)!));
+  }, [current?.agent, current?.status, transcript.state]);
+  const moveToBackground =
+    current && backgroundTool
+      ? () =>
+          void api(
+            `sessions/${encodeURIComponent(current.id)}/to-background`,
+            "POST",
+            { toolUseId: backgroundTool },
+          )
+            .then(() => backgroundChanged(current.id))
+            .catch(catchError)
+      : undefined;
   // New sessions start inline in the conversation area, like a new chat.
   const openNewSession = (dir?: string) => {
     setComposing({ cwd: dir });
@@ -801,6 +829,8 @@ export default function App() {
                   <AgentIcon agent={current.agent} size={16} />
                   <span className={"status-pill " + current.status}>
                     {labels[current.status] ?? current.status}
+                    {(current.background ?? 0) > 0 &&
+                      ` · ${current.background} in background`}
                   </span>
                   {(current.related?.length ?? 0) > 0 && (
                     <span className="header-related" title="Also worked in">
@@ -866,6 +896,12 @@ export default function App() {
                           e.currentTarget
                             .closest("details")
                             ?.removeAttribute("open");
+                          // Sleeping would stop the background work: ask.
+                          if (
+                            action === "sleep" &&
+                            (current.background ?? 0) > 0
+                          )
+                            return setSleepAsk(true);
                           void act(action).catch(() => {});
                         }}
                       >
@@ -968,6 +1004,11 @@ export default function App() {
                   onSend={sendMessage}
                   onInterrupt={() => void act("interrupt").catch(() => {})}
                 />
+                <BackgroundTray
+                  sessionId={current.id}
+                  tasks={background}
+                  readOnly={!!current.readOnly || !!current.archived}
+                />
                 <TodoPanel steps={plan} busy={running} />
                 <QueueList
                   items={transcript.queue.items}
@@ -1011,6 +1052,7 @@ export default function App() {
                         : `Starting ${current.agent === "codex" ? "Codex" : "Claude"}`
                       : activity(transcript.state, current.status)
                   }
+                  onBackground={moveToBackground}
                 />
               </div>
               {current.archived && (
@@ -1039,6 +1081,7 @@ export default function App() {
                   if (action === "new") openNewSession(current.cwd);
                 }}
                 onInterrupt={() => void act("interrupt").catch(() => {})}
+                onBackground={moveToBackground}
               />
             </>
           ) : (
@@ -1261,6 +1304,39 @@ export default function App() {
               env.openPath(item.path, item.base);
             }}
           />
+        )}
+        {sleepAsk && current && (
+          <Dialog open onOpenChange={(open) => !open && setSleepAsk(false)}>
+            <DialogContent className="modal modal-content confirm-dialog">
+              <DialogTitle asChild>
+                <h2>Stop the background work?</h2>
+              </DialogTitle>
+              <p>
+                {(current.background ?? 0) === 1
+                  ? "A task runs"
+                  : `${current.background} tasks run`}{" "}
+                in the background of{" "}
+                <strong>{displayTitle(current, sidebarPrefs.prefs)}</strong>.
+                Sleeping stops {(current.background ?? 0) === 1 ? "it" : "them"}
+                ; the session resumes with your next message.
+              </p>
+              <div className="confirm-actions">
+                <Button variant="ghost" onClick={() => setSleepAsk(false)}>
+                  Keep running
+                </Button>
+                <Button
+                  className="danger-button"
+                  onClick={() => {
+                    setSleepAsk(false);
+                    void act("sleep", { force: true }).catch(() => {});
+                  }}
+                >
+                  <Moon size={14} />
+                  Stop and sleep
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
         )}
         {deleting && (
           <Dialog

@@ -16,6 +16,8 @@ export type Session = {
   status: string;
   // What the session waits for from the user: approval, question, plan.
   attention?: string;
+  // How many tasks or processes run outside its turns.
+  background?: number;
   updated: string;
   // project | automation | temporary | chat, decided by the launch directory.
   origin?: string;

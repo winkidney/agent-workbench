@@ -210,6 +210,7 @@ export function applyEvent(d: Draft, e: WorkbenchEvent, ctx: Context) {
         key: "notice:" + e.seq,
         kind: "notice",
         text: text(data.text),
+        tone: data.tone === "warn" ? "warn" : undefined,
         local: true,
         time: e.time,
       });

@@ -62,8 +62,9 @@ func attentionOf(r *runtime) string {
 // without a status change (m.mu held). It leaves r.last alone, so a waiting
 // session does not stay awake longer for it.
 func (m *Manager) syncAttention(r *runtime) {
-	if a := attentionOf(r); a != r.session.Attention {
-		r.session.Attention = a
+	a, b := attentionOf(r), backgroundOf(r)
+	if a != r.session.Attention || b != r.session.Background {
+		r.session.Attention, r.session.Background = a, b
 		m.emit(r.session.ID, "status", r.session)
 	}
 }
@@ -97,6 +98,8 @@ func trackAttention(r *runtime, method string, params map[string]any) {
 // and the plan decision (m.mu held).
 func userActed(r *runtime) {
 	r.asking, r.planReady = false, false
+	clearFinished(r)
+	r.foreground, r.wantBackground = nil, nil
 }
 
 // DismissPlan records that the user chose about a Codex plan in the page

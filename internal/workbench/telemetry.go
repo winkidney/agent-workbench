@@ -43,6 +43,8 @@ type Telemetry struct {
 	Scope     string  `json:"scope"`
 	// The session's /goal, if any (goal.go).
 	Goal *Goal `json:"goal,omitempty"`
+	// What runs outside the turns, and recently ended (background.go).
+	Background []BackgroundTask `json:"background,omitempty"`
 }
 type metadata struct {
 	Models      []any          `json:"models"`
@@ -344,6 +346,11 @@ func (m *Manager) Telemetry(id string) Telemetry {
 	t := m.telemetry(id)
 	t.Goal = nil
 	m.store.readSetting("goal:"+id, &t.Goal)
+	m.mu.Lock()
+	if r := m.find(id); r != nil && r.proc != nil {
+		t.Background = tasksOf(r)
+	}
+	m.mu.Unlock()
 	return t
 }
 func (m *Manager) telemetry(id string) Telemetry {

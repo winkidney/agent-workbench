@@ -638,6 +638,7 @@ func (m *Manager) NativeList() ([]Session, error) {
 		if r := m.find(s.ID); r != nil {
 			// Async questions wait for an answer while the engine sleeps.
 			list[i].Attention = r.session.Attention
+			list[i].Background = r.session.Background
 		}
 		if r := m.find(s.ID); r != nil && r.proc != nil {
 			list[i].Status = r.session.Status

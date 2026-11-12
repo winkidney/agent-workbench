@@ -89,6 +89,22 @@ func (p *directProcess) Stop() error {
 
 func (p *directProcess) MarkReady() { p.baseline = p.group.PIDs() }
 
+// RootPID is 0: the group is the leader's descendants, so nothing in it
+// outlived the command that started it, and no other processes are listed.
+func (p *directProcess) RootPID() int { return 0 }
+
+// ExtraPIDs are the group's processes that were not there when the engine
+// became ready.
+func (p *directProcess) ExtraPIDs() []int {
+	out := []int{}
+	for pid := range p.group.PIDs() {
+		if p.baseline != nil && !p.baseline[pid] {
+			out = append(out, pid)
+		}
+	}
+	return out
+}
+
 // Busy is whether the engine has started processes since it became ready
 // (a tool, a shell, a dev server), as for a unit's cgroup.
 func (p *directProcess) Busy() bool {

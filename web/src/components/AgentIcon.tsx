@@ -73,10 +73,13 @@ export const statusLabel: Record<string, string> = {
 export function StatusIcon({
   status,
   attention,
+  background,
   size = 13,
 }: {
   status: string;
   attention?: string;
+  // Tasks or processes running outside the turns.
+  background?: number;
   size?: number;
 }) {
   const wants = attention ? ATTENTION_LABEL[attention] : undefined;
@@ -86,6 +89,22 @@ export function StatusIcon({
         <BellRing size={size} role="img" aria-label={wants} />
       </span>
     );
+  // Between turns, work in the background: a ring with how much.
+  if (background && !["running", "starting", "waiting"].includes(status)) {
+    const label =
+      background === 1 ? "1 background task" : `${background} background tasks`;
+    return (
+      <span
+        className="status-icon background"
+        title={label}
+        role="img"
+        aria-label={label}
+      >
+        <span className="bg-ring" aria-hidden />
+        {background > 1 && <span className="bg-count">{background}</span>}
+      </span>
+    );
+  }
   const label = statusLabel[status];
   if (!label) return null;
   const common = { size, role: "img", "aria-label": label } as const;
