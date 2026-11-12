@@ -52,7 +52,7 @@ var workbenchCommands = []workbenchCommand{
 	{Command: Command{Name: "fast", ArgumentHint: "[on|off]", Description: "Toggle fast mode"}},
 	{agents: "codex", Command: Command{Name: "compact", Description: "Summarize the conversation to free context"}},
 	{agents: "codex", Command: Command{Name: "review", ArgumentHint: "[instructions]", Description: "Review the current changes for issues"}},
-	{agents: "codex", Command: Command{Name: "goal", ArgumentHint: "[objective|clear]", Description: "Set, show or clear the goal of a long task"}},
+	{agents: "codex", Command: Command{Name: "goal", ArgumentHint: "[<objective>|clear|edit|pause|resume]", Description: "Set, show, pause or clear the goal of a long task"}},
 	{agents: "codex", Command: Command{Name: "rename", ArgumentHint: "<name>", Description: "Rename the current thread"}},
 	{agents: "codex", Command: Command{Name: "fork", Description: "Fork the current chat into a new session"}},
 	{agents: "codex", Command: Command{Name: "mcp", Description: "List MCP servers and their tools"}},
@@ -63,6 +63,10 @@ var workbenchCommands = []workbenchCommand{
 	{agents: "codex", Command: Command{Name: "skills", Description: "Use skills for specific tasks", Action: "skills"}},
 	{agents: "codex", Command: Command{Name: "quit", Aliases: []string{"exit"}, Description: "Put the engine to sleep"}},
 }
+
+// Argument hints for Claude commands that report none in stream-json mode
+// (from their terminal versions).
+var claudeHints = map[string]string{"goal": "[<condition> | clear]"}
 
 func workbenchFor(agent string) []Command {
 	out := []Command{}
@@ -134,7 +138,11 @@ func buildCatalog(agent string, meta metadata) Catalog {
 		if taken[name] {
 			continue
 		}
-		cat.Commands = append(cat.Commands, Command{Name: name, Aliases: strs(c["aliases"]), ArgumentHint: str(c["argumentHint"]), Description: str(c["description"]), Kind: kind, Source: "native"})
+		hint := str(c["argumentHint"])
+		if hint == "" {
+			hint = claudeHints[name]
+		}
+		cat.Commands = append(cat.Commands, Command{Name: name, Aliases: strs(c["aliases"]), ArgumentHint: hint, Description: str(c["description"]), Kind: kind, Source: "native"})
 	}
 	return cat
 }
@@ -384,28 +392,107 @@ func (m *Manager) codexTurn(id, method string, params map[string]any) error {
 	return nil
 }
 
+// codexGoal follows the Codex TUI: /goal [<objective>|clear|edit|pause|resume].
 func (m *Manager) codexGoal(id, thread, args string) error {
-	switch args {
-	case "":
+	current := func() (*Goal, error) {
 		v, err := m.rpc(id, "thread/goal/get", map[string]any{"threadId": thread})
+		if err != nil {
+			return nil, err
+		}
+		g := codexGoal(obj(v["goal"]))
+		m.mu.Lock()
+		if r := m.find(id); r != nil {
+			m.setGoal(r, g)
+		}
+		m.mu.Unlock()
+		return g, nil
+	}
+	set := func(params map[string]any) error {
+		params["threadId"], params["origin"] = thread, "user"
+		v, err := m.rpc(id, "thread/goal/set", params)
 		if err != nil {
 			return err
 		}
-		goal := obj(v["goal"])
-		if str(goal["objective"]) == "" {
-			m.notice(id, "No goal is set.")
-		} else {
-			m.notice(id, fmt.Sprintf("Goal: %s (%s)", str(goal["objective"]), str(goal["status"])))
+		if g := codexGoal(obj(v["goal"])); g != nil {
+			m.mu.Lock()
+			if r := m.find(id); r != nil {
+				m.setGoal(r, g)
+			}
+			m.mu.Unlock()
 		}
 		return nil
-	case "clear":
+	}
+	verb, rest, _ := strings.Cut(args, " ")
+	rest = strings.TrimSpace(rest)
+	switch strings.ToLower(verb) {
+	case "":
+		g, err := current()
+		if err != nil {
+			return err
+		}
+		if g == nil {
+			m.notice(id, "No goal is currently set.")
+		} else {
+			m.notice(id, codexGoalPanel(g))
+		}
+		return nil
+	case "clear", "pause", "resume", "edit":
+		if verb != "edit" && rest != "" {
+			break // an objective that starts with the word
+		}
+		if strings.EqualFold(verb, "clear") {
+			if _, err := m.rpc(id, "thread/goal/clear", map[string]any{"threadId": thread}); err != nil {
+				return err
+			}
+			m.notice(id, "Goal cleared.")
+			return nil
+		}
+		g, err := current()
+		if err != nil {
+			return err
+		}
+		if g == nil {
+			m.notice(id, "No goal is currently set.")
+			return nil
+		}
+		switch strings.ToLower(verb) {
+		case "edit":
+			if rest == "" {
+				return errors.New("usage: /goal edit <objective>")
+			}
+			if err := set(map[string]any{"objective": rest}); err != nil {
+				return err
+			}
+			m.notice(id, "Goal updated: "+rest)
+		case "pause":
+			if err := set(map[string]any{"status": "paused"}); err != nil {
+				return err
+			}
+			m.notice(id, "Goal paused · /goal resume to continue")
+		case "resume":
+			if err := set(map[string]any{"status": "active"}); err != nil {
+				return err
+			}
+			m.notice(id, "Goal resumed.")
+		}
+		return nil
+	}
+	// A new objective replaces the goal, as the TUI's "Replace current
+	// goal" does: setting an objective on an existing goal only renames it
+	// (a complete goal stays complete), so it is cleared first and the new
+	// one starts active, with its time and tokens from zero.
+	m.mu.Lock()
+	had := false
+	if r := m.find(id); r != nil {
+		had = r.goal != nil
+	}
+	m.mu.Unlock()
+	if had {
 		if _, err := m.rpc(id, "thread/goal/clear", map[string]any{"threadId": thread}); err != nil {
 			return err
 		}
-		m.notice(id, "Goal cleared.")
-		return nil
 	}
-	if _, err := m.rpc(id, "thread/goal/set", map[string]any{"threadId": thread, "objective": args, "origin": "user"}); err != nil {
+	if err := set(map[string]any{"objective": args, "status": "active"}); err != nil {
 		return err
 	}
 	m.notice(id, "Goal set: "+args)

@@ -17,6 +17,7 @@ import {
   type Item,
   type Route,
 } from "./commands";
+import { goalIntent, type Goal } from "./goal";
 
 export type SendMode = "send" | "steer" | "queue";
 
@@ -53,6 +54,7 @@ export function Composer({
   session,
   running,
   disabled,
+  goal,
   inputRef,
   onSend,
   onCommand,
@@ -62,6 +64,8 @@ export function Composer({
   session: ComposerSession;
   running: boolean;
   disabled: boolean;
+  // The session's /goal, for "/goal edit" and replacing a goal.
+  goal?: Goal | null;
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
   // send: a new turn; steer: into the running turn; queue: after it.
   onSend: (text: string, how: SendMode) => Promise<unknown>;
@@ -122,6 +126,18 @@ export function Composer({
       ref.current?.setSelectionRange(text.length, text.length);
     });
   };
+  // A new Codex objective over an unfinished goal waits for this answer.
+  const [replace, setReplace] = useState<{ args: string; text: string } | null>(
+    null,
+  );
+  useEffect(() => {
+    const fill = (e: Event) => {
+      const v = (e as CustomEvent).detail;
+      if (v.session === session.id) startWith(v.text);
+    };
+    window.addEventListener("workbench:compose", fill);
+    return () => window.removeEventListener("workbench:compose", fill);
+  }, [session.id]);
   // Grow with the content up to 40% of the viewport.
   useLayoutEffect(() => {
     const el = ref.current;
@@ -143,6 +159,15 @@ export function Composer({
         ? route(text, cat, session.agent)
         : route(text, { commands: [], skills: [] }, session.agent);
     }
+    if (r.kind === "command" && r.name === "goal") {
+      const intent = goalIntent(session.agent, r.args, goal);
+      if (intent?.kind === "prefill") return startWith(intent.text);
+      if (intent?.kind === "confirm") {
+        setPrompt("");
+        return setReplace({ args: intent.args, text });
+      }
+    }
+    setReplace(null);
     setPrompt("");
     if (r.kind === "action") {
       if (r.action === "skills") return startWith("$");
@@ -169,6 +194,42 @@ export function Composer({
           onPick={pick}
           onHover={setActive}
         />
+      )}
+      {replace && goal && (
+        <div
+          className="goal-replace"
+          role="alertdialog"
+          aria-label="Replace goal"
+        >
+          <span className="goal-replace-text">
+            Replace the current goal <q>{goal.objective}</q>?
+          </span>
+          <span className="goal-replace-actions">
+            <button
+              type="button"
+              className="goal-action primary"
+              autoFocus
+              onClick={() => {
+                const { args, text } = replace;
+                setReplace(null);
+                onCommand("goal", args).catch(() => setPrompt(text));
+              }}
+            >
+              Replace goal
+            </button>
+            <button
+              type="button"
+              className="goal-action"
+              onClick={() => {
+                // Nothing is lost: the new objective goes back to the composer.
+                startWith(replace.text);
+                setReplace(null);
+              }}
+            >
+              Keep current
+            </button>
+          </span>
+        </div>
       )}
       <form
         className={"composer" + (readOnly ? " read-only" : "")}

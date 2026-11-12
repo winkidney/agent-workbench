@@ -40,6 +40,8 @@ type Telemetry struct {
 	Estimated bool    `json:"estimated"`
 	Updated   string  `json:"updated"`
 	Scope     string  `json:"scope"`
+	// The session's /goal, if any (goal.go).
+	Goal *Goal `json:"goal,omitempty"`
 }
 type metadata struct {
 	Models      []any          `json:"models"`
@@ -320,6 +322,12 @@ func (m *Manager) applyOptions(id string) error {
 	return nil
 }
 func (m *Manager) Telemetry(id string) Telemetry {
+	t := m.telemetry(id)
+	t.Goal = nil
+	m.store.readSetting("goal:"+id, &t.Goal)
+	return t
+}
+func (m *Manager) telemetry(id string) Telemetry {
 	o := m.options(id)
 	t := Telemetry{Options: o, Estimated: true, Scope: "Native CLI session totals; subagent inclusion follows the provider"}
 	m.store.readSetting("telemetry:"+id, &t)

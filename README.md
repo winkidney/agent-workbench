@@ -28,6 +28,7 @@ Agent Workbench runs on your machine next to `claude` and `codex` and gives both
 
 **Commands and skills**
 - `/` commands and `$` skills with completion: Claude Code's own commands, and the Codex TUI commands that make sense outside a terminal (`/compact`, `/review`, `/goal`, `/fork`, `/mcp`, `/diff`, …).
+- `/goal` for both agents, with a goal bar above the composer: status, time and tokens, and pause, resume, edit and clear.
 - `/plan` and `/default` switch plan mode in both agents.
 
 **Files and previews**

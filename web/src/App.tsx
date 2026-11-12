@@ -40,6 +40,8 @@ import { MediaViewer } from "./media/MediaViewer";
 import { withSending } from "./transcript/reducer";
 import { ApprovalCard, type Decision } from "./approval/ApprovalCard";
 import { StatusLine, activity, turnClock } from "./composer/StatusLine";
+import { GoalBar } from "./composer/GoalBar";
+import { goalChanged, useGoal } from "./composer/goal";
 import { QueueList } from "./composer/QueueList";
 import { TodoPanel, latestPlan } from "./composer/TodoPanel";
 import type { WorkbenchEvent } from "./transcript/model";
@@ -158,6 +160,7 @@ export default function App() {
   const running = ["running", "waiting", "starting"].includes(
     current?.status ?? "",
   );
+  const goal = useGoal(current?.id);
   const transcript = useTranscript(
     current
       ? { id: current.id, agent: current.agent, status: current.status }
@@ -495,7 +498,11 @@ export default function App() {
             detail: { session: current.id, options: res.options },
           }),
         );
-      await refresh();
+      // /goal leaves the list as it was, and Codex starts the goal's turn
+      // just after answering: a list read now could arrive after that
+      // turn's "running" and put the session back to idle.
+      if (name === "goal") goalChanged(current.id);
+      else await refresh();
       // /fork opens the new session.
       if (res.session) selectSession(res.session);
     } catch (e) {
@@ -926,6 +933,16 @@ export default function App() {
                 </div>
               </EnvContext.Provider>
               <div className="composer-stack">
+                <GoalBar
+                  sessionId={current.id}
+                  agent={current.agent}
+                  goal={goal}
+                  running={running}
+                  readOnly={!!current.readOnly || !!current.archived}
+                  onCommand={runCommand}
+                  onSend={sendMessage}
+                  onInterrupt={() => void act("interrupt").catch(() => {})}
+                />
                 <TodoPanel steps={plan} busy={running} />
                 <QueueList
                   items={transcript.queue.items}
@@ -989,6 +1006,7 @@ export default function App() {
                 session={current}
                 running={running}
                 disabled={busy}
+                goal={goal}
                 inputRef={composerRef}
                 onSend={sendMessage}
                 onCommand={runCommand}

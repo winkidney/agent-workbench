@@ -48,7 +48,16 @@ Type `/` or `$` to open a list that filters as you type (prefix matches first, a
 
 - **Both agents:** `/plan [task]` and `/default [task]` switch plan mode (and send the task if given); `/model`, `/effort`, `/permissions` and `/fast` change the matching setting.
 - **Claude:** the list is Claude Code's own command list (terminal-only commands left out). Commands are sent as text and run by the CLI; output of local commands such as `/context` is shown formatted. A `$skill` goes at the start of a message and is sent as `/skill`.
-- **Codex:** skills come from the CLI; `$skill` can appear anywhere, several times. The Codex TUI commands that make sense here are mapped to the app-server: `/compact`, `/review [instructions]`, `/goal [text|clear]`, `/rename`, `/fork` (opens the new session), `/mcp`, `/diff`, `/quit`; `/new`, `/status`, `/usage` and `/skills` are handled by the page. Unknown commands are refused rather than sent to the model; start with `//` to send a literal `/`.
+- **Codex:** skills come from the CLI; `$skill` can appear anywhere, several times. The Codex TUI commands that make sense here are mapped to the app-server: `/compact`, `/review [instructions]`, `/goal [<objective>|clear|edit|pause|resume]`, `/rename`, `/fork` (opens the new session), `/mcp`, `/diff`, `/quit`; `/new`, `/status`, `/usage` and `/skills` are handled by the page. Unknown commands are refused rather than sent to the model; start with `//` to send a literal `/`.
+
+### Goals
+
+`/goal` gives the agent a goal to keep working on across turns, as in each CLI.
+
+- **Codex:** `/goal <objective>` sets it and Codex starts working at once, starting each next turn itself until it marks the goal complete (or stalls, or reaches a usage or token limit). `/goal` shows the objective, status, time and tokens; `/goal pause`, `/goal resume`, `/goal edit <objective>` and `/goal clear` do what they say, and `/goal edit` alone puts the current objective in the composer to edit. A new objective over an unfinished goal asks first (**Replace goal** / **Keep current**); the replaced goal's time and tokens start over.
+- **Claude:** `/goal <condition>` (or `/goal clear`) runs in Claude Code: Claude keeps working in the same turn until a separate check finds the condition met. It needs hooks to be allowed (not `disableAllHooks` or `allowManagedHooksOnly`).
+
+While a goal is set, a bar above the composer shows its status in the CLI's words (*Pursuing goal*, *Goal paused*, *Goal stalled*, *Goal achieved*; *Goal active*, *Goal met* for Claude), the objective, and time, checks and tokens; click it for the full objective and the latest check. Its buttons pause, resume, edit and clear (for Claude during a turn, **Stop & clear** stops the turn first). When a goal ends, a line in the conversation says how, and the bar stays until you close it. A Codex engine pursuing a goal is not put to sleep between its turns.
 
 ### Approvals and questions
 

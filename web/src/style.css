@@ -1053,6 +1053,147 @@ p {
   white-space: nowrap;
   font-size: 11.5px;
 }
+/* The session's /goal above the composer. */
+.goal-bar {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 5px 6px 5px 10px;
+  margin-top: 6px;
+  font-size: 12px;
+  --goal-tone: var(--success);
+}
+.goal-bar.warn {
+  --goal-tone: var(--warning);
+}
+.goal-bar.bad {
+  --goal-tone: var(--destructive);
+}
+.goal-bar.idle {
+  --goal-tone: var(--muted-foreground);
+}
+.goal-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.goal-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--muted-foreground);
+  font: 11.5px var(--mono);
+  text-align: left;
+}
+.goal-glyph {
+  flex-shrink: 0;
+  color: var(--goal-tone);
+}
+.goal-glyph.live {
+  animation: pulse 1.6s ease-in-out infinite;
+}
+.goal-label {
+  flex-shrink: 0;
+  color: var(--goal-tone);
+  font-weight: 600;
+}
+.goal-objective {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--foreground);
+}
+.goal-meta {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.goal-head .fold-chevron {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.goal-actions,
+.goal-replace-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.goal-action {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--background);
+  color: var(--foreground);
+  font-size: 11px;
+  line-height: 1.5;
+  padding: 1px 7px;
+  white-space: nowrap;
+}
+.goal-action:hover:not(:disabled) {
+  background: var(--muted);
+}
+.goal-action:disabled {
+  opacity: 0.5;
+}
+.goal-action.icon {
+  padding: 3px;
+  color: var(--muted-foreground);
+}
+.goal-action.primary {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+.goal-action.primary:hover {
+  background: var(--primary);
+  opacity: 0.9;
+}
+.goal-detail {
+  margin: 6px 0 2px 19px;
+  max-height: 180px;
+  overflow: auto;
+}
+.goal-text,
+.goal-reason {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.goal-reason {
+  margin-top: 4px;
+  color: var(--muted-foreground);
+}
+.goal-reason span {
+  font: 11px var(--mono);
+  margin-right: 4px;
+}
+.goal-replace {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 10px;
+  border: 1px solid var(--warning);
+  border-radius: 8px;
+  padding: 6px 8px 6px 10px;
+  margin-bottom: 6px;
+  font-size: 12.5px;
+}
+.goal-replace-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+/* Narrow screens keep the objective in the row; the details have the numbers. */
+@media (max-width: 550px) {
+  .goal-meta {
+    display: none;
+  }
+}
 .todo-panel,
 .queue {
   border: 1px solid var(--border);

@@ -58,6 +58,11 @@ type runtime struct {
 	caps map[string]bool
 	// Claude: steered messages, by uuid, that no turn has answered yet.
 	steering map[string]*steered
+	// The session's /goal (also kept in the store for the page); Claude's
+	// is read from its JSONL (goal.go).
+	goal      *Goal
+	goalScan  *claudeGoalScan
+	goalTimer *time.Timer
 }
 type Manager struct {
 	// closing: the workbench is shutting down (Shutdown); engines it stops
@@ -287,14 +292,7 @@ func (m *Manager) Send(id, text string) error {
 				m.mu.Unlock()
 				return errors.New("session is busy")
 			}
-			if value, ok := r.total["outputTokens"].(float64); ok {
-				r.baseline = value
-			}
-			r.began = time.Now()
-			r.turnOut, r.phase = 0, "requesting"
-			r.turn = true
-			r.interrupted = false
-			m.status(r, "running")
+			m.beginTurn(r)
 			m.emit(r.session.ID, "user", map[string]any{"text": text})
 			var v any
 			if r.session.Agent == "codex" {
@@ -324,6 +322,19 @@ func (m *Manager) Send(id, text string) error {
 		}
 		time.Sleep(25 * time.Millisecond)
 	}
+}
+
+// beginTurn marks a turn as running (m.mu held): one the page sent, or one
+// Codex started itself to pursue a goal.
+func (m *Manager) beginTurn(r *runtime) {
+	if value, ok := r.total["outputTokens"].(float64); ok {
+		r.baseline = value
+	}
+	r.began = time.Now()
+	r.turnOut, r.phase = 0, "requesting"
+	r.turn = true
+	r.interrupted = false
+	m.status(r, "running")
 }
 
 // prepareFor applies the "$" skill and "/" rules to a message (see
@@ -380,6 +391,14 @@ func (m *Manager) receive(id string, generation int, v map[string]any) {
 		select {
 		case ch <- reply:
 		default:
+		}
+		return
+	}
+	// The goal read when a Codex engine starts (a CLI without goals answers
+	// with an error, which is not the session's).
+	if r.session.Agent == "codex" && str(v["id"]) == "goal" && v["method"] == nil {
+		if v["error"] == nil {
+			m.setGoal(r, codexGoal(obj(obj(v["result"])["goal"])))
 		}
 		return
 	}
@@ -446,6 +465,8 @@ func (m *Manager) receive(id string, generation int, v map[string]any) {
 				p.MarkReady()
 			}
 			m.status(r, "idle")
+			// The thread's goal; later changes arrive as notifications.
+			_ = r.proc.Input(map[string]any{"id": "goal", "method": "thread/goal/get", "params": map[string]any{"threadId": r.session.NativeID}})
 		}
 		method := str(v["method"])
 		params := obj(v["params"])
@@ -460,6 +481,17 @@ func (m *Manager) receive(id string, generation int, v map[string]any) {
 
 		if method == "turn/started" {
 			r.turnID = str(obj(params["turn"])["id"])
+			// Codex starts turns itself to pursue a goal (after /goal, after
+			// each turn while the goal is active, on resume).
+			if !r.turn {
+				m.beginTurn(r)
+			}
+		}
+		switch method {
+		case "thread/goal/updated":
+			m.setGoal(r, codexGoal(obj(params["goal"])))
+		case "thread/goal/cleared":
+			m.setGoal(r, nil)
 		}
 		if v["id"] != nil && method != "" {
 			key := fmt.Sprint(v["id"])
@@ -505,6 +537,9 @@ func (m *Manager) receive(id string, generation int, v map[string]any) {
 				p.MarkReady()
 			}
 			m.status(r, "idle")
+			if r.session.NativeID != "" {
+				m.refreshClaudeGoal(r)
+			}
 		}
 		if sid := str(v["session_id"]); sid != "" && sid != r.session.NativeID {
 			oldID := r.session.ID
@@ -525,6 +560,15 @@ func (m *Manager) receive(id string, generation int, v map[string]any) {
 			delete(r.pending, str(v["request_id"]))
 			m.emit(r.session.ID, "approval_cancelled", map[string]any{"id": v["request_id"]})
 		case "assistant": // Full message is retained in native history, not duplicated into text deltas.
+			// Local command output (/goal set, cleared, shown).
+			if str(obj(v["message"])["model"]) == "<synthetic>" {
+				m.refreshClaudeGoal(r)
+			}
+		case "user":
+			// A goal check that found the condition not yet met.
+			if strings.HasPrefix(nativeText(obj(v["message"])["content"]), "Stop hook feedback:") {
+				m.refreshClaudeGoal(r)
+			}
 		case "system":
 			if str(v["subtype"]) == "init" {
 				r.caps = map[string]bool{}
@@ -535,6 +579,8 @@ func (m *Manager) receive(id string, generation int, v map[string]any) {
 		case "command_lifecycle":
 			m.claudeLifecycle(r, v)
 		case "result":
+			// A goal met (or given up) is only in the JSONL.
+			m.refreshClaudeGoal(r)
 			for _, u := range strs(v["user_message_uuids"]) {
 				delete(r.steering, u)
 			}
@@ -844,7 +890,10 @@ func (m *Manager) Sweep() {
 	m.mu.Lock()
 	ids := []string{}
 	for id, r := range m.sessions {
-		if r.proc != nil && r.ready && !r.turn && len(r.pending) == 0 && (len(r.queue) == 0 || r.queuePaused) && !hasServicePreviews(r) && !processBusy(r.proc) && time.Since(r.last) >= m.idle {
+		// A Codex goal that is still active keeps its engine, as the TUI
+		// would: Codex starts the next turn itself.
+		pursuing := r.session.Agent == "codex" && r.goal != nil && r.goal.Status == "active"
+		if r.proc != nil && r.ready && !r.turn && !pursuing && len(r.pending) == 0 && (len(r.queue) == 0 || r.queuePaused) && !hasServicePreviews(r) && !processBusy(r.proc) && time.Since(r.last) >= m.idle {
 			ids = append(ids, id)
 		}
 	}
