@@ -45,7 +45,7 @@ Agent Workbench runs on your machine next to `claude` and `codex` and gives both
 - A turn clock, live tokens per second, context usage and the provider's quota windows.
 
 **Anywhere on your network**
-- Use it from your phone or another computer once you choose, in Settings, how other devices sign in: a pairing code, or a username and password.
+- Use it from your phone or another computer once you choose, in Settings, how other devices sign in: a pairing code, or a username and password. Settings shows how the page you are on is connected, lists signed-in devices (and signs out the others), and has an About tab with the versions of the workbench and both CLIs and a diagnostics summary.
 - Layouts for desktop and phone.
 
 **Themes**

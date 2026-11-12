@@ -54,6 +54,9 @@ type Server struct {
 	// stopToken and stop serve the command's local shutdown (control.go).
 	stopToken string
 	stop      func()
+	// Where and how this workbench runs, for the About tab (about.go).
+	listen, mode string
+	started      time.Time
 }
 
 // assetBuild hashes the embedded index page; Vite renames the bundles it
@@ -138,7 +141,7 @@ func (s *Server) authorized(r *http.Request) bool {
 // settings is what the Settings dialog shows; secrets are fetched apart.
 func (s *Server) settings(r *http.Request) map[string]any {
 	s.mu.Lock()
-	out := map[string]any{"remoteAccess": s.remote, "localSignin": s.localSignin.Load(), "thisComputer": thisComputer(r), "allowedOrigins": s.allowedOrigins}
+	out := map[string]any{"remoteAccess": s.remote, "localSignin": s.localSignin.Load(), "thisComputer": thisComputer(r), "allowedOrigins": s.allowedOrigins, "signedIn": s.signedInLocked()}
 	if s.user != "" {
 		out["username"] = s.user
 	}
@@ -466,6 +469,27 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 		s.mu.Unlock()
 		w.Header().Set("Cache-Control", "no-store")
 		writeJSON(w, s.settings(r))
+	case path == "settings/signout-others" && r.Method == "POST":
+		s.mu.Lock()
+		if s.remote != remotePairing {
+			s.mu.Unlock()
+			bad(w, errors.New("only pairing sign-ins end here; a new password signs every device out"))
+			return
+		}
+		ended := s.signOutOthersLocked(r)
+		s.mu.Unlock()
+		w.Header().Set("Cache-Control", "no-store")
+		writeJSON(w, map[string]any{"ended": ended, "settings": s.settings(r)})
+	case path == "about" && r.Method == "GET":
+		w.Header().Set("Cache-Control", "no-store")
+		writeJSON(w, s.about())
+	case path == "updates" && r.Method == "GET":
+		tag, link, err := LatestRelease()
+		if err != nil {
+			http.Error(w, "could not check for updates: "+err.Error(), http.StatusBadGateway)
+			return
+		}
+		writeJSON(w, map[string]any{"current": Version, "latest": tag, "url": link})
 	case path == "settings/secrets" && r.Method == "GET":
 		s.mu.Lock()
 		secrets := map[string]any{}
@@ -1132,6 +1156,7 @@ func Run(ctx context.Context, m *Manager, assets fs.FS, addr, code string) error
 	if UnderSystemd() {
 		mode = "systemd"
 	}
+	handler.listen, handler.mode, handler.started = addr, mode, time.Now()
 	if err := writeServerInfo(m.store.dir, ServerInfo{PID: os.Getpid(), Listen: addr, Version: Version, Mode: mode, Token: handler.stopToken}); err != nil {
 		listener.Close()
 		return err

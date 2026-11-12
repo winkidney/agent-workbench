@@ -2144,6 +2144,234 @@ textarea {
 }
 
 /* Settings: access from other devices. */
+/* Settings: three tabs in a wider dialog. */
+.modal.settings-modal {
+  width: 560px;
+  /* One height for every tab: switching does not move the dialog. */
+  height: min(760px, 92dvh);
+  padding: 26px 28px 24px;
+}
+.settings-modal h2 {
+  margin: 4px 0 14px;
+}
+.settings-tabs {
+  display: flex;
+  gap: 2px;
+  margin: 0 -4px 18px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border);
+  scrollbar-width: none;
+}
+.settings-tabs [role="tab"] {
+  position: relative;
+  flex-shrink: 0;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  padding: 7px 10px 8px;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.settings-tabs [role="tab"][aria-selected="true"] {
+  border-bottom-color: var(--foreground);
+  color: var(--foreground);
+  font-weight: 500;
+}
+.settings-tabs [role="tab"]:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+.tab-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: var(--warning);
+  vertical-align: middle;
+}
+.settings-panel {
+  min-height: 300px;
+}
+.settings-section + .settings-section {
+  margin-top: 20px;
+}
+.settings-section h3 {
+  margin: 0 0 8px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.modal .settings-section .subtle,
+.modal .settings-panel > .subtle {
+  margin: 6px 0;
+  font-size: 12px;
+}
+.connection-card {
+  margin: 0 0 18px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--muted);
+  list-style: none;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.connection-card li::before {
+  content: "●";
+  margin-right: 8px;
+  color: var(--success);
+  font-size: 9px;
+  vertical-align: 1px;
+}
+.connection-card li.warn::before {
+  color: var(--warning);
+}
+.connection-card li.warn {
+  color: var(--foreground);
+}
+.signed-in {
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.signed-in-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  font-size: 13px;
+}
+.about-list {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 16px;
+  margin: 0;
+  font-size: 13px;
+}
+.about-list dt {
+  color: var(--muted-foreground);
+}
+.about-list dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin: 0;
+  min-width: 0;
+}
+.about-list code,
+.about-copy input {
+  font: 12px var(--mono);
+}
+.about-link,
+.about-update a {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.about-link:hover,
+.about-update a:hover {
+  color: var(--foreground);
+}
+.about-copy {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+}
+.about-copy input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  color: var(--foreground);
+  padding: 0;
+  text-overflow: ellipsis;
+}
+.about-copy-button {
+  flex-shrink: 0;
+  border: 0;
+  background: none;
+  padding: 2px;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+.about-copy-button:hover {
+  color: var(--foreground);
+}
+.about-agent {
+  padding: 8px 0;
+  font-size: 13px;
+}
+.about-agent + .about-agent {
+  border-top: 1px solid var(--border);
+}
+.about-agent-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-bottom: 2px;
+}
+.about-agent-head strong {
+  font-weight: 500;
+}
+.about-features {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.about-features li {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.settings-modal .warn {
+  color: var(--warning);
+}
+.about-update {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin-top: 12px;
+  font-size: 12.5px;
+}
+.about-diagnostics {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--muted);
+  padding: 8px 10px;
+  color: var(--foreground);
+  font: 11.5px/1.5 var(--mono);
+  resize: vertical;
+}
+@media (max-width: 640px) {
+  .modal.settings-modal {
+    padding: 22px 16px 18px;
+  }
+  .about-list {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+  .about-list dd {
+    margin-bottom: 8px;
+  }
+}
 .access-setting {
   display: flex;
   flex-direction: column;

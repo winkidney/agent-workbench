@@ -119,7 +119,7 @@ Pins, hidden sessions and display names are stored by the workbench and sync liv
 
 ## Access from other devices
 
-The workbench listens on all interfaces by default (`0.0.0.0:17880`) and `start` prints its LAN addresses. **Only this computer uses it without signing in**: a browser on this machine opening `localhost`, `agent.localhost` or `127.0.0.1` (or `[::1]`). Every other device, and every other address (this machine's LAN IP or host name too), follows the choice in **⋯ → Settings → Access from other devices**:
+The workbench listens on all interfaces by default (`0.0.0.0:17880`) and `start` prints its LAN addresses. **Only this computer uses it without signing in**: a browser on this machine opening `localhost`, `agent.localhost` or `127.0.0.1` (or `[::1]`). Every other device, and every other address (this machine's LAN IP or host name too), follows the choice in **⋯ → Settings → Access & security → Access from other devices**:
 
 | Choice | Other devices |
 | --- | --- |
@@ -128,6 +128,7 @@ The workbench listens on all interfaces by default (`0.0.0.0:17880`) and `start`
 | **Password** | sign in with a username and password in the browser's own prompt (HTTP Basic), which browsers can remember. The first time, Settings fills in the username `workbench` and a generated password; edit either, or generate a new password, and save |
 
 - Any signed-in device can change this setting. Saving warns when the change disconnects the device you are on, or makes it sign in again.
+- A card at the top of the tab says how the page you are on is connected: this computer or another device, and how it signed in; whether the connection is encrypted (HTTPS) or plain HTTP across the network; whether this address may make changes; and the access choice saved. With a pairing code, **Signed-in devices** counts the devices signed in, and **Sign out other devices** ends every sign-in but yours. With a password, browsers keep it, so a new password signs every device out.
 - The pairing code and the password are kept in the data directory, readable only by you, and survive restarts. Settings shows them, with copy buttons.
 - Ten wrong codes or passwords from one address within a minute block that address for a minute; other devices are not affected.
 - The workbench speaks plain HTTP, so on your network the password and the session travel unencrypted. On networks you don't trust, use a VPN such as Tailscale.
@@ -140,6 +141,21 @@ The workbench listens on all interfaces by default (`0.0.0.0:17880`) and `start`
 - From public internet addresses only `agent.localhost:PORT` is accepted, and it signs in like any other device.
 
 `--listen 127.0.0.1:17880` keeps the workbench to this machine altogether.
+
+## Settings
+
+**⋯ → Settings** has three tabs:
+
+- **General:** appearance, desktop notifications and suggested next prompts. These are the same controls as the **⋯** menu, and they apply at once.
+- **Access & security:** how this page is connected, which devices may sign in and how, allowed origins, and signed-in devices (see [Access from other devices](#access-from-other-devices)). Saved with its button. Unsaved changes are marked on the tab and kept while you switch tabs. Closing asks before discarding them.
+- **About:**
+  - This workbench: version with its release notes, web build, how long it has run, whether engines run as systemd units or child processes, platform and Go version, listen address, data directory, start at login.
+  - Each CLI: version, path, and for Claude Code the optional features the workbench uses that this version has.
+  - Local data: size, how long live events are kept, the number of sessions.
+  - **Check for updates** asks GitHub for the latest release, only when you click it. The workbench makes the request, without anything about you or this machine.
+  - **Copy diagnostics** copies the same facts as `agent-workbench doctor`, for a bug report.
+
+The tab you used last opens next time, per browser.
 
 ## Appearance
 

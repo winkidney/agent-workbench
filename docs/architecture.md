@@ -94,7 +94,9 @@ The interface uses a JSON API under `/api/`. Main endpoints:
 | `POST /api/sessions/{id}/reveal` | Show a file in the desktop file manager |
 | `GET/POST /api/sidebar`, `GET /api/workspaces`, `GET /api/dirs?path=` | Sidebar preferences, projects, folder browser |
 | `GET /api/auth/status`, `POST /api/login` | Sign-in state, pairing |
-| `GET/PUT /api/settings`, `GET /api/settings/secrets` | Access from other devices, storage; the pairing code and password |
+| `GET/PUT /api/settings`, `GET /api/settings/secrets` | Access from other devices, storage, signed-in devices (`signedIn`); the pairing code and password |
+| `POST /api/settings/signout-others` | End every pairing sign-in except the caller's (pairing mode only) |
+| `GET /api/about`, `GET /api/updates` | Versions, paths, run mode, data, and each CLI's `--version` (asked once per binary until it changes); the latest GitHub release, asked on request and kept 10 minutes |
 | `GET/PATCH /api/preferences` | The workbench's own settings for every session: `{suggestions}` |
 
 ## Limits

@@ -155,6 +155,7 @@ func serve(c config) error {
 		return err
 	}
 	workbench.Version = version
+	workbench.Autostart = func() string { return autostartState(c) }
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	return workbench.Run(ctx, manager, assets, c.listen, strings.TrimSpace(string(code)))

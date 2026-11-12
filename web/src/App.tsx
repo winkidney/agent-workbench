@@ -25,7 +25,7 @@ import { Appearance } from "./components/Appearance";
 import { NotifyToggle } from "./components/NotifyToggle";
 import { SuggestToggle } from "./components/SuggestToggle";
 import { useAttention } from "./attention";
-import { SettingsDialog } from "./components/SettingsDialog";
+import { SettingsDialog } from "./components/settings/SettingsDialog";
 import { canonicalAddress, fileFrameSandbox, previewMode } from "./lib/preview";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Timeline } from "./transcript/Timeline";

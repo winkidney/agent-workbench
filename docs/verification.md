@@ -370,3 +370,30 @@ These are maintainer notes on how each feature of Agent Workbench was verified, 
   - Light, dark and 390 px.
   - Test sessions, transcripts and threads deleted afterwards.
 
+## Settings in tabs: General, Access & security, About
+
+- Before:
+  - Settings was one form: access from other devices, the code or password, allowed origins, and the local data size.
+  - The versions of the workbench and the CLIs, the run mode and the data directory were only in `agent-workbench doctor`.
+  - Nothing showed how the page itself was connected, or which devices were signed in.
+- Change:
+  - Three tabs (a tablist with arrow keys; the last one used opens next):
+    - **General:** the ⋯ menu's appearance, notification and suggestion controls.
+    - **Access & security:** a card on this connection (this computer or another device and how it signed in, HTTPS or plain HTTP across the network, whether this address may make changes, the access saved); the form as before, saved with its button; signed-in devices with **Sign out other devices**.
+    - **About:** the workbench, each CLI, data, an update check and diagnostics.
+  - Unsaved access changes are marked on the tab, kept across tabs, and confirmed before closing. The dialog keeps one size on every tab.
+  - Server:
+    - `GET /api/about`: each CLI's `--version` run once per binary (path, size, modification time) and kept, one entry per agent.
+    - `GET /api/updates`: GitHub's latest release, asked only on request with a plain user agent and kept 10 minutes. The page's own content security policy stays `connect-src 'self'`.
+    - `signedIn` in the settings, and `POST /api/settings/signout-others`.
+- New Go race tests:
+  - About lists the workbench, a CLI found (version, path, the optional Claude flags it has and lacks) and one not found. The version is asked once, and again after the binary changes.
+  - Signing out other devices: three devices signed in with the code; from one, the other two end and it stays; signed-out devices are refused; from this computer every device ends; refused while access is off.
+  - The update check sends no cookies or details and asks GitHub once for two requests.
+- New Vitest tests: uptimes; release comparison (development builds never prompt); the connection lines for this computer, another device over plain HTTP or HTTPS, and a refused origin; the diagnostics text; the tablist's roles and the unsaved mark; a missing CLI and a lacking feature.
+- Real checks (isolated dev instance over a scratch Claude and Codex home, so no real session was ever listed; a second browser opening it by the LAN address as "another device"):
+  - Arrow keys moved between tabs. Choosing the pairing code marked the tab and survived a visit to About; undoing it removed the mark and disabled Save; Esc asked before discarding.
+  - After saving, the other device signed in with the code. Its card read "Another device, signed in with the pairing code" and warned about plain HTTP. This computer's card showed "pairing code · 1 signed in". **Sign out other devices** (confirmed) answered "Signed out 1 device", and the other device was asked for the code again. Access went back to Off.
+  - About showed `2.1.322 (Claude Code)` and `codex-cli 0.167.1`, as the CLIs print them, with both optional Claude features. Check for updates answered "You have the latest release." Copy diagnostics put the summary on the clipboard.
+  - Light, dark and 390 px: no horizontal scroll, and the dialog the same size on every tab.
+
