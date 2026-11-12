@@ -7,7 +7,7 @@ import {
   useState,
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { ArrowDown, ChevronRight, Loader2 } from "lucide-react";
+import { ArrowDown, ArrowUpRight, ChevronRight, Loader2 } from "lucide-react";
 import {
   formatDuration,
   record,
@@ -269,7 +269,8 @@ function ChildLine({ block }: { block: Block }) {
   );
 }
 
-function ToolRow(props: RowProps) {
+// Exported for tests.
+export function ToolRow(props: RowProps) {
   const { block, ask } = props;
   // Claude's AskUserQuestion once its approval card is gone: answered, or
   // still answerable.
@@ -305,24 +306,50 @@ function ToolRowBody({ block, kids, open, onToggle }: RowProps) {
   const summary = toolSummary(t, diff);
   const tools = (kids ?? []).filter((k) => k.kind === "tool");
   const shownKids = open ? tools : tools.slice(-3);
+  // Lines not shown: older ones while folded, and those not kept at all.
+  const earlier = block.earlier ?? 0;
+  const hidden = (open ? 0 : Math.max(0, tools.length - 3)) + earlier;
+  // The subagent this call started, when its transcript is listed.
+  const child =
+    t.agentId || t.threadId
+      ? env.subagentSession?.({ agentId: t.agentId, threadId: t.threadId })
+      : undefined;
+  const head = (
+    <button
+      type="button"
+      className="tool-head"
+      aria-expanded={open}
+      onClick={() => onToggle(block.key)}
+    >
+      <span className="tool-name">{name}</span>
+      {arg && <span className="tool-arg">({arg})</span>}
+      {t.durationMs !== undefined && t.durationMs >= 1000 && (
+        <span className="tool-time">{formatDuration(t.durationMs)}</span>
+      )}
+    </button>
+  );
   return (
     <div className={"row tool status-" + t.status}>
       <span className="mark tool-dot" aria-label={t.status}>
         {t.status === "running" ? <Loader2 size={11} className="spin" /> : "●"}
       </span>
       <div className="body">
-        <button
-          type="button"
-          className="tool-head"
-          aria-expanded={open}
-          onClick={() => onToggle(block.key)}
-        >
-          <span className="tool-name">{name}</span>
-          {arg && <span className="tool-arg">({arg})</span>}
-          {t.durationMs !== undefined && t.durationMs >= 1000 && (
-            <span className="tool-time">{formatDuration(t.durationMs)}</span>
-          )}
-        </button>
+        {child && env.openSession ? (
+          <div className="tool-head-row">
+            {head}
+            <button
+              type="button"
+              className="subagent-link"
+              title="Open the subagent's transcript"
+              onClick={() => env.openSession!(child)}
+            >
+              Transcript
+              <ArrowUpRight size={11} aria-hidden />
+            </button>
+          </div>
+        ) : (
+          head
+        )}
         {block.steps ? (
           <Steps steps={block.steps} />
         ) : (
@@ -346,11 +373,13 @@ function ToolRowBody({ block, kids, open, onToggle }: RowProps) {
             </div>
           </div>
         )}
-        {tools.length > 0 && (
+        {(tools.length > 0 || earlier > 0) && (
           <div className="tool-children">
-            {!open && tools.length > 3 && (
+            {hidden > 0 && (
               <div className="child-more">
-                +{tools.length - 3} more tool uses
+                +{hidden}
+                {block.earlierMore ? "+" : ""}{" "}
+                {open ? "earlier tool uses not kept" : "more tool uses"}
               </div>
             )}
             {shownKids.map((k) => (

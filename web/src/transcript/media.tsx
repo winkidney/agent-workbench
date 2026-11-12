@@ -33,6 +33,15 @@ export type Env = {
   // The user decided about the plan here (kept planning, or implemented it
   // in a new session): it no longer needs them.
   dismissPlan?: () => void;
+  // A subagent's own transcript, once the session list has it: Claude's by
+  // agent id, Codex's by thread; and opening it.
+  subagentSession?: (ref: {
+    agentId?: string;
+    threadId?: string;
+  }) => string | undefined;
+  openSession?: (id: string) => void;
+  // Whether the session list has this session.
+  listed?: (id: string) => boolean;
 };
 
 export type ViewItem = {

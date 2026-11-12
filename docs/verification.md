@@ -334,3 +334,39 @@ These are maintainer notes on how each feature of Agent Workbench was verified, 
 - Change: Claude engines start with `--prompt-suggestions` (and `--include-hook-events`) only when `claude --help` lists them; the latest suggestion is kept between turns and sent in telemetry, not stored, and dropped when a turn or a request begins, when the user acts and when the engine stops. The composer shows it as the empty prompt's placeholder with a **Tab** key cap (Tab, or a click or tap, fills it in), and the hint line names Tab. "Suggest next prompt" in the "⋯" menu turns it off for all sessions (`/api/preferences`), pausing running Claude engines and new ones as they start.
 - New Go race tests: a suggestion after the turn reaches telemetry and not the transcript, is hidden while a request waits, is stale during the next turn, two lines are dropped, the user acting and the engine ending clear it; turning off pauses the running engine and one that starts later, ignores a suggestion the CLI makes anyway, and turning on resumes; only the flags the CLI's help lists are passed. New Vitest tests: shown only in an empty prompt between turns in a writable session.
 - Real checks (isolated dev instance, scratch folder, Claude Haiku): after a turn that saved a script without running it, telemetry carried "run it with python hello.py Alice" about 3 s after the turn ended. In the page the empty prompt showed it with the Tab key cap and "tab use suggestion" in the hint; Tab filled it in with the cursor at the end; clearing the prompt brought it back; Tab with text typed moved focus as usual; on a 390px touch screen tapping the key cap filled it in. Light and dark. Turning "Suggest next prompt" off removed it at once and the next turn ended without one; turning it on again resumed. Codex is unchanged (Go tests).
+
+## Subagents: the same live and later, their requests, and links
+
+- Before:
+  - A Claude subagent's tool calls showed under its Agent row while the turn ran, and were gone after a reload: Claude writes them to the subagent's own transcript, not the session's.
+  - Permission requests from subagents did not say who asked.
+  - Nothing linked an Agent row to the subagent's session in the sidebar.
+  - Codex sends a subagent thread's records on the parent's connection. The page treated them as the parent's, with four effects: the child's turn start replaced the parent's turn id (Interrupt then targeted the child); the child's turn end showed the parent as idle mid-turn and could send queued messages; the child's messages streamed into the parent's conversation; its token use counted as the parent's.
+- Basis (Claude Code 2.1.322 at Haiku, Codex 0.167.1 at low effort, test sessions in scratch folders):
+  - Claude: the agent id is the same in `task_started` (`task_id`), the Agent result (`agentId`) and the subagent's permission requests (`agent_id`). The meta file naming the Agent call appears right after `task_started`. In print mode subagents run in the background by default.
+  - Codex: `multi_agent` is on by default. A spawned subagent appears in the parent as `subAgentActivity` (thread, path such as `/root/inspect_files`). Its whole thread arrives on the parent's connection with its own `threadId`: `turn/started`, `item/*`, message deltas, token use, `turn/completed`, and its approval requests. `collabAgentToolCall` appears only for waiting, with no receivers. The thread's metadata records `agent_path` and a nickname, but no title.
+- Change:
+  - Server: history pages add each subagent's latest 200 tool calls under its Agent call, reduced to what a line shows. Codex subagent records never touch the parent's turn, status or usage; their tool items become lines under the subagent's row, and history adds them from the child thread. Requests name their subagent. Records of a Claude subagent no longer start a turn. Untitled Codex subagent threads are named by their path.
+  - Page: at most 200 lines per subagent row, reduced in the same way. A Transcript link appears on the row and on request cards once the subagent's session is listed. An "Open parent" banner shows on subagent sessions. Codex's wait calls show as "Subagents(wait)".
+- New Go race tests:
+  - History nesting in order, with only tool calls; bounded inputs and results; the Agent result or only the meta file naming the subagent; 250 calls cut to the latest 200 without results that lack their call; the subagent's own transcript unchanged.
+  - Memory: a 1,000-call subagent of 8 KB results stays within the page budget, and 10 reads leave the heap within 4 MB. A benchmark shows the same allocations per read for 250 and 2,500 calls (about 3.9 MB). Marks across reader chunks; the head of a result decoded without reading the rest.
+  - Requests from Claude subagents named from the running task (and after a reload); the session's own not.
+  - A Codex subagent thread's turn, message, token use and end leaving the parent's turn running, its tool item bounded, its approval named, answered and resolved.
+  - Codex history from the child's turns: 200 lines, its messages and activities left out, paging stopped once enough.
+  - Untitled subagent threads named by path or nickname.
+- New Vitest tests:
+  - History nesting and reduced lines; the agent id learned live from the task and from the result.
+  - 250 live lines in batches kept to the latest 200 with 50 counted.
+  - A Codex subagent as one row with its lines and the left-out count, made even when a line comes first.
+  - The row's Transcript link only once listed, with the folded and left-out count; the request card's "From subagent" line and link.
+- Real checks (isolated dev instances, scratch folders):
+  - Claude in Ask mode. The Agent row had its three Bash lines and a Transcript link while running. Each of the subagent's three requests read "From subagent · Run ls, cat, wc in cwd" with a link. After a reload the lines were still there. Transcript opened the subagent's session with "Subagent of …", and Open parent came back.
+  - Codex at Workspace. While the subagent ran, the parent stayed running and none of the subagent's text reached it. The Agent(inspect_directory) row showed the subagent's commands. Its network request reached the parent's page as "From subagent · inspect_directory". After a reload the same five commands showed under the row (once the child thread's own activity records were left out). Transcript and Open parent worked; the child thread is titled inspect_directory.
+  - Memory, with a scratch Claude home (`CLAUDE_CONFIG_DIR`) holding three subagents of 1,500 calls with 16 KB results (about 100 MB):
+    - Browser heap after GC: 6.5 MB on a small session, and 8.5–8.7 MB with the large session open and every row unfolded (584 lines kept: 200, 200 and 184, the last at the page budget). Back on the small session it was 7.7–7.8 MB, flat over three rounds, with no further requests for the session left.
+    - The server's RSS went from 21 to 23–24 MB over 40 loads of that history (0.2 s each) and stayed there.
+    - Codex: the session's heap was flat within 0.1 MB a round on a live session list, and the server's RSS stayed at 36 MB over 10 history loads.
+  - Light, dark and 390 px.
+  - Test sessions, transcripts and threads deleted afterwards.
+

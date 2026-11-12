@@ -76,9 +76,18 @@ func (c *NativeCatalog) List() ([]Session, error) {
 			if strings.Contains(source, "subagent") {
 				var value map[string]any
 				_ = json.Unmarshal([]byte(source), &value)
-				s.ParentID = str(obj(obj(obj(value["subagent"])["thread_spawn"]))["parent_thread_id"])
+				spawn := obj(obj(obj(value["subagent"])["thread_spawn"]))
+				s.ParentID = str(spawn["parent_thread_id"])
 				if s.ParentID == "" {
 					continue
+				}
+				// Untitled: named as the parent's row names it (its path).
+				if s.Title == "" {
+					if p := str(spawn["agent_path"]); p != "" {
+						s.Title = p[strings.LastIndex(p, "/")+1:]
+					} else {
+						s.Title = str(spawn["agent_nickname"])
+					}
 				}
 				s.ParentID = nativeKey("codex", s.ParentID)
 			}
@@ -307,6 +316,13 @@ func (m *Manager) IndexActivity(budget int64) {
 		return
 	}
 	m.activity.Scan(list, m.catalog.Files(), budget)
+}
+
+// path is a listed session's native record (a Claude transcript).
+func (c *NativeCatalog) path(id string) string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.paths[id]
 }
 
 func (c *NativeCatalog) Find(id string) (Session, bool) {
@@ -559,6 +575,9 @@ func codexHistoryPage(request codexRequest, s Session, before string, limit int)
 		turns, _ = obj(read["thread"])["turns"].([]any)
 	}
 	events := codexTurnEvents(s, turns)
+	if !legacy {
+		events = withCodexSubagents(request, s, turns, events)
+	}
 	if legacy {
 		start, end := pageBounds(len(events), strings.TrimPrefix(before, "legacy:"), limit)
 		page := HistoryPage{Events: events[start:end], HasMore: start > 0}

@@ -51,6 +51,46 @@ export function mergeBlock(old: Block, next: Block): Block {
   return merged;
 }
 
+// A subagent's steps show as lines under the row that started it: its
+// latest CHILD_TOOLS calls, each with only what a line shows (name, a short
+// input, status), as the server sends history (subagents.go).
+export const CHILD_TOOLS = 200;
+const CHILD_TEXT = 1024;
+const CHILD_OUTPUT = 300;
+
+function slimValue(v: unknown, depth = 0): unknown {
+  if (typeof v === "string")
+    return v.length > CHILD_TEXT ? v.slice(0, CHILD_TEXT) + "…" : v;
+  if (depth > 3 || v === null || typeof v !== "object") return v;
+  if (Array.isArray(v))
+    return v.slice(0, 20).map((e) => slimValue(e, depth + 1));
+  return Object.fromEntries(
+    Object.entries(v as Record<string, unknown>)
+      .slice(0, 30)
+      .map(([k, e]) => [k, slimValue(e, depth + 1)]),
+  );
+}
+
+export function slimChild(t: Tool): Tool {
+  const kept: Tool = {
+    name: t.name,
+    status: t.status,
+    input: slimValue(t.input),
+  };
+  for (const k of [
+    "exitCode",
+    "durationMs",
+    "nativeType",
+    "note",
+    "placeholder",
+    "agentId",
+    "threadId",
+  ] as const)
+    if (t[k] !== undefined) (kept as Record<string, unknown>)[k] = t[k];
+  if (t.output !== undefined) kept.output = t.output.slice(0, CHILD_OUTPUT);
+  return kept;
+}
+
 // Copy-on-write working set for one batch of adapter updates.
 export class Draft {
   keys: string[];
@@ -58,6 +98,8 @@ export class Draft {
   liveStart: number;
   // The record being applied ran here; blocks it produces inherit it.
   cwd?: string;
+  // Rows that gained subagent lines in this batch (see capChildren).
+  private grew = new Set<string>();
   constructor(s: State) {
     this.keys = s.keys.slice();
     this.blocks = new Map(s.blocks);
@@ -70,10 +112,20 @@ export class Draft {
     if (this.cwd && block.cwd === undefined)
       block = { ...block, cwd: this.cwd };
     const old = this.blocks.get(block.key);
-    if (old) this.blocks.set(block.key, mergeBlock(old, block));
-    else {
+    const parent = block.parent ?? old?.parent;
+    if (parent && block.tool) block = { ...block, tool: slimChild(block.tool) };
+    if (old) {
+      const merged = mergeBlock(old, block);
+      this.blocks.set(
+        block.key,
+        parent && merged.tool
+          ? { ...merged, tool: slimChild(merged.tool) }
+          : merged,
+      );
+    } else {
       this.keys.push(block.key);
       this.blocks.set(block.key, block);
+      if (parent) this.grew.add(parent);
     }
   }
   patch(key: string, change: Partial<Block>) {
@@ -82,11 +134,13 @@ export class Draft {
   }
   patchTool(key: string, change: Partial<Tool>) {
     const old = this.blocks.get(key);
-    if (old?.tool)
+    if (old?.tool) {
+      const tool = { ...old.tool, ...defined(change) };
       this.blocks.set(key, {
         ...old,
-        tool: { ...old.tool, ...defined(change) },
+        tool: old.parent ? slimChild(tool) : tool,
       });
+    }
   }
   // Replace a provisional block (stream / local echo) in place with its native record.
   replace(oldKey: string, block: Block) {
@@ -132,7 +186,42 @@ export class Draft {
         this.blocks.set(k, { ...b, tool: { ...b.tool, status } });
     }
   }
+  // Keeps each row's latest CHILD_TOOLS subagent lines; the ones dropped
+  // count as earlier on the row.
+  private capChildren() {
+    if (!this.grew.size) return;
+    const kids = new Map<string, string[]>();
+    for (const k of this.keys) {
+      const p = this.blocks.get(k)?.parent;
+      if (p && this.grew.has(p)) {
+        const list = kids.get(p) ?? [];
+        list.push(k);
+        kids.set(p, list);
+      }
+    }
+    this.grew.clear();
+    const drop = new Set<string>();
+    for (const [p, list] of kids) {
+      if (list.length <= CHILD_TOOLS) continue;
+      const gone = list.slice(0, list.length - CHILD_TOOLS);
+      gone.forEach((k) => drop.add(k));
+      const row = this.blocks.get(p);
+      if (row)
+        this.blocks.set(p, {
+          ...row,
+          earlier: (row.earlier ?? 0) + gone.length,
+        });
+    }
+    if (!drop.size) return;
+    let before = 0;
+    for (let i = 0; i < this.liveStart && i < this.keys.length; i++)
+      if (drop.has(this.keys[i])) before++;
+    this.keys = this.keys.filter((k) => !drop.has(k));
+    drop.forEach((k) => this.blocks.delete(k));
+    this.liveStart -= before;
+  }
   state(): State {
+    this.capChildren();
     return { keys: this.keys, blocks: this.blocks, liveStart: this.liveStart };
   }
 }

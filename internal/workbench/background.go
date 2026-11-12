@@ -658,6 +658,11 @@ func (m *Manager) MoveToBackground(id, toolUseID string) error {
 
 // claudeTurnSignal is a record that only a running turn produces.
 func claudeTurnSignal(v map[string]any) bool {
+	// A subagent's records: its own work (in the background, possibly after
+	// the turn ended), not a turn of the session.
+	if str(v["parent_tool_use_id"]) != "" {
+		return false
+	}
 	switch str(v["type"]) {
 	case "stream_event":
 		return true

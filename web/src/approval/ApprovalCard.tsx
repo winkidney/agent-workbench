@@ -3,6 +3,8 @@ import {
   ShieldCheck,
   MessageCircleQuestion,
   ClipboardList,
+  ArrowUpRight,
+  Bot,
 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Textarea } from "../components/ui/textarea";
@@ -296,6 +298,41 @@ function QuestionForm({
   );
 }
 
+// Which subagent asks, when it is not the session itself (the server names
+// it: Claude's agent_id, a Codex request from the subagent's thread).
+function SubagentSource({ subagent }: { subagent: unknown }) {
+  const env = useEnv();
+  const sub = record(subagent);
+  const session = text(sub.session);
+  if (!session) return null;
+  const description = text(sub.description);
+  return (
+    <p className="approval-source">
+      <Bot size={13} aria-hidden />
+      <span>
+        From subagent
+        {description && (
+          <>
+            {" · "}
+            <strong>{description}</strong>
+          </>
+        )}
+      </span>
+      {env.openSession && env.listed?.(session) && (
+        <button
+          type="button"
+          className="subagent-link"
+          title="Open the subagent's transcript"
+          onClick={() => env.openSession!(session)}
+        >
+          Transcript
+          <ArrowUpRight size={11} aria-hidden />
+        </button>
+      )}
+    </p>
+  );
+}
+
 export function ApprovalCard({
   event,
   agent,
@@ -464,6 +501,7 @@ export function ApprovalCard({
         <Icon size={15} />
         <strong>{title}</strong>
       </div>
+      <SubagentSource subagent={event.data.subagent} />
       {parsed.kind === "tool" && <ToolPreview tool={parsed.tool} />}
       {parsed.kind === "tool" && parsed.reason && (
         <p className="approval-reason">{parsed.reason}</p>

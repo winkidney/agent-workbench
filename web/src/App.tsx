@@ -72,6 +72,7 @@ import {
   Archive,
   Trash2,
   ExternalLink,
+  CornerLeftUp,
 } from "lucide-react";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
@@ -580,6 +581,16 @@ export default function App() {
   };
   const planRef = useRef({ runCommand, startFromPlan });
   planRef.current = { runCommand, startFromPlan };
+  // This session's subagents in the session list: rows link to them. A key,
+  // so the page re-renders only when they change, not with each list update.
+  const childKey = useMemo(
+    () =>
+      sessions
+        .filter((s) => s.parentId && s.parentId === current?.id)
+        .map((s) => s.id)
+        .join("\n"),
+    [sessions, current?.id],
+  );
   const env = useMemo<Env>(
     () => ({
       cwd: current?.cwd ?? "",
@@ -601,6 +612,17 @@ export default function App() {
           base,
         }).catch(catchError),
       view: (items, index) => items.length && setViewer({ items, index }),
+      subagentSession: ({ agentId, threadId }) => {
+        const id =
+          current?.agent === "claude" && agentId
+            ? `${current.id}:agent-${agentId}`
+            : current?.agent === "codex" && threadId
+              ? `codex:${threadId}`
+              : "";
+        return id && childKey.split("\n").includes(id) ? id : undefined;
+      },
+      listed: (id) => childKey.split("\n").includes(id),
+      openSession: (id) => selectSession(id),
       // Read-only and archived sessions take no messages here.
       answer:
         current && !current.readOnly && !current.archived
@@ -620,8 +642,20 @@ export default function App() {
           }
         : {}),
     }),
-    [active, current?.cwd, current?.readOnly, current?.archived],
+    [
+      active,
+      current?.cwd,
+      current?.readOnly,
+      current?.archived,
+      current?.agent,
+      current?.id,
+      childKey,
+    ],
   );
+  // A subagent's session: the session that started it.
+  const parentSession = current?.parentId
+    ? sessions.find((s) => s.id === current.parentId)
+    : undefined;
   const plan = useMemo(() => latestPlan(transcript.state), [transcript.state]);
   // The echo of a sent message gives way to the server's own as soon as it
   // arrives; the engine may need seconds to start (Codex waits for its MCP
@@ -1057,6 +1091,24 @@ export default function App() {
                   onBackground={moveToBackground}
                 />
               </div>
+              {parentSession && (
+                <div className="archived-banner parent-banner" role="note">
+                  <CornerLeftUp size={14} />
+                  <span>
+                    Subagent of{" "}
+                    <strong>
+                      {displayTitle(parentSession, sidebarPrefs.prefs)}
+                    </strong>
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => selectSession(parentSession.id)}
+                  >
+                    Open parent
+                  </Button>
+                </div>
+              )}
               {current.archived && (
                 <div className="archived-banner" role="status">
                   <Archive size={14} />

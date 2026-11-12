@@ -259,11 +259,14 @@ function user(d: Draft, data: Record<string, unknown>, ctx: Context) {
         : c.is_error
           ? "failed"
           : "ok";
+      const result = data.tool_use_result ?? data.toolUseResult;
       const change = {
         status,
         output,
         media: images.length ? images : undefined,
-        result: data.tool_use_result ?? data.toolUseResult,
+        result,
+        // An Agent call's result names the subagent it started.
+        agentId: text(record(result).agentId) || undefined,
       };
       if (d.get(id)) d.patchTool(id, change);
       else
@@ -328,7 +331,25 @@ export function applyClaude(
       return assistant(d, data, ctx);
     case "user":
       return user(d, data, ctx);
+    // History: the subagent an Agent call started, and how many of its
+    // tool calls were left out (subagents.go).
+    case "workbench_subagent": {
+      const tool = text(data.tool_use_id);
+      d.patchTool(tool, { agentId: text(data.agentId) || undefined });
+      const earlier = Number(data.earlier) || 0;
+      if (earlier && d.get(tool)) d.patch(tool, { earlier });
+      return;
+    }
     case "system":
+      // Claude registers a subagent as a task of the Agent call.
+      if (
+        data.subtype === "task_started" &&
+        text(data.task_type).includes("agent") &&
+        data.tool_use_id
+      )
+        d.patchTool(text(data.tool_use_id), {
+          agentId: text(data.task_id) || undefined,
+        });
       if (data.subtype === "local_command")
         return localOutput(
           d,

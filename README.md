@@ -29,6 +29,7 @@ Agent Workbench runs on your machine next to `claude` and `codex` and gives both
 - Sessions waiting for an approval, a question or a plan decision stand out in the sidebar, count in the tab title, and can send a desktop notification.
 - Cards for Codex's requests for more access and for MCP servers' forms; lines for what the CLIs only told their terminals (auto-mode blocks, warnings, model switches, failed hooks), and one Changes row per Codex turn.
 - Background work (Claude's background shells, monitors and subagents, Codex's background terminals) shows in the sidebar and in a tray above the composer, with its output and a Stop button; Ctrl+B moves a long Claude command to the background.
+- Subagents (Claude and Codex) show as one row with the tools they run under it, the same live and after a reload, and link to their own transcripts; their permission requests say which subagent asks.
 
 **Commands and skills**
 - `/` commands and `$` skills with completion: Claude Code's own commands, and the Codex TUI commands that make sense outside a terminal (`/compact`, `/review`, `/goal`, `/fork`, `/mcp`, `/diff`, …).

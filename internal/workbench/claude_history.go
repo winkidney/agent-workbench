@@ -7,7 +7,9 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 )
 
 type transcriptNode struct {
@@ -25,6 +27,15 @@ type HistoryPage struct {
 	HasMore bool    `json:"hasMore"`
 	// Running: a turn is in flight here or in another client.
 	Running bool `json:"running"`
+	// Claude Agent calls on the page and the subagents their results name,
+	// for the subagents' lines (subagents.go).
+	agentCalls []agentCall
+	agentIDs   map[string]string
+}
+
+type agentCall struct {
+	index     int
+	toolUseID string
 }
 
 // pageBounds returns the [start,end) window of n records that ends at the
@@ -51,7 +62,45 @@ func readClaudeHistory(path string, s Session, before string, limit int) (Histor
 	if err := x.scan(f, true); err != nil {
 		return HistoryPage{}, err
 	}
-	return x.page(f, s, before, limit)
+	page, err := x.page(f, s, before, limit)
+	if err == nil && !x.subagent && len(page.agentCalls) > 0 {
+		page.Events = withClaudeSubagents(path, s, page)
+	}
+	return page, err
+}
+
+// withClaudeSubagents adds, after each Agent call on the page, a record
+// naming its subagent and the subagent's latest tool calls, as the live
+// stream nests them; all of them within subagentPageBytes.
+func withClaudeSubagents(mainPath string, s Session, page HistoryPage) []Event {
+	dir := claudeSubagentDir(mainPath)
+	calls := map[int][]string{}
+	for _, c := range page.agentCalls {
+		calls[c.index] = append(calls[c.index], c.toolUseID)
+	}
+	var byMeta map[string]string
+	budget := subagentPageBytes
+	out := make([]Event, 0, len(page.Events))
+	for i, e := range page.Events {
+		out = append(out, e)
+		for _, tool := range calls[i] {
+			id := page.agentIDs[tool]
+			if id == "" {
+				if byMeta == nil {
+					byMeta = claudeSubagentsByTool(dir)
+				}
+				id = byMeta[tool]
+			}
+			if id == "" || strings.ContainsAny(id, `/\`) || strings.Contains(id, "..") {
+				continue
+			}
+			lines, earlier, _ := claudeSubagentTail(filepath.Join(dir, "agent-"+id+".jsonl"), tool, s, &budget)
+			b, _ := json.Marshal(map[string]any{"type": "workbench_subagent", "history": true, "tool_use_id": tool, "agentId": id, "earlier": earlier})
+			out = append(out, Event{Session: s.ID, Kind: "native", Data: b, Time: e.Time})
+			out = append(out, lines...)
+		}
+	}
+	return out
 }
 
 // claudeIndex is the record layout of a Claude transcript. It extends as the
@@ -217,6 +266,23 @@ func (x *claudeIndex) page(f *os.File, s Session, before string, limit int) (His
 			continue
 		}
 		msg := obj(v["message"])
+		// Agent calls, and the subagents their results name.
+		for _, raw := range asList(msg["content"]) {
+			c := obj(raw)
+			if n.Kind == "assistant" && str(c["type"]) == "tool_use" && (str(c["name"]) == "Agent" || str(c["name"]) == "Task") {
+				page.agentCalls = append(page.agentCalls, agentCall{len(page.Events), str(c["id"])})
+			}
+		}
+		if agent := str(obj(v["toolUseResult"])["agentId"]); n.Kind == "user" && agent != "" {
+			for _, raw := range asList(msg["content"]) {
+				if c := obj(raw); str(c["type"]) == "tool_result" {
+					if page.agentIDs == nil {
+						page.agentIDs = map[string]string{}
+					}
+					page.agentIDs[str(c["tool_use_id"])] = agent
+				}
+			}
+		}
 		data := map[string]any{
 			"type":      n.Kind,
 			"uuid":      n.UUID,
@@ -230,6 +296,9 @@ func (x *claudeIndex) page(f *os.File, s Session, before string, limit int) (His
 		// Where the agent was: paths in the record are relative to it.
 		if cwd := str(v["cwd"]); cwd != "" {
 			data["cwd"] = cwd
+		}
+		if agent := str(obj(v["toolUseResult"])["agentId"]); agent != "" {
+			data["toolUseResult"] = map[string]any{"agentId": agent}
 		}
 		// Who produced a user record: typed, SDK, or harness events such as task notifications.
 		for _, k := range []string{"origin", "promptSource"} {

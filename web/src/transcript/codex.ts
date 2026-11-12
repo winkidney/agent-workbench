@@ -167,13 +167,17 @@ export function codexTool(
         output: outputText(it.contentItems) || undefined,
         media: outputMedia(it.contentItems),
       };
-    case "collabAgentToolCall":
+    case "collabAgentToolCall": {
+      // Waiting on, messaging or closing subagents.
+      const threads = list(it.receiverThreadIds).map(text).filter(Boolean);
       return {
         ...base,
-        name: "Agent",
+        name: "Subagents",
         input: { description: it.tool, prompt: it.prompt, model: it.model },
         status: s,
+        threadId: threads.length === 1 ? threads[0] : undefined,
       };
+    }
     case "webSearch": {
       const action = record(it.action);
       return {
@@ -329,18 +333,70 @@ function item(
           (it.review ? ` · ${text(it.review)}` : ""),
       });
       return;
-    case "subAgentActivity":
+    case "subAgentActivity": {
+      // A subagent's row, one per thread: its tool calls show under it.
+      const thread = text(it.agentThreadId);
+      const path = text(it.agentPath);
+      if (!thread) {
+        d.upsert({
+          key: id,
+          kind: "notice",
+          text: [path, text(it.kind)].filter(Boolean).join(" · "),
+        });
+        return;
+      }
+      const kind = text(it.kind);
       d.upsert({
-        key: id,
-        kind: "notice",
-        text: [text(it.agentPath), text(it.kind)].filter(Boolean).join(" · "),
+        key: subagentKey(thread),
+        kind: "tool",
+        tool: {
+          name: "Agent",
+          input: { description: path.split("/").pop() || path || "subagent" },
+          status:
+            kind === "completed"
+              ? "ok"
+              : kind === "interrupted"
+                ? "interrupted"
+                : "running",
+          threadId: thread,
+          nativeType: type,
+        },
       });
       return;
+    }
     case "hookPrompt":
       d.upsert({ key: id, kind: "notice", text: "Hook prompt" });
       return;
   }
   d.upsert({ key: id, kind: "tool", tool: codexTool(it, completed) });
+}
+
+// The row of a Codex subagent, by its thread.
+export const subagentKey = (thread: string) => "agent:" + thread;
+
+// A Codex subagent's tool item (the server tags its thread's records): a
+// line under the subagent's row.
+function childItem(
+  d: Draft,
+  thread: string,
+  method: string,
+  it: Record<string, unknown>,
+) {
+  const id = text(it.id);
+  if (!id || (method !== "item/started" && method !== "item/completed")) return;
+  const parent = subagentKey(thread);
+  if (!d.get(parent))
+    d.upsert({
+      key: parent,
+      kind: "tool",
+      tool: { name: "Agent", status: "running", threadId: thread, input: {} },
+    });
+  d.upsert({
+    key: id,
+    kind: "tool",
+    parent,
+    tool: codexTool(it, method === "item/completed"),
+  });
 }
 
 export function applyCodex(
@@ -350,6 +406,16 @@ export function applyCodex(
 ) {
   const p = record(data.params);
   const method = text(data.method);
+  const child = text(data.workbenchChild);
+  if (child) return childItem(d, child, method, record(p.item));
+  // History: how many of a subagent's tool items were left out.
+  if (method === "workbench/subagent") {
+    d.patch(subagentKey(text(p.threadId)), {
+      earlier: Number(p.earlier) || undefined,
+      earlierMore: p.more === true || undefined,
+    });
+    return;
+  }
   switch (method) {
     case "item/started":
     case "item/completed":

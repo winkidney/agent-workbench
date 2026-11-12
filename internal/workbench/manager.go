@@ -91,6 +91,8 @@ type runtime struct {
 	// What the user would likely type next, made after the last turn
 	// (suggest.go).
 	suggestion string
+	// Codex: the subagent threads this thread started, with their paths.
+	children map[string]string
 }
 type Manager struct {
 	// closing: the workbench is shutting down (Shutdown); engines it stops
@@ -438,6 +440,12 @@ func (m *Manager) receive(id string, generation int, v map[string]any) {
 		}
 		return
 	}
+	// A Codex subagent's thread speaks on this connection too: its records
+	// are not this session's turn (subagents.go).
+	if child := codexChildOf(r, v); child != "" {
+		m.childRecord(r, child, v)
+		return
+	}
 	if strings.HasPrefix(str(v["id"]), "turn:") && v["error"] == nil {
 		chosen := m.options(r.session.ID)
 		r.applied = chosen
@@ -562,14 +570,14 @@ func (m *Manager) receive(id string, generation int, v map[string]any) {
 			m.emit(r.session.ID, "turn", map[string]any{"id": r.turnID})
 		}
 		if method == "serverRequest/resolved" {
-			key := fmt.Sprint(params["requestId"])
-			if _, ok := r.pending[key]; ok {
-				delete(r.pending, key)
-				m.emit(r.session.ID, "approval_resolved", map[string]any{"id": key})
-				if len(r.pending) == 0 && r.turn {
-					m.status(r, "running")
-				}
+			m.requestResolved(r, params)
+		}
+		// The subagents this thread started, by thread, for their requests.
+		if it := obj(params["item"]); str(it["type"]) == "subAgentActivity" && str(it["agentThreadId"]) != "" {
+			if r.children == nil {
+				r.children = map[string]string{}
 			}
+			r.children[str(it["agentThreadId"])] = str(it["agentPath"])
 		}
 		if method == "turn/completed" {
 			// Commands it left running are listed after the turn.
@@ -682,6 +690,61 @@ func (m *Manager) receive(id string, generation int, v map[string]any) {
 		}
 	}
 }
+
+// codexChildOf is the subagent thread a Codex record comes from, or "" for
+// the session's own (and for replies, which carry no thread).
+func codexChildOf(r *runtime, v map[string]any) string {
+	if r.session.Agent != "codex" || r.session.NativeID == "" || str(v["method"]) == "" {
+		return ""
+	}
+	if t := str(obj(v["params"])["threadId"]); t != "" && t != r.session.NativeID {
+		return t
+	}
+	return ""
+}
+
+// childRecord takes a record of a Codex subagent's thread (m.mu held): its
+// requests are answered here like the session's, its tool items become
+// lines under the row that started it, and the rest (its turns, messages,
+// token use) is not the session's.
+func (m *Manager) childRecord(r *runtime, child string, v map[string]any) {
+	r.last = time.Now()
+	method := str(v["method"])
+	params := obj(v["params"])
+	if v["id"] != nil {
+		if method == "currentTime/read" {
+			_ = r.proc.Input(map[string]any{"id": v["id"], "result": map[string]any{"currentTimeAt": time.Now().Unix()}})
+			return
+		}
+		key := fmt.Sprint(v["id"])
+		r.pending[key] = v
+		m.emit(r.session.ID, "approval", m.approvalData(r, key, v))
+		m.status(r, "waiting")
+		return
+	}
+	switch method {
+	case "serverRequest/resolved":
+		m.requestResolved(r, params)
+	case "item/started", "item/completed":
+		if data := codexChildRecord(child, method, params); data != nil {
+			m.flushDelta(r)
+			m.emit(r.session.ID, "native", data)
+		}
+	}
+}
+
+// requestResolved: Codex answered or withdrew a request (m.mu held).
+func (m *Manager) requestResolved(r *runtime, params map[string]any) {
+	key := fmt.Sprint(params["requestId"])
+	if _, ok := r.pending[key]; ok {
+		delete(r.pending, key)
+		m.emit(r.session.ID, "approval_resolved", map[string]any{"id": key})
+		if len(r.pending) == 0 && r.turn {
+			m.status(r, "running")
+		}
+	}
+}
+
 func (m *Manager) Reply(id, key string, allow bool, answers map[string]any) error {
 	decision := "deny"
 	if allow {
@@ -809,6 +872,9 @@ func (m *Manager) ReplyDecision(id, key, decision, message string, answers map[s
 // go back to auto mode (m.mu held).
 func (m *Manager) approvalData(r *runtime, key string, v any) map[string]any {
 	data := map[string]any{"id": key, "request": v}
+	if sub := m.subagentOf(r, v); sub != nil {
+		data["subagent"] = sub
+	}
 	req := obj(obj(v)["request"])
 	if r.session.Agent == "claude" && str(req["tool_name"]) == "ExitPlanMode" && m.options(r.session.ID).Permissions == "auto" {
 		data["planResume"] = "auto"
@@ -924,6 +990,7 @@ func (m *Manager) stop(id string, sleep, background bool) error {
 	r.ready = false
 	r.turn = false
 	r.suggestion = ""
+	r.children = nil
 	m.releasePending(r)
 	clearTasks(r)
 	previews := r.previews
@@ -977,6 +1044,7 @@ func (m *Manager) exited(id string, generation int, err error) {
 	r.ready = false
 	r.turn = false
 	r.suggestion = ""
+	r.children = nil
 	m.releasePending(r)
 	clearTasks(r)
 	state := "sleeping"

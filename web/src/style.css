@@ -353,6 +353,53 @@ p {
   font: 12.5px/1.9 var(--mono);
   text-align: left;
 }
+/* A subagent's row: its transcript is one click away. */
+.tool-head-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.tool-head-row .tool-head {
+  min-width: 0;
+}
+.subagent-link {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 2px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: none;
+  padding: 0 6px;
+  color: var(--muted-foreground);
+  font: 11px/18px var(--mono);
+  cursor: pointer;
+}
+.subagent-link:hover {
+  color: var(--foreground);
+  border-color: color-mix(in oklab, var(--foreground) 30%, var(--border));
+}
+.subagent-link:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+.approval-source {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0 6px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.approval-source strong {
+  color: var(--foreground);
+  font-weight: 500;
+}
+.parent-banner strong {
+  color: var(--foreground);
+  font-weight: 500;
+}
 .tool-head.static {
   cursor: default;
 }

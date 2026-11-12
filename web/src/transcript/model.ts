@@ -40,6 +40,10 @@ export type Tool = {
   progress?: string;
   // Why a tool did not run (Claude's auto mode blocked it).
   note?: string;
+  // The subagent a call started, for its transcript: Claude's agent id, or
+  // Codex's subagent thread.
+  agentId?: string;
+  threadId?: string;
   raw?: unknown;
   result?: unknown;
 };
@@ -63,6 +67,10 @@ export type Block = {
   local?: boolean;
   // Parent tool key for subagent activity.
   parent?: string;
+  // A subagent's row: its tool calls not kept (reducer.ts, subagents.go),
+  // and whether there may be more than that (some were never read).
+  earlier?: number;
+  earlierMore?: boolean;
   tool?: Tool;
   steps?: Step[];
   media?: Media[];
