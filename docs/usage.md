@@ -145,6 +145,11 @@ HTML and dev-server previews use `p-*.agent.localhost` addresses in a browser on
   - **Codex:** Archive / Unarchive and Delete. Both use Codex's own thread operations, so the Codex app and CLI see the same change. Delete asks first and is permanent. Archived sessions open read-only with an Unarchive button; **Archived N** at the bottom shows them.
   - **Claude:** Claude Code has no archive or delete for local sessions, so the menu offers **Hide from sidebar**, which never touches its records. **Hidden N** at the bottom shows hidden sessions.
 
+- **The connection line** at the bottom says where this page is and whether its live updates arrive:
+  - **Connected locally** on the workbench computer, **Connected remotely** on another device or through a tunnel. Hover it for how the page signed in and whether the connection is encrypted.
+  - **Reconnecting…** while live updates are interrupted, for example while the workbench restarts. It reconnects by itself.
+  - **Disconnected**, with **Retry**, when the workbench refused them.
+
 Pins, hidden sessions and display names are stored by the workbench and sync live between browsers.
 
 ## Access from other devices

@@ -30,6 +30,7 @@ import { Button } from "../components/ui/button";
 import { AgentIcon, StatusIcon, statusLabel } from "../components/AgentIcon";
 import { LogoLockup } from "../components/Logo";
 import { ATTENTION_LABEL } from "../attention";
+import type { FooterConnection } from "../lib/connection";
 import {
   buildSidebar,
   relativeTime,
@@ -752,6 +753,8 @@ export function Sidebar({
   onRename,
   onArchive,
   onDelete,
+  connection,
+  onReconnect,
 }: {
   sessions: Session[];
   workspaces: string[];
@@ -763,6 +766,9 @@ export function Sidebar({
   onRename: (id: string, title: string) => void;
   onArchive: (session: Session, archived: boolean) => void;
   onDelete: (session: Session) => void;
+  // Where this page is and whether live updates arrive.
+  connection: FooterConnection;
+  onReconnect: () => void;
 }) {
   const [query, setQuery] = useState("");
   const [showHidden, setShowHidden] = useState(false);
@@ -987,7 +993,23 @@ export function Sidebar({
         )}
       </nav>
       <div className="sidebar-footer">
-        <span className="status-dot idle" /> Connected locally
+        <span
+          className="sidebar-connection"
+          title={connection.title}
+          role="status"
+        >
+          <span className={`status-dot ${connection.tone}`} />
+          {connection.label}
+          {connection.tone === "down" && (
+            <button
+              type="button"
+              className="hidden-toggle"
+              onClick={onReconnect}
+            >
+              Retry
+            </button>
+          )}
+        </span>
         {model.hiddenCount > 0 && (
           <button
             type="button"

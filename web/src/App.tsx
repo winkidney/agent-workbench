@@ -21,6 +21,7 @@ import { Sidebar, statusLabels as labels } from "./sidebar/Sidebar";
 import { usePrefs } from "./sidebar/usePrefs";
 import { displayTitle, type Session } from "./sidebar/tree";
 import { api, download } from "./lib/api";
+import { afterError, footerConnection, type Live } from "./lib/connection";
 import { Appearance } from "./components/Appearance";
 import { NotifyToggle } from "./components/NotifyToggle";
 import { SuggestToggle } from "./components/SuggestToggle";
@@ -113,6 +114,13 @@ export default function App() {
   // Whether this page runs on the workbench computer: there "Show in Files"
   // opens its file manager; anywhere else paths download instead.
   const [here, setHere] = useState(true);
+  // How this page signs in (for the sidebar's connection line), and whether
+  // the live update stream is open; retry makes it again once closed.
+  const [signin, setSignin] = useState<{ open: boolean; method?: string }>({
+    open: true,
+  });
+  const [live, setLive] = useState<Live>("connecting");
+  const [retry, setRetry] = useState(0);
   const [paired, setPaired] = useState(false),
     [code, setCode] = useState(""),
     [error, setError] = useState(""),
@@ -238,8 +246,11 @@ export default function App() {
       const status = await api<{
         authenticated: boolean;
         thisComputer?: boolean;
+        local?: boolean;
+        method?: string;
       }>("auth/status");
       setHere(status.thisComputer !== false);
+      setSignin({ open: !!status.local, method: status.method });
       if (status.authenticated) {
         const list = await api<Session[]>("sessions");
         setSessions(list);
@@ -316,12 +327,16 @@ export default function App() {
       if (v.kind === "prefs") receivePrefs.current(v.data);
       else if (v.session === selected.current) pushEvent.current(v);
     };
+    source.onopen = () => setLive("open");
     source.onerror = () => {
+      setLive((was) =>
+        afterError(was, source.readyState === EventSource.CLOSED),
+      );
       // EventSource hides HTTP status; probe authentication on connection failure.
       void api<Session[]>("sessions").catch(() => {});
     };
     return () => source.close();
-  }, [paired, active]);
+  }, [paired, active, retry]);
   useEffect(() => {
     if (!paired || !active) return;
     setPath("");
@@ -858,6 +873,17 @@ export default function App() {
             onRename={renameSession}
             onArchive={archiveSession}
             onDelete={setDeleting}
+            connection={footerConnection({
+              here,
+              open: signin.open,
+              method: signin.method,
+              protocol: location.protocol,
+              live,
+            })}
+            onReconnect={() => {
+              setLive("connecting");
+              setRetry((n) => n + 1);
+            }}
           />
         )}
         {/* Replies are styled like the agent's own terminal UI. */}

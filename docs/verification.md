@@ -612,3 +612,19 @@ These are maintainer notes on how each feature of Agent Workbench was verified, 
   - A chip's button downloaded `report.pdf`, and the image viewer's **Download** downloaded `shot.png`.
   - After renaming `notes.log` away, clicking it showed "notes.log no longer exists." and started no download.
   - As this computer, the same page still read "Show … in Files", and the viewer showed **Show in Files**.
+
+## The sidebar's connection line
+
+- **Why:** the line at the bottom of the sidebar always read "Connected locally", on other devices and through tunnels too, and also while the workbench was down.
+- **Change:**
+  - The line says **Connected locally** or **Connected remotely**, from `thisComputer` in `auth/status`. Its hover text says how the page signed in and whether the connection is encrypted.
+  - It also follows the live update stream:
+    - **Connecting…** before the stream first opens;
+    - **Reconnecting…** (amber) after the stream drops, while the browser retries;
+    - **Disconnected** (red), with **Retry**, when the server refused the stream.
+- **New Vitest tests:** the label and hover text on this computer, through a tunnel with a password, with the pairing code, and with sign-in on this computer. Also the three stream states, and the state after an error.
+- **Browser** (scratch instance; Chromium as this computer, then with tunnel headers and a password):
+  - **This computer:** "Connected locally".
+  - **Through the tunnel:** "Connected remotely", hover "Another device, signed in with a password; plain HTTP across the network".
+  - **Workbench stopped:** "Reconnecting…" after 0.1 s. Once it started again, "Connected remotely" after 2.6 s, without a reload.
+  - **Stream answered with a 503:** "Disconnected" with **Retry**. Retry reconnected in 0.1 s.

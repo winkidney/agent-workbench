@@ -3117,9 +3117,34 @@ textarea {
     color-mix(in oklch, var(--muted-foreground) 40%, transparent);
 }
 
-.status-dot.idle {
+.status-dot.idle,
+.status-dot.ok {
   background: var(--success);
   box-shadow: none;
+}
+.status-dot.wait {
+  background: var(--warning);
+  box-shadow: none;
+  animation: pulse 1.6s ease-in-out infinite;
+}
+.status-dot.down {
+  background: var(--destructive);
+  box-shadow: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .status-dot.wait {
+    animation: none;
+  }
+}
+.sidebar-connection {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  white-space: nowrap;
+}
+.sidebar-connection .hidden-toggle {
+  margin-left: 0;
 }
 
 .show-more,
