@@ -282,16 +282,20 @@ p {
 .row.assistant .body {
   position: relative;
 }
+/* In the gutter, in place of the bullet: it never covers the text. */
 .row-actions {
   position: absolute;
-  top: -4px;
-  right: 0;
+  top: 1px;
+  left: -26px;
   opacity: 0;
   transition: opacity 0.1s;
 }
 .row.assistant:hover .row-actions,
 .row-actions:focus-within {
   opacity: 1;
+}
+.row.assistant:is(:hover, :focus-within):has(.row-actions) > .mark {
+  visibility: hidden;
 }
 .caret {
   display: inline-block;
@@ -665,6 +669,10 @@ p {
   margin-top: 0.2em;
 }
 .markdown li > p {
+  margin: 0.2em 0;
+}
+.markdown li > ul,
+.markdown li > ol {
   margin: 0.2em 0;
 }
 /* Agents use single newlines as line breaks, as the terminal shows them. */

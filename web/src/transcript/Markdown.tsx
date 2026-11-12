@@ -1,4 +1,4 @@
-import { memo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Check, Copy } from "lucide-react";
@@ -15,6 +15,7 @@ import {
   workspacePath,
 } from "./media";
 import { useHighlighter } from "./highlight";
+import { rehypeBlockWhitespace } from "./whitespace";
 
 export function CopyButton({
   text,
@@ -132,7 +133,11 @@ const components: Components = {
 };
 
 export const Markdown = memo(function Markdown({ text }: { text: string }) {
-  const rehypePlugins = useHighlighter(text);
+  const highlight = useHighlighter(text);
+  const rehypePlugins = useMemo(
+    () => [rehypeBlockWhitespace, ...(highlight ?? [])],
+    [highlight],
+  );
   return (
     <div className="markdown">
       <ReactMarkdown
