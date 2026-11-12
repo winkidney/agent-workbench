@@ -612,7 +612,9 @@ type codexClient struct {
 	in    io.WriteCloser
 	enc   *json.Encoder
 	lines chan map[string]any
-	mu    sync.Mutex
+	// readErr is why reading its output stopped, set before lines closes.
+	readErr error
+	mu      sync.Mutex
 }
 
 // startCodexClient starts the codex on PATH, as the workbench's own
@@ -641,8 +643,7 @@ func startCodexClientWith(run agentRun, name string) (*codexClient, error) {
 	}
 	c := &codexClient{cmd: cmd, group: group, in: in, enc: json.NewEncoder(in), lines: make(chan map[string]any, 16)}
 	go func() {
-		scan := bufio.NewScanner(out)
-		scan.Buffer(make([]byte, 65536), 16*1024*1024)
+		scan := newLineReader(out)
 		for scan.Scan() {
 			var v map[string]any
 			// Only responses are read; notifications are dropped.
@@ -650,6 +651,8 @@ func startCodexClientWith(run agentRun, name string) (*codexClient, error) {
 				c.lines <- v
 			}
 		}
+		// Read by request only after lines is closed.
+		c.readErr = scan.Err()
 		close(c.lines)
 	}()
 	if _, err := c.request("init", "initialize", map[string]any{"clientInfo": map[string]any{"name": name, "version": "0.1.0"}}); err != nil {
@@ -671,6 +674,9 @@ func (c *codexClient) request(id, method string, params any) (map[string]any, er
 		select {
 		case v, ok := <-c.lines:
 			if !ok {
+				if c.readErr != nil {
+					return nil, fmt.Errorf("reading codex app-server: %w", c.readErr)
+				}
 				return nil, errors.New("codex app-server exited")
 			}
 			if str(v["id"]) != id {

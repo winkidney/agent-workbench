@@ -131,8 +131,7 @@ func probe(run agentRun, agent, cwd string) (*exec.Cmd, func(string, any) (map[s
 		cancel()
 	}
 	enc := json.NewEncoder(in)
-	scan := bufio.NewScanner(out)
-	scan.Buffer(make([]byte, 65536), 16*1024*1024)
+	scan := newLineReader(out)
 	call := func(method string, params any) (map[string]any, error) {
 		id := token()
 		var req any = map[string]any{"id": id, "method": method, "params": params}
@@ -861,8 +860,7 @@ func probeClaudeInit(run agentRun, cwd string) (claudeInitInfo, error) {
 	enc := json.NewEncoder(in)
 	_ = enc.Encode(map[string]any{"type": "control_request", "request_id": "init", "request": map[string]any{"subtype": "initialize"}})
 	_ = enc.Encode(map[string]any{"type": "user", "message": map[string]any{"role": "user", "content": "/context"}, "parent_tool_use_id": nil, "session_id": ""})
-	scan := bufio.NewScanner(out)
-	scan.Buffer(make([]byte, 65536), 16*1024*1024)
+	scan := newLineReader(out)
 	for scan.Scan() {
 		var v map[string]any
 		if json.Unmarshal(scan.Bytes(), &v) == nil && v["type"] == "system" && v["subtype"] == "init" {

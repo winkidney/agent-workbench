@@ -1,7 +1,6 @@
 package workbench
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -1296,15 +1295,13 @@ func claudeTakes(binary string, flags ...string) []string {
 // the engine when its output cannot be read; done runs after the exit.
 func pump(cmd *exec.Cmd, out, stderr io.Reader, onMessage func(map[string]any), onExit func(error), abort, done func()) {
 	go func() {
-		scan := bufio.NewScanner(stderr)
-		scan.Buffer(make([]byte, 4096), 1024*1024)
+		scan := newLineReader(stderr)
 		for scan.Scan() {
 			onMessage(map[string]any{"type": "stderr", "text": scan.Text()})
 		}
 	}()
 	go func() {
-		scan := bufio.NewScanner(out)
-		scan.Buffer(make([]byte, 65536), 4*1024*1024)
+		scan := newLineReader(out)
 		for scan.Scan() {
 			var v map[string]any
 			if err := json.Unmarshal(scan.Bytes(), &v); err == nil {
