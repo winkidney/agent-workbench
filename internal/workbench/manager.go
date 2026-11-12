@@ -88,6 +88,9 @@ type runtime struct {
 	// background once registered), and moves asked for before that.
 	foreground     map[string]string
 	wantBackground map[string]bool
+	// What the user would likely type next, made after the last turn
+	// (suggest.go).
+	suggestion string
 }
 type Manager struct {
 	// closing: the workbench is shutting down (Shutdown); engines it stops
@@ -363,6 +366,7 @@ func (m *Manager) beginTurn(r *runtime) {
 	r.began = time.Now()
 	r.turnOut, r.phase = 0, "requesting"
 	r.detail, r.detailKind = "", ""
+	r.suggestion = ""
 	r.turn = true
 	r.interrupted = false
 	m.status(r, "running")
@@ -597,6 +601,9 @@ func (m *Manager) receive(id string, generation int, v map[string]any) {
 			if r.session.NativeID != "" {
 				m.refreshClaudeGoal(r)
 			}
+			if !m.Preferences().Suggestions {
+				go m.pauseSuggestions(r.session.ID, true)
+			}
 		}
 		if sid := str(v["session_id"]); sid != "" && sid != r.session.NativeID {
 			oldID := r.session.ID
@@ -647,6 +654,8 @@ func (m *Manager) receive(id string, generation int, v map[string]any) {
 			}
 		case "command_lifecycle":
 			m.claudeLifecycle(r, v)
+		case "prompt_suggestion":
+			m.suggested(r, str(v["suggestion"]))
 		case "result":
 			// A goal met (or given up) is only in the JSONL.
 			m.refreshClaudeGoal(r)
@@ -914,6 +923,7 @@ func (m *Manager) stop(id string, sleep, background bool) error {
 	r.proc = nil
 	r.ready = false
 	r.turn = false
+	r.suggestion = ""
 	m.releasePending(r)
 	clearTasks(r)
 	previews := r.previews
@@ -966,6 +976,7 @@ func (m *Manager) exited(id string, generation int, err error) {
 	r.proc = nil
 	r.ready = false
 	r.turn = false
+	r.suggestion = ""
 	m.releasePending(r)
 	clearTasks(r)
 	state := "sleeping"
@@ -1107,14 +1118,46 @@ func agentCommand(s Session) (string, []string, error) {
 	if s.Agent == "codex" {
 		return binary, []string{"app-server"}, nil
 	}
-	// Hook events: which hook runs, and when one fails.
-	args := []string{"-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--include-partial-messages", "--include-hook-events", "--permission-prompt-tool", "stdio"}
+	args := []string{"-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--include-partial-messages", "--permission-prompt-tool", "stdio"}
+	// Hook events: which hook runs, and when one fails. Prompt suggestions:
+	// what the user would likely type next (suggest.go).
+	args = append(args, claudeTakes(binary, "--include-hook-events", "--prompt-suggestions")...)
 	if s.NativeID != "" {
 		args = append(args, "--resume", s.NativeID)
 	} else if s.ExplicitName && s.Title != "" {
 		args = append(args, "--name", s.Title)
 	}
 	return binary, args, nil
+}
+
+// claudeHelp is the last claude --help read, by binary path, size and
+// modification time.
+var claudeHelp struct {
+	sync.Mutex
+	key, text string
+}
+
+// claudeTakes keeps the optional flags the claude binary lists in its help:
+// a CLI exits on a flag it does not know, and these came in later versions.
+func claudeTakes(binary string, flags ...string) []string {
+	info, err := os.Stat(binary)
+	if err != nil {
+		return nil
+	}
+	key := fmt.Sprint(binary, info.Size(), info.ModTime().UnixNano())
+	claudeHelp.Lock()
+	defer claudeHelp.Unlock()
+	if claudeHelp.key != key {
+		out, _ := exec.Command(binary, "--help").Output()
+		claudeHelp.key, claudeHelp.text = key, string(out)
+	}
+	var took []string
+	for _, f := range flags {
+		if strings.Contains(claudeHelp.text, f+" ") {
+			took = append(took, f)
+		}
+	}
+	return took
 }
 
 // pump delivers an engine's JSON lines and stderr until it exits. abort ends

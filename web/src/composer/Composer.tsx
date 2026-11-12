@@ -18,6 +18,7 @@ import {
   type Route,
 } from "./commands";
 import { goalIntent, type Goal } from "./goal";
+import { shownSuggestion } from "./suggestion";
 
 export type SendMode = "send" | "steer" | "queue";
 
@@ -150,6 +151,14 @@ export function Composer({
       Math.min(el.scrollHeight, Math.round(innerHeight * 0.4)) + "px";
   }, [prompt, ref]);
   const readOnly = !!session.readOnly || !!session.archived;
+  // What the user would likely type next: in grey in the empty prompt, as
+  // Claude Code shows it; Tab (or the key cap) fills it in.
+  const suggestion = shownSuggestion({
+    suggestion: ctl.suggestion,
+    prompt,
+    running,
+    blocked: readOnly || disabled || !!replace || session.status !== "idle",
+  });
   // During a turn Enter steers; the Queue button keeps it for after.
   const submit = async (queue = false) => {
     const text = prompt;
@@ -247,16 +256,20 @@ export function Composer({
           aria-label="Task"
           disabled={readOnly}
           placeholder={
-            session.source === "subagent"
-              ? "Subagent transcript · read only; continue in the parent session"
-              : session.archived
-                ? "Archived · unarchive to continue"
-                : readOnly
-                  ? "Active in another client · read only"
-                  : running
-                    ? "Steer this turn — Enter sends it now"
-                    : "Describe a task or continue this conversation…"
+            suggestion
+              ? suggestion
+              : session.source === "subagent"
+                ? "Subagent transcript · read only; continue in the parent session"
+                : session.archived
+                  ? "Archived · unarchive to continue"
+                  : readOnly
+                    ? "Active in another client · read only"
+                    : running
+                      ? "Steer this turn — Enter sends it now"
+                      : "Describe a task or continue this conversation…"
           }
+          className={suggestion ? "suggesting" : undefined}
+          aria-describedby={suggestion ? "composer-suggestion" : undefined}
           value={prompt}
           onChange={(e) => {
             setPrompt(e.target.value);
@@ -289,6 +302,19 @@ export function Composer({
               }
             }
             if (
+              suggestion &&
+              e.key === "Tab" &&
+              !e.shiftKey &&
+              !e.ctrlKey &&
+              !e.altKey &&
+              !e.metaKey &&
+              !e.nativeEvent.isComposing
+            ) {
+              e.preventDefault();
+              startWith(suggestion);
+              return;
+            }
+            if (
               onBackground &&
               e.ctrlKey &&
               !e.altKey &&
@@ -309,6 +335,23 @@ export function Composer({
             }
           }}
         />
+        {suggestion && (
+          <button
+            type="button"
+            className="suggest-take"
+            title="Use this suggestion (Tab)"
+            aria-label="Use the suggestion"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => startWith(suggestion)}
+          >
+            Tab
+          </button>
+        )}
+        {suggestion && (
+          <span id="composer-suggestion" className="sr-only">
+            Suggested next message; Tab fills it in.
+          </span>
+        )}
         <div className="composer-bottom">
           <AgentSelectors ctl={ctl} session={session} />
           <div className="composer-actions">
@@ -377,7 +420,9 @@ export function Composer({
           hint={
             running
               ? "↵ steer · queue button sends after this turn · esc interrupt"
-              : "↵ send · ⇧↵ new line"
+              : suggestion
+                ? "tab use suggestion · ↵ send · ⇧↵ new line"
+                : "↵ send · ⇧↵ new line"
           }
         />
       </div>

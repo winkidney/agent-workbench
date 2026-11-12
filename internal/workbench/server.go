@@ -490,6 +490,25 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 		default:
 			writeJSON(w, v)
 		}
+	case path == "preferences" && r.Method == "GET":
+		writeJSON(w, m.Preferences())
+	case path == "preferences" && r.Method == "PATCH":
+		var v struct {
+			Suggestions *bool `json:"suggestions"`
+		}
+		if err := decode(w, r, &v); err != nil {
+			bad(w, err)
+			return
+		}
+		p := m.Preferences()
+		if v.Suggestions != nil {
+			p.Suggestions = *v.Suggestions
+		}
+		if err := m.SetPreferences(p); err != nil {
+			bad(w, err)
+			return
+		}
+		writeJSON(w, p)
 	case path == "sidebar" && r.Method == "GET":
 		writeJSON(w, m.Prefs())
 	case path == "sidebar" && r.Method == "POST":

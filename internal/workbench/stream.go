@@ -98,7 +98,8 @@ func classifyLive(v map[string]any) (delta, int) {
 			return delta{Item: item, Channel: "thinking", Parent: parent, Text: str(d["thinking"])}, liveDelta
 		}
 		return delta{}, liveDrop
-	case "rate_limit_event", "stderr", "tool_progress":
+	// prompt_suggestion: kept for the composer (suggest.go), not the transcript.
+	case "rate_limit_event", "stderr", "tool_progress", "prompt_suggestion":
 		return delta{}, liveDrop
 	case "system":
 		// Progress only: thinking token estimates and request status feed the

@@ -60,6 +60,8 @@ type Usage = {
   average?: number;
   scope: string;
   updated?: string;
+  // What the user would likely type next, after a turn.
+  suggestion?: string;
 };
 type Meta = {
   models?: Model[];
@@ -294,6 +296,8 @@ export function useAgentControls({
   return {
     meta,
     data,
+    // This session's, not the previous one's while it loads.
+    suggestion: dataFor === session.id ? data?.suggestion : undefined,
     options,
     loading,
     error,

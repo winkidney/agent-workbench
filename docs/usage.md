@@ -30,6 +30,7 @@ The title comes from the first message until the CLI names the session; rename i
 | Shift+Enter | new line | new line |
 | Queue button | | keep the message for after this turn |
 | Esc | | interrupt the turn |
+| Tab | fill in the suggested next message (empty prompt) | |
 | `/`, `$` | open the command or skill list | |
 
 **Steering.** A message sent during a turn goes into that turn and is marked *Steered*:
@@ -37,6 +38,8 @@ The title comes from the first message until the CLI names the session; rename i
 - **Claude** takes it in at its next step, after the current tool call, without interrupting, exactly as pressing Enter in Claude Code's terminal UI does. If the turn finishes first, the message runs right after it. While it waits it shows **Send now**, Claude Code's own send-now (Ctrl+X Ctrl+S): a running tool moves to the background, or the reply in progress stops, and the message is handled at once.
 
 Commands (`/…`) cannot steer; they run after the turn. If an approval is pending, a steered message is queued instead and the reason is shown.
+
+**Suggested next message (Claude).** When a Claude turn ends, the empty prompt may show in grey what you would likely type next, such as "run the tests" or "commit this", as in Claude Code's terminal. Tab (or the **Tab** key cap, which also works by touch) fills it in to edit or send; Enter on the empty prompt does not send it. Claude Code makes the suggestion itself, with one more request on the cached conversation, and leaves it out when the next step isn't clear, early in a conversation, in plan mode, when rate limited, or when a request waits for you. Turn it off for all sessions in the "⋯" menu (Suggest next prompt); Claude Code's own `promptSuggestionEnabled: false` setting turns it off too. Codex sessions don't have suggestions yet.
 
 **Queue.** Queued messages wait above the composer and are sent one after another as turns end. Each has **Steer** (send it into the running turn now; **Send now** when nothing is running) and a remove button. After an interrupt or an error the queue pauses until you continue it.
 

@@ -98,6 +98,7 @@ func trackAttention(r *runtime, method string, params map[string]any) {
 // and the plan decision (m.mu held).
 func userActed(r *runtime) {
 	r.asking, r.planReady = false, false
+	r.suggestion = ""
 	clearFinished(r)
 	r.foreground, r.wantBackground = nil, nil
 }

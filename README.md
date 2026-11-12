@@ -24,6 +24,7 @@ Agent Workbench runs on your machine next to `claude` and `codex` and gives both
 - Replies, thinking and tool calls stream in and look like each CLI's terminal UI: its colors, diffs and ANSI output.
 - Press Enter during a turn to **steer** it: Codex takes the message at its next step (`turn/steer`); Claude takes it in at its next step, as its own TUI does, with **Send now** when you can't wait.
 - Queue follow-ups for after the turn, interrupt with Esc, and answer approvals and questions from the keyboard.
+- After a Claude turn, the prompt suggests what you would likely type next, as Claude Code's terminal does; Tab fills it in.
 - Model, effort, speed, plan mode and permissions per session, shown as pills that always show the value in effect. New sessions start with each CLI's automatic approvals (Claude Code's Auto mode, Codex's Auto-review).
 - Sessions waiting for an approval, a question or a plan decision stand out in the sidebar, count in the tab title, and can send a desktop notification.
 - Cards for Codex's requests for more access and for MCP servers' forms; lines for what the CLIs only told their terminals (auto-mode blocks, warnings, model switches, failed hooks), and one Changes row per Codex turn.

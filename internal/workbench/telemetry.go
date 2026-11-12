@@ -47,6 +47,8 @@ type Telemetry struct {
 	Goal *Goal `json:"goal,omitempty"`
 	// What runs outside the turns, and recently ended (background.go).
 	Background []BackgroundTask `json:"background,omitempty"`
+	// What the user would likely type next (suggest.go).
+	Suggestion string `json:"suggestion,omitempty"`
 }
 type metadata struct {
 	Models      []any          `json:"models"`
@@ -351,6 +353,7 @@ func (m *Manager) Telemetry(id string) Telemetry {
 	m.mu.Lock()
 	if r := m.find(id); r != nil && r.proc != nil {
 		t.Background = tasksOf(r)
+		t.Suggestion = suggestionOf(r)
 	}
 	m.mu.Unlock()
 	return t
