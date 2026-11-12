@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"testing"
 	"time"
@@ -208,7 +209,8 @@ read wait
 	}
 	wait("claude", "done")
 	b, _ := os.ReadFile(seen)
-	if !strings.Contains(string(b), "code=good#s1") || !strings.Contains(string(b), "display=\n") || strings.Contains(string(b), "browser= ") {
+	// The display is dropped where a browser would open on it (Linux).
+	if !strings.Contains(string(b), "code=good#s1") || (goruntime.GOOS == "linux" && !strings.Contains(string(b), "display=\n")) || strings.Contains(string(b), "browser= ") {
 		t.Fatalf("the CLI saw %q", b)
 	}
 	// Nothing to paste into once done.
