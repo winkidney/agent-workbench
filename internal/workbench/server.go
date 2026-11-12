@@ -75,6 +75,11 @@ func assetBuild(assets fs.FS) string {
 
 func NewServer(m *Manager, assets fs.FS, host, pairing string) *Server {
 	s := &Server{Manager: m, Assets: assets, Host: host, Pairing: pairing, auth: map[string]time.Time{}, grants: map[string]grant{}, attempts: map[string][]time.Time{}, fileGrants: map[string]fileGrant{}, build: assetBuild(assets)}
+	if _, port, err := net.SplitHostPort(host); err == nil {
+		m.mu.Lock()
+		m.previewPort = port
+		m.mu.Unlock()
+	}
 	// On errors other devices stay refused.
 	s.remote, s.initErr = loadRemoteAccess(m.store.db)
 	if s.initErr == nil {
@@ -424,6 +429,32 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 		}
 		v := m.Metadata(agent, cwd)
 		writeJSON(w, v)
+	case strings.HasPrefix(path, "sessions/") && strings.HasSuffix(path, "/preview-tabs") && strings.Count(path, "/") == 2:
+		// What the session's preview panel had open (preview_tabs.go).
+		id := strings.TrimSuffix(strings.TrimPrefix(path, "sessions/"), "/preview-tabs")
+		if _, ok := m.catalog.Find(id); !ok && m.findUnlocked(id) == nil {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		switch r.Method {
+		case "GET":
+			writeJSON(w, m.PreviewTabsOf(id))
+		case "PUT":
+			var v PreviewTabs
+			if err := decode(w, r, &v); err != nil {
+				bad(w, err)
+				return
+			}
+			out, err := m.SetPreviewTabs(id, v)
+			if err != nil {
+				bad(w, err)
+				return
+			}
+			writeJSON(w, out)
+		default:
+			http.Error(w, "method not allowed", 405)
+		}
 	case strings.HasPrefix(path, "sessions/") && (r.Method == "GET" || r.Method == "PATCH"):
 		parts := strings.Split(path, "/")
 		if len(parts) != 3 {
@@ -740,7 +771,7 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 		m.catalog.mu.Unlock()
 		if v.RequestID != "" {
 			data, _ := json.Marshal(created)
-			if _, err := m.store.db.Exec("INSERT INTO native_creations VALUES(?,?,?)", v.RequestID, hash, string(data)); err != nil {
+			if _, err := m.store.db.Exec("INSERT INTO native_creations(request_id,payload_hash,response,created) VALUES(?,?,?,?)", v.RequestID, hash, string(data), nowStamp()); err != nil {
 				bad(w, err)
 				return
 			}
@@ -1266,8 +1297,9 @@ func Run(ctx context.Context, m *Manager, assets fs.FS, addr, code string) error
 		}
 	}()
 	go func() {
-		// Old events go at startup and then hourly.
-		m.store.Tidy()
+		// Old events, unused caches and the rows of sessions gone go at
+		// startup and then hourly.
+		m.Tidy()
 		ticker := time.NewTicker(time.Hour)
 		defer ticker.Stop()
 		for {
@@ -1275,7 +1307,7 @@ func Run(ctx context.Context, m *Manager, assets fs.FS, addr, code string) error
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				m.store.Tidy()
+				m.Tidy()
 			}
 		}
 	}()

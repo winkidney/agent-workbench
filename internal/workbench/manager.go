@@ -121,10 +121,13 @@ type Manager struct {
 	// Incremental readers of native records other clients are writing.
 	usageMu sync.Mutex
 	usage   map[string]*usageScan
-	// Sessions whose compressed record is being read for usage.
-	usageReading map[string]bool
+	// Sessions whose compressed record is being read for usage, and when
+	// the page last asked.
+	usageReading map[string]time.Time
 	extMu        sync.Mutex
 	external     map[string]*externalActivity
+	// The port preview origins are served on (p-<id>.agent.localhost).
+	previewPort string
 	// The agents' programs and homes Settings chose (agents_setup.go).
 	agentsMu sync.Mutex
 	agents   AgentsSetup
@@ -539,7 +542,7 @@ func (m *Manager) receive(id string, generation int, v map[string]any) {
 				oldID := r.session.ID
 				r.session.ID = nativeKey(r.session.Agent, r.session.NativeID)
 				if oldID != r.session.ID {
-					m.store.setting("options:"+r.session.ID, m.options(oldID))
+					m.moveSessionRows(oldID, r.session.ID)
 				}
 				if newThread && r.session.ExplicitName && r.session.Title != "" {
 					_ = r.proc.Input(map[string]any{"id": "name", "method": "thread/name/set", "params": map[string]any{"threadId": r.session.NativeID, "name": r.session.Title}})
@@ -629,7 +632,7 @@ func (m *Manager) receive(id string, generation int, v map[string]any) {
 				oldID := r.session.ID
 				r.session.ID = nativeKey(r.session.Agent, r.session.NativeID)
 				if oldID != r.session.ID {
-					m.store.setting("options:"+r.session.ID, m.options(oldID))
+					m.moveSessionRows(oldID, r.session.ID)
 				}
 			}
 			r.ready = true
@@ -649,7 +652,7 @@ func (m *Manager) receive(id string, generation int, v map[string]any) {
 			r.session.NativeID = sid
 			r.session.ID = nativeKey(r.session.Agent, sid)
 			if oldID != r.session.ID {
-				m.store.setting("options:"+r.session.ID, m.options(oldID))
+				m.moveSessionRows(oldID, r.session.ID)
 			}
 			_ = m.store.Save(r.session)
 		}
@@ -1036,11 +1039,13 @@ func (m *Manager) stop(id string, sleep, background bool) error {
 	r.children, r.childBusy = nil, nil
 	m.releasePending(r)
 	clearTasks(r)
+	forgetHeavy(r)
 	previews := r.previews
 	if sleep {
 		previews = map[string]*Preview{}
 	} else {
 		r.previews = map[string]*Preview{}
+		_ = m.store.forgetFilePreviewsOf(r.session.ID)
 	}
 	m.status(r, "stopping")
 	m.mu.Unlock()
@@ -1147,6 +1152,15 @@ func (m *Manager) Sweep() {
 	for _, id := range ids {
 		_ = m.Stop(id, true)
 	}
+	m.evictIdle()
+}
+
+// moveSessionRows moves what is kept under a session's first id (a
+// workbench token) to its native id, and drops the old rows.
+func (m *Manager) moveSessionRows(oldID, newID string) {
+	_ = m.store.setting("options:"+newID, m.options(oldID))
+	_ = m.store.deleteSetting("options:" + oldID)
+	_, _ = m.store.db.Exec(`DELETE FROM sessions WHERE id=?`, oldID)
 }
 
 // Shutdown stops the engines and previews when the workbench exits. Under

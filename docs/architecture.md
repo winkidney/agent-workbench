@@ -54,13 +54,25 @@ The CLIs' records are the source of truth; the workbench never writes them.
 
 ## Store and events
 
-A SQLite database (WAL) in the data directory keeps the session index, settings (pairing, sidebar pins, per-session options) and a short event cache. Events are kept 7 days, at most 2000 per session, and pruned at start and hourly; progress-only signals are never stored. The page receives events over server-sent events (`GET /api/events`) and reconciles each finished turn with the native record.
+A SQLite database (WAL) in the data directory keeps the session index, settings (pairing, sidebar pins, per-session options) and a short event cache. Events are kept 7 days, at most 2000 per session, and pruned at start and hourly; progress-only signals are never stored.
+
+Nothing grows with uptime or with the number of sessions shown (retention.go):
+- **Caches with a time of last use** (`cache`: usage read from native records, Claude's skills per directory; `file_previews`; `preview_tabs`) are dropped when unused for 7 days.
+- **Rows of sessions gone.** An hourly pass records which sessions exist (`session_seen`: listed by the CLIs, or loaded here) and drops the rows of sessions not seen for 7 days: options, telemetry, goal, usage cache, preview tabs and file previews, activity counts, display names. It changes nothing when the list cannot be read or is empty. Creation request records go after 7 days. A session's first id (a workbench token) leaves no rows behind once it has its native id.
+- **In memory:**
+  - A session's runtime outlives its engine by 15 minutes when nothing waits on it (no request, queue, question or running server). It is rebuilt from the store when the session is opened again.
+  - A sleeping engine's leftovers (the last Codex turn request, task output names, speed samples) are dropped when it stops.
+  - Capability caches go after 2 minutes.
+  - Usage is followed for 8 sessions at most, with four numbers per Claude reply.
+  - Following another client keeps only the records of its current tail page. The page receives events over server-sent events (`GET /api/events`) and reconciles each finished turn with the native record.
 
 On start the server writes `server.json` (pid, address, version, mode, and a one-time token, mode 0600) to the data directory; `agent-workbench stop` uses the token with `POST /api/local/shutdown`, which only accepts requests from this machine. The file is removed on exit.
 
 ## Previews
 
 The interface runs at `agent.localhost:PORT`. Each preview gets its own random origin, `p-<id>.agent.localhost:PORT`, which proxies a file in the session directory or a loopback HTTP server (including WebSockets). A preview is authorized by a one-time POST that sets a cookie for that origin only; the proxy never forwards the workbench's cookies or `Authorization` header upstream. The media endpoint serves raster images (up to 32 MiB) and videos with Range support, after sniffing the content; SVG and HTML are only served on preview origins. Pages that cannot reach the preview origins (other devices, tunnels) open file previews at `/__files/<grant>/<path>` on the workbench's own address instead, with `Content-Security-Policy: sandbox` (no `allow-same-origin`), `no-store`, `no-referrer` and `Access-Control-Allow-Origin: *` (the sandboxed page's module scripts and fetches are cross-origin); a real PDF (by its `%PDF-` header) is left unsandboxed for the browser's viewer. The grant is a sign-in credential issued to the signed-in page that opened the file: a grant issued to this computer while it skips sign-in only works on this computer; under pairing it lasts as long as that pairing session; under the password, until the sign-in rules change; never beyond the preview, 12 hours or a restart. The preview list never contains grants.
+
+A file preview is a row in the store (session, file, the secret of its origin), not an object in memory: the same file opens the same preview, ending the session drops its rows, and one unused for 7 days goes. Running servers are the only previews held in memory. A session's preview tabs (`GET/PUT /api/sessions/{id}/preview-tabs`) keep targets only: at most six, files by their path in the session's directory (with the file's size and time on read, for "Updated · Reload"), servers by their loopback URL or by the command and port the workbench runs. The page loads only the tab shown, and nothing while the panel is hidden.
 
 ## Security model
 
@@ -100,7 +112,8 @@ The interface uses a JSON API under `/api/`. Main endpoints:
 | `GET/PUT /api/agents/setup`, `POST /api/agents/{agent}/check` | Each agent's program and home: as in use, with version, sign-in and candidates on PATH; saved after checking (409 while that agent's sessions are at work); checked without saving |
 | `POST/GET/DELETE /api/agents/{agent}/login`, `POST …/login/code` | Sign a CLI in from the page: start (link, one-time code or a code to paste), follow, cancel; give the code the sign-in page showed |
 | `GET /api/media?session=&path=&base=` | Images and video |
-| `POST /api/previews`, `GET /api/previews` | File and server previews |
+| `POST /api/previews`, `GET /api/previews` | Open a file or server preview (a file opens the same preview again); the running servers |
+| `GET/PUT /api/sessions/{id}/preview-tabs` | The session's preview tabs: at most six targets and the one shown; files read back with their stamp, servers with whether they run |
 | `POST /api/sessions/{id}/reveal` | Show a file in the desktop file manager |
 | `GET/POST /api/sidebar`, `GET /api/workspaces`, `GET /api/dirs?path=` | Sidebar preferences, projects, folder browser |
 | `GET /api/auth/status`, `POST /api/login` | Sign-in state, pairing |

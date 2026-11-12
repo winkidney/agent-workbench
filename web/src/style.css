@@ -1701,13 +1701,137 @@ p {
   width: 100%;
   min-height: 0;
 }
+/* Laid out at a chosen width and shrunk to fit. */
+.preview-frame.sized {
+  position: absolute;
+  top: 0;
+  flex: none;
+  transform-origin: 0 0;
+}
 .preview-toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 4px 12px;
-  font-size: 10px;
+  gap: 2px;
+  padding: 4px 8px 4px 12px;
+  font-size: 11px;
   color: var(--muted-foreground);
+  border-bottom: 1px solid var(--border);
+}
+.preview-toolbar select {
+  width: auto;
+  max-width: 150px;
+  height: 26px;
+  padding: 0 4px;
+  font-size: 11.5px;
+}
+.preview-updated {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--foreground);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.preview-view {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--sidebar);
+}
+.preview-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.preview-note {
+  margin: 0;
+  padding: 24px 18px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--muted-foreground);
+}
+.preview-note.warn {
+  color: var(--warning);
+}
+.preview-note p {
+  margin: 0 0 12px;
+}
+/* The session's preview tabs: the file list, then the six newest. */
+.preview-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 6px 8px 0;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border);
+  scrollbar-width: thin;
+}
+.preview-tab {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  max-width: 180px;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 6px 6px 0 0;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.preview-tab > button:first-child,
+.preview-tab.files-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 6px 4px 6px 9px;
+}
+.preview-tab.files-tab {
+  padding-right: 9px;
+}
+.preview-tab span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.preview-tab.active,
+.preview-tab.files-tab[aria-selected="true"] {
+  border-color: var(--border);
+  background: var(--background);
+  color: var(--foreground);
+  margin-bottom: -1px;
+}
+.preview-tab.missing span {
+  text-decoration: line-through;
+}
+.preview-tab-close {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin-right: 4px;
+  border-radius: 4px;
+  opacity: 0.6;
+}
+.preview-tab-close:hover {
+  opacity: 1;
+  background: var(--accent);
+}
+/* A preview over the conversation. */
+.workbench.preview-expanded {
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+}
+.workbench.preview-expanded.no-left {
+  grid-template-columns: minmax(0, 1fr);
+}
+.workbench.preview-expanded > main {
+  display: none;
+}
+.preview-view:fullscreen {
+  background: var(--background);
 }
 .preview-toolbar > span {
   flex: 1;
@@ -1845,6 +1969,15 @@ p {
     z-index: 10;
     background: var(--popover);
     box-shadow: var(--shadow-drawer);
+  }
+}
+@media (max-width: 850px) {
+  .workbench.preview-expanded > main {
+    display: flex;
+  }
+  .workbench.preview-expanded .artifacts {
+    width: 100vw;
+    box-shadow: none;
   }
 }
 @media (max-width: 550px) {

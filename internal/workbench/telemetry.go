@@ -459,7 +459,7 @@ func (m *Manager) track(r *runtime, v map[string]any) {
 	if v["type"] == "system" && v["subtype"] == "init" {
 		r.effective = claudeInitOptions(r.effective, v)
 		// Skills and terminal-only commands for the "$" and "/" menus.
-		m.store.setting(m.claudeInitKey(r.session.Cwd), claudeInitInfo{Skills: strs(v["skills"]), Terminal: strs(v["terminal_slash_commands"])})
+		m.store.cacheSet(m.claudeInitKey(r.session.Cwd), claudeInitInfo{Skills: strs(v["skills"]), Terminal: strs(v["terminal_slash_commands"])})
 	}
 	if v["type"] == "assistant" {
 		model := str(obj(v["message"])["model"])
@@ -566,7 +566,11 @@ type usageScan struct {
 	mu     sync.Mutex
 	offset int64
 	t      Telemetry
-	seen   map[string]map[string]any
+	// Claude: each reply's input, output, cache read and cache write
+	// tokens, by message id (a reply is recorded more than once).
+	seen map[string][4]float64
+	// Last read; the least recently read scan goes first.
+	used time.Time
 	// The file stamp last read and its result.
 	stamp string
 	last  Telemetry
@@ -592,6 +596,8 @@ func (u *usageScan) scan(f *os.File, agent string) error {
 		u.add(line, agent)
 	}
 }
+
+var usageKeys = [4]string{"input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"}
 
 // usageLine is whether a record line can carry usage.
 func usageLine(line []byte, agent string) bool {
@@ -624,7 +630,12 @@ func (u *usageScan) add(line []byte, agent string) {
 	if agent == "claude" && v["type"] == "assistant" && v["isSidechain"] != true {
 		msg := obj(v["message"])
 		if key := str(msg["id"]); key != "" {
-			u.seen[key] = obj(msg["usage"])
+			usage := obj(msg["usage"])
+			var counts [4]float64
+			for i, k := range usageKeys {
+				counts[i], _ = usage[k].(float64)
+			}
+			u.seen[key] = counts
 			t.Effective.Model = str(msg["model"])
 			t.Last = obj(msg["usage"])
 		}
@@ -635,13 +646,15 @@ func (u *usageScan) result() Telemetry {
 	t := u.t
 	t.Scope = "Main conversation (native history)"
 	if len(u.seen) > 0 {
-		t.Total = map[string]any{}
-		for _, usage := range u.seen {
-			for _, key := range []string{"input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"} {
-				x, _ := usage[key].(float64)
-				old, _ := t.Total[key].(float64)
-				t.Total[key] = old + x
+		var sum [4]float64
+		for _, counts := range u.seen {
+			for i := range sum {
+				sum[i] += counts[i]
 			}
+		}
+		t.Total = map[string]any{}
+		for i, k := range usageKeys {
+			t.Total[k] = sum[i]
 		}
 	}
 	return t
@@ -679,7 +692,7 @@ func (m *Manager) nativeUsage(id string) Telemetry {
 			Stamp string
 			Data  Telemetry
 		}
-		m.store.readSetting(key, &cached)
+		m.store.cacheGet(key, &cached)
 		if cached.Stamp == stamp {
 			return cached.Data
 		}
@@ -691,25 +704,31 @@ func (m *Manager) nativeUsage(id string) Telemetry {
 			m.usage = map[string]*usageScan{}
 		}
 		if u = m.usage[id]; u == nil {
-			if len(m.usage) >= 32 {
-				for k := range m.usage {
-					delete(m.usage, k)
-					break
+			// A few sessions are followed at once: the least recently
+			// read gives way.
+			if len(m.usage) >= maxUsageScans {
+				oldest := ""
+				for k, v := range m.usage {
+					if oldest == "" || v.used.Before(m.usage[oldest].used) {
+						oldest = k
+					}
 				}
+				delete(m.usage, oldest)
 			}
-			u = &usageScan{seen: map[string]map[string]any{}}
+			u = &usageScan{seen: map[string][4]float64{}}
 			m.usage[id] = u
 		}
 		m.usageMu.Unlock()
 	}
 	u.mu.Lock()
 	defer u.mu.Unlock()
+	u.used = time.Now()
 	if u.stamp == stamp {
 		return u.last
 	}
 	if info.Size() < u.offset {
 		// Rewritten or truncated: start over.
-		u.offset, u.t, u.seen = 0, Telemetry{}, map[string]map[string]any{}
+		u.offset, u.t, u.seen = 0, Telemetry{}, map[string][4]float64{}
 	}
 	f, e := os.Open(path)
 	if e != nil {
@@ -722,7 +741,7 @@ func (m *Manager) nativeUsage(id string) Telemetry {
 	t = u.result()
 	t.Updated = info.ModTime().UTC().Format(time.RFC3339)
 	u.stamp, u.last = stamp, t
-	m.store.setting(key, struct {
+	m.store.cacheSet(key, struct {
 		Stamp string
 		Data  Telemetry
 	}{stamp, t})
@@ -733,16 +752,21 @@ func (m *Manager) nativeUsage(id string) Telemetry {
 // gigabytes.
 var compressedReads = make(chan struct{}, 1)
 
+// Sessions whose usage is read from their records as they grow.
+const maxUsageScans = 8
+
 // compressedUsage reads usage from a compressed record in the background,
 // once: it does not change, so the summary is kept until it does. Until
 // then the telemetry says it is being read.
 func (m *Manager) compressedUsage(id, agent string, file recordFile, mod time.Time, stamp, key string) Telemetry {
 	m.usageMu.Lock()
 	if m.usageReading == nil {
-		m.usageReading = map[string]bool{}
+		m.usageReading = map[string]time.Time{}
 	}
-	busy := m.usageReading[id]
-	m.usageReading[id] = true
+	busy := !m.usageReading[id].IsZero()
+	// When the page last asked: a read nobody waits for any more is
+	// skipped when its turn comes (the next look asks again).
+	m.usageReading[id] = time.Now()
 	m.usageMu.Unlock()
 	if !busy {
 		go func() {
@@ -753,18 +777,24 @@ func (m *Manager) compressedUsage(id, agent string, file recordFile, mod time.Ti
 			}()
 			compressedReads <- struct{}{}
 			defer func() { <-compressedReads }()
+			m.usageMu.Lock()
+			asked := m.usageReading[id]
+			m.usageMu.Unlock()
+			if time.Since(asked) > 30*time.Second {
+				return
+			}
 			r, err := file.open()
 			if err != nil {
 				return
 			}
 			defer r.Close()
-			u := &usageScan{seen: map[string]map[string]any{}}
+			u := &usageScan{seen: map[string][4]float64{}}
 			if _, err := eachRecordLine(r, true, func(line []byte) bool { return usageLine(line, agent) }, func(line []byte) { u.add(line, agent) }); err != nil {
 				return
 			}
 			t := u.result()
 			t.Updated = mod.UTC().Format(time.RFC3339)
-			m.store.setting(key, struct {
+			m.store.cacheSet(key, struct {
 				Stamp string
 				Data  Telemetry
 			}{stamp, t})
@@ -785,7 +815,7 @@ type claudeInitInfo struct {
 func (m *Manager) claudeInit(cwd string) claudeInitInfo {
 	var info claudeInitInfo
 	key := m.claudeInitKey(cwd)
-	m.store.readSetting(key, &info)
+	m.store.cacheGet(key, &info)
 	if info.Skills != nil {
 		return info
 	}
@@ -795,7 +825,7 @@ func (m *Manager) claudeInit(cwd string) claudeInitInfo {
 	}
 	if probed, err := probeClaudeInit(run, cwd); err == nil {
 		info = probed
-		m.store.setting(key, info)
+		m.store.cacheSet(key, info)
 	}
 	return info
 }

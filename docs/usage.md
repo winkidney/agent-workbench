@@ -99,6 +99,16 @@ Permission requests appear as cards in the conversation: **1** allow, **2** allo
 - **Images and videos** open in a viewer: zoom with the wheel or a pinch, drag to pan, double-click to switch between fit and 1:1 (`+`, `-`, `0`, `1`), and use ←/→ for the other media in the same message or folder. Videos stream with seeking.
 - **HTML, PDF and SVG** open in the right panel, on an isolated preview origin.
 - **Dev servers:** the globe button in the right panel attaches an existing loopback URL, or starts a command you enter on a fixed port, for example `npm run dev -- --host 127.0.0.1 --port 5173 --strictPort`. A server the workbench started stops with the session. Loopback URLs in replies open in the panel too.
+- **Preview tabs.** What you open becomes a tab in the right panel, after the fixed **Files** tab: the six most recently opened per session. Opening one again moves it first.
+  - The tabs, and what each opens, are kept on the workbench per session: switch sessions, reload the page, restart the workbench or come from another device, and they are there. Tabs unused for 7 days are dropped.
+  - Only the tab shown has its page. Hiding the panel, switching tabs or switching sessions unloads it, to save memory; showing it again loads it afresh (scroll position and page state are not kept).
+  - ✕ closes a tab. For a server the workbench started, it asks whether to stop the server too; one left running stays in the list under **Files**, where it can be opened again. After a restart such a tab offers **Start again**.
+- **The preview toolbar:**
+  - **Page width:** Fit (the panel's width), Desktop 1280, Tablet 768 or Phone 390. The page is laid out at that width and shrunk to fit, with the scale shown, so a desktop page keeps its desktop layout in a narrow panel. Remembered per browser.
+  - **Reload.** When a turn ends and the agent changed the file shown, the toolbar offers **Updated · Reload**; nothing reloads while you read.
+  - **Expand** lays the preview over the conversation (Esc or the button returns), and **Full screen** fills the screen.
+  - **Open in a new tab**, for files anywhere, and for dev servers in a browser on the workbench computer.
+- **Panel width.** The panel keeps one width for the file list and another for previews; a preview first opens at half the window. Drag the edge to change either.
 - **Show in Files** reveals a file in the desktop file manager of the computer running the workbench.
 
 HTML and dev-server previews use `p-*.agent.localhost` addresses in a browser on the machine running the workbench. On other devices, files open sandboxed from the workbench's own address instead (see [Access from other devices](#access-from-other-devices)); dev servers only open on the workbench computer.

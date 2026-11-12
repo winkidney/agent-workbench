@@ -200,7 +200,7 @@ func TestUsageScanIsIncremental(t *testing.T) {
 		return fmt.Sprintf(`{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":%d},"last_token_usage":{"input_tokens":%d},"model_context_window":1000}}}`+"\n", n, n)
 	}
 	os.WriteFile(path, []byte(token(10)+`{"type":"turn_context","payload":{"model":"m","effort":"high"}}`+"\n"+token(20)[:30]), 0o600)
-	u := &usageScan{seen: map[string]map[string]any{}}
+	u := &usageScan{seen: map[string][4]float64{}}
 	f, _ := os.Open(path)
 	u.scan(f, "codex")
 	f.Close()

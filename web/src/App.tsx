@@ -27,7 +27,9 @@ import { SuggestToggle } from "./components/SuggestToggle";
 import { useAttention } from "./attention";
 import { SettingsDialog } from "./components/settings/SettingsDialog";
 import { LogoMark } from "./components/Logo";
-import { canonicalAddress, fileFrameSandbox, previewMode } from "./lib/preview";
+import { PreviewPanel } from "./preview/PreviewPanel";
+import { tabFromPreview, type Preview } from "./preview/tabs";
+import { usePreviewTabs } from "./preview/usePreviewTabs";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Timeline } from "./transcript/Timeline";
 import { IMPLEMENT_PLAN, freshPlanMessage } from "./transcript/plans";
@@ -81,15 +83,6 @@ import { Input } from "./components/ui/input";
 import { Dialog, DialogContent, DialogTitle } from "./components/ui/dialog";
 
 type Event = WorkbenchEvent;
-type Preview = {
-  id: string;
-  session: string;
-  url: string;
-  entry: string;
-  owned: boolean;
-  // A file preview on the workbench's own address, for this page only.
-  fileUrl?: string;
-};
 type Entry = { name: string; path: string; directory: boolean; size: number };
 export default function App() {
   const [workspaces, setWorkspaces] = useState<string[]>([]);
@@ -126,7 +119,6 @@ export default function App() {
     [composing, setComposing] = useState<{ cwd?: string } | null>(null),
     [entries, setEntries] = useState<Entry[]>([]),
     [path, setPath] = useState(""),
-    [preview, setPreview] = useState<Preview | null>(null),
     [previews, setPreviews] = useState<Preview[]>([]),
     [serviceOpen, setServiceOpen] = useState(false),
     // The Codex session waiting for the user to confirm its deletion.
@@ -188,6 +180,12 @@ export default function App() {
   externalEvent.current = transcript.external;
   const catchError = (e: unknown) =>
     setError(e instanceof Error ? e.message : String(e));
+  // The session's preview tabs, and the preview over the conversation.
+  const previewTabs = usePreviewTabs(
+    paired && active ? active : undefined,
+    catchError,
+  );
+  const [expanded, setExpanded] = useState(false);
   const sidebarPrefs = usePrefs(paired, catchError);
   const receivePrefs = useRef(sidebarPrefs.receive);
   receivePrefs.current = sidebarPrefs.receive;
@@ -204,7 +202,6 @@ export default function App() {
       setSessions([]);
       setActive("");
       setEntries([]);
-      setPreview(null);
       setPreviews([]);
       setComposing(null);
       setServiceOpen(false);
@@ -306,7 +303,7 @@ export default function App() {
   useEffect(() => {
     if (!paired || !active) return;
     setPath("");
-    setPreview(null);
+    setExpanded(false);
   }, [active, paired]);
   // New outputs usually appear when a turn ends; refresh the file list then.
   const status = current?.status;
@@ -317,8 +314,11 @@ export default function App() {
       lastStatus.current &&
       lastStatus.current !== "idle" &&
       status === "idle"
-    )
+    ) {
       setFilesVersion((v) => v + 1);
+      // A file a tab shows may have changed.
+      previewTabs.refresh();
+    }
     lastStatus.current = status;
   }, [status]);
   useEffect(() => {
@@ -442,34 +442,7 @@ export default function App() {
         if (r.native) return refresh();
       })
       .catch(catchError);
-  const authorize = (p: Preview, grant: string) => {
-    const mode = previewMode(p, location.host);
-    if (mode === "unavailable") {
-      setError(
-        "Web previews only open in a browser on the workbench computer, at " +
-          canonicalAddress(p) +
-          ". Files open here.",
-      );
-      return;
-    }
-    setPreview(p);
-    setPanel(true);
-    // A file on the workbench's own address loads as the frame's src.
-    if (mode === "file") return;
-    setTimeout(() => {
-      const form = document.createElement("form");
-      form.method = "POST";
-      form.action = p.url + "/__authorize";
-      form.target = "artifact-preview";
-      const input = document.createElement("input");
-      input.name = "grant";
-      input.value = grant;
-      form.appendChild(input);
-      document.body.appendChild(form);
-      form.submit();
-      form.remove();
-    }, 50);
-  };
+  // Opens a file or service as the session's newest preview tab.
   const openPreview = async (body: unknown) => {
     try {
       const result = await api<{ preview: Preview; grant: string }>(
@@ -477,7 +450,8 @@ export default function App() {
         "POST",
         body,
       );
-      authorize(result.preview, result.grant);
+      previewTabs.open(tabFromPreview(result.preview));
+      setPanel(true);
       setServiceOpen(false);
       await refresh();
     } catch (e) {
@@ -714,17 +688,30 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
   const openPanels = { left, right: panel };
-  const shownWidths = clampWidths(widths, viewport, openPanels);
+  // A preview gets the right panel's other width: half the window until
+  // dragged.
+  const previewing = panel && previewTabs.state.active >= 0;
+  const sized = previewing
+    ? { ...widths, right: widths.preview || Math.round(viewport / 2) }
+    : widths;
+  const shownWidths = clampWidths(sized, viewport, openPanels);
   const resizePanel = (side: Side, width: number, commit: boolean) => {
     const next = clampWidths(
-      { ...widths, [side]: width },
+      { ...sized, [side]: width },
       viewport,
       openPanels,
       side,
     );
-    setWidths(next);
-    if (commit) saveWidths(next);
+    const kept = previewing
+      ? { ...widths, left: next.left, preview: next.right }
+      : { ...widths, ...next };
+    setWidths(kept);
+    if (commit) saveWidths(kept);
   };
+  const expandedView = expanded && previewing;
+  useEffect(() => {
+    if (!previewing) setExpanded(false);
+  }, [previewing]);
   const resizable = viewport > 850;
   if (!authReady || connectionError)
     return (
@@ -806,7 +793,10 @@ export default function App() {
           } as React.CSSProperties
         }
         className={
-          "workbench " + (!panel ? "no-panel " : "") + (!left ? "no-left" : "")
+          "workbench " +
+          (!panel ? "no-panel " : "") +
+          (!left ? "no-left " : "") +
+          (expandedView ? "preview-expanded" : "")
         }
       >
         {left && resizable && (
@@ -817,7 +807,7 @@ export default function App() {
             onCommit={(w) => resizePanel("left", w, true)}
           />
         )}
-        {panel && resizable && (
+        {panel && resizable && !expandedView && (
           <ResizeHandle
             side="right"
             width={shownWidths.right}
@@ -1178,177 +1168,123 @@ export default function App() {
                 <Globe size={18} />
               </Button>
             </header>
-            {preview ? (
-              <>
-                <div className="preview-toolbar">
-                  <span>
-                    {preview.owned ? "Managed service" : "Preview"} ·{" "}
-                    {preview.entry}
-                  </span>
-                  {preview.fileUrl &&
-                    previewMode(preview, location.host) === "file" && (
-                      <a
-                        className="preview-newtab"
-                        href={preview.fileUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        aria-label="Open in a new tab"
-                        title="Open in a new tab"
-                      >
-                        <ExternalLink size={14} />
-                      </a>
-                    )}
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Close preview"
-                    onClick={() =>
-                      api("previews/" + preview.id, "DELETE")
-                        .then(() => {
-                          setPreview(null);
-                          void refresh();
-                        })
-                        .catch(catchError)
-                    }
-                  >
-                    <X size={14} />
-                  </Button>
-                </div>
-                {preview.fileUrl &&
-                previewMode(preview, location.host) === "file" ? (
-                  // Sandboxed on the workbench's address: no same-origin.
-                  <iframe
-                    key={preview.fileUrl}
-                    title="Resource preview"
-                    className="preview-frame"
-                    src={preview.fileUrl}
-                    sandbox={fileFrameSandbox(preview.entry)}
-                    referrerPolicy="no-referrer"
-                  />
-                ) : (
-                  <iframe
-                    title="Resource preview"
-                    name="artifact-preview"
-                    className="preview-frame"
-                    sandbox="allow-scripts allow-same-origin allow-forms allow-downloads"
-                    referrerPolicy="strict-origin"
-                  />
-                )}
-              </>
-            ) : (
-              <>
-                <div className="file-path">
-                  <button
-                    onClick={() =>
-                      setPath(path.split("/").slice(0, -1).join("/"))
-                    }
-                  >
-                    ↑
-                  </button>
-                  <span>{path || "Working directory"}</span>
-                  <button
-                    aria-label="Refresh files"
-                    onClick={() =>
-                      api<Entry[]>(
-                        "files?session=" +
-                          active +
-                          "&path=" +
-                          encodeURIComponent(path),
-                      )
-                        .then(setEntries)
-                        .catch(catchError)
-                    }
-                  >
-                    <RefreshCw size={12} />
-                  </button>
-                </div>
-                <div className="files">
-                  {entries.map((e) => (
+            <PreviewPanel
+              session={active}
+              tabs={previewTabs}
+              expanded={expanded}
+              onExpand={setExpanded}
+              onError={catchError}
+              files={
+                <>
+                  <div className="file-path">
                     <button
-                      key={e.path}
-                      onClick={() => {
-                        if (e.directory) return setPath(e.path);
-                        // Images and videos of this folder form one gallery.
-                        const media = entries.filter(
-                          (x) => !x.directory && isMedia(x.path),
-                        );
-                        const at = media.findIndex((x) => x.path === e.path);
-                        if (at >= 0)
-                          return env.view(
-                            media.map((x) => pathItem(env, x.path)!),
-                            at,
-                          );
-                        void openPreview({
-                          session: active,
-                          kind: "file",
-                          path: e.path,
-                        });
-                      }}
+                      onClick={() =>
+                        setPath(path.split("/").slice(0, -1).join("/"))
+                      }
                     >
-                      {e.directory ? <Folder size={15} /> : <File size={15} />}
-                      <span>{e.name}</span>
-                      {!e.directory && (
-                        <small>
-                          {e.size > 1048576
-                            ? (e.size / 1048576).toFixed(1) + " MB"
-                            : Math.ceil(e.size / 1024) + " KB"}
-                        </small>
-                      )}
+                      ↑
                     </button>
-                  ))}
-                  {!entries.length && (
-                    <div className="artifact-empty">
-                      <Folder size={28} />
-                      <p>
-                        {current
-                          ? "No files in this directory"
-                          : "Select a session to browse outputs"}
-                      </p>
-                    </div>
-                  )}
-                </div>
-                <div className="preview-services">
-                  {previews
-                    .filter((p) => p.session === active)
-                    .map((p) => (
-                      <div className="flex items-center gap-2" key={p.id}>
-                        <button
-                          className="truncate flex-1 text-left"
-                          onClick={() =>
-                            api<{ preview: Preview; grant: string }>(
-                              "previews/" + p.id + "/authorize",
-                              "POST",
-                              {},
-                            )
-                              .then((x) => authorize(x.preview, x.grant))
-                              .catch(catchError)
-                          }
-                        >
-                          {p.owned ? "●" : "○"}{" "}
-                          {p.entry === "/" ? "Web service" : p.entry}
-                        </button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          aria-label="Stop preview service"
-                          onClick={() =>
-                            api("previews/" + p.id, "DELETE")
-                              .then(refresh)
-                              .catch(catchError)
-                          }
-                        >
-                          <X size={13} />
-                        </Button>
-                      </div>
+                    <span>{path || "Working directory"}</span>
+                    <button
+                      aria-label="Refresh files"
+                      onClick={() =>
+                        api<Entry[]>(
+                          "files?session=" +
+                            active +
+                            "&path=" +
+                            encodeURIComponent(path),
+                        )
+                          .then(setEntries)
+                          .catch(catchError)
+                      }
+                    >
+                      <RefreshCw size={12} />
+                    </button>
+                  </div>
+                  <div className="files">
+                    {entries.map((e) => (
+                      <button
+                        key={e.path}
+                        onClick={() => {
+                          if (e.directory) return setPath(e.path);
+                          // Images and videos of this folder form one gallery.
+                          const media = entries.filter(
+                            (x) => !x.directory && isMedia(x.path),
+                          );
+                          const at = media.findIndex((x) => x.path === e.path);
+                          if (at >= 0)
+                            return env.view(
+                              media.map((x) => pathItem(env, x.path)!),
+                              at,
+                            );
+                          void openPreview({
+                            session: active,
+                            kind: "file",
+                            path: e.path,
+                          });
+                        }}
+                      >
+                        {e.directory ? (
+                          <Folder size={15} />
+                        ) : (
+                          <File size={15} />
+                        )}
+                        <span>{e.name}</span>
+                        {!e.directory && (
+                          <small>
+                            {e.size > 1048576
+                              ? (e.size / 1048576).toFixed(1) + " MB"
+                              : Math.ceil(e.size / 1024) + " KB"}
+                          </small>
+                        )}
+                      </button>
                     ))}
-                </div>
-                <div className="artifact-foot">
-                  Images / Video / HTML / Dev servers
-                  <br />
-                  <span>Loaded on demand. Original files stay intact.</span>
-                </div>
-              </>
-            )}
+                    {!entries.length && (
+                      <div className="artifact-empty">
+                        <Folder size={28} />
+                        <p>
+                          {current
+                            ? "No files in this directory"
+                            : "Select a session to browse outputs"}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                  <div className="preview-services">
+                    {previews
+                      .filter((p) => p.session === active)
+                      .map((p) => (
+                        <div className="flex items-center gap-2" key={p.id}>
+                          <button
+                            className="truncate flex-1 text-left"
+                            onClick={() => previewTabs.open(tabFromPreview(p))}
+                          >
+                            {p.owned ? "●" : "○"}{" "}
+                            {p.entry === "/" ? "Web service" : p.entry}
+                          </button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label="Stop preview service"
+                            onClick={() =>
+                              api("previews/" + p.id, "DELETE")
+                                .then(refresh)
+                                .catch(catchError)
+                            }
+                          >
+                            <X size={13} />
+                          </Button>
+                        </div>
+                      ))}
+                  </div>
+                  <div className="artifact-foot">
+                    Images / Video / HTML / Dev servers
+                    <br />
+                    <span>Loaded on demand. Original files stay intact.</span>
+                  </div>
+                </>
+              }
+            />
           </aside>
         )}
         <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />

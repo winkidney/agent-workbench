@@ -96,7 +96,7 @@ func TestNativeCreationRetryUsesSavedIdentity(t *testing.T) {
 	input := struct{ Agent, Cwd, Title, InitialMessage, RequestID string }{"claude", "/tmp", "test", "hello", "retry-key"}
 	raw, _ := json.Marshal(input)
 	hash := fmt.Sprintf("%x", sha256.Sum256(raw))
-	_, err := m.store.db.Exec("INSERT INTO native_creations VALUES(?,?,?)", input.RequestID, hash, `{"id":"claude:original","nativeId":"original"}`)
+	_, err := m.store.db.Exec("INSERT INTO native_creations(request_id,payload_hash,response,created) VALUES(?,?,?,?)", input.RequestID, hash, `{"id":"claude:original","nativeId":"original"}`, nowStamp())
 	if err != nil {
 		t.Fatal(err)
 	}

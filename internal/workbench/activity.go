@@ -312,3 +312,15 @@ func (a *ActivityIndex) save(id string, row activityRow) {
 	a.related[id] = relatedProjects(row.counts)
 	a.mu.Unlock()
 }
+
+// keep drops what is held for sessions not in seen (gone as long as the
+// store keeps their counts).
+func (a *ActivityIndex) keep(seen map[string]bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for id := range a.related {
+		if !seen[id] {
+			delete(a.related, id)
+		}
+	}
+}

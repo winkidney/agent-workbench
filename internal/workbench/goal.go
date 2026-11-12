@@ -199,7 +199,13 @@ func (m *Manager) setGoal(r *runtime, g *Goal) {
 	var prev *Goal
 	m.store.readSetting("goal:"+r.session.ID, &prev)
 	r.goal = g
-	if err := m.store.setting("goal:"+r.session.ID, g); err != nil {
+	var err error
+	if g == nil {
+		err = m.store.deleteSetting("goal:" + r.session.ID)
+	} else {
+		err = m.store.setting("goal:"+r.session.ID, g)
+	}
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "save goal:", err)
 	}
 	if text := goalNotice(prev, g); text != "" {

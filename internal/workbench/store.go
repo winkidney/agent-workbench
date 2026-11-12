@@ -84,7 +84,15 @@ func OpenStore(dir string) (*Store, error) {
  CREATE TABLE IF NOT EXISTS events(seq INTEGER PRIMARY KEY AUTOINCREMENT,session TEXT,kind TEXT,data TEXT,time TEXT);
  CREATE INDEX IF NOT EXISTS events_session ON events(session,seq);
  CREATE TABLE IF NOT EXISTS session_activity(id TEXT PRIMARY KEY,path TEXT,offset INTEGER NOT NULL DEFAULT 0,counts TEXT NOT NULL DEFAULT '{}');
+ CREATE TABLE IF NOT EXISTS file_previews(id TEXT PRIMARY KEY,session TEXT NOT NULL,root TEXT NOT NULL,entry TEXT NOT NULL,secret TEXT NOT NULL,used TEXT NOT NULL);
+ CREATE UNIQUE INDEX IF NOT EXISTS file_previews_target ON file_previews(session,root,entry);
+ CREATE TABLE IF NOT EXISTS preview_tabs(session TEXT PRIMARY KEY,value TEXT NOT NULL,used TEXT NOT NULL);
+ CREATE TABLE IF NOT EXISTS cache(key TEXT PRIMARY KEY,value TEXT NOT NULL,used TEXT NOT NULL);
+ CREATE TABLE IF NOT EXISTS session_seen(id TEXT PRIMARY KEY,seen TEXT NOT NULL);
  UPDATE sessions SET status='sleeping' WHERE status NOT IN ('stopped','sleeping');`)
+	if err == nil {
+		err = migrateRetention(db)
+	}
 	if err != nil {
 		db.Close()
 		return nil, err
@@ -104,7 +112,10 @@ func (s *Store) Forget(id string) error {
 		"DELETE FROM events WHERE session = ?1",
 		"DELETE FROM sessions WHERE id = ?1",
 		"DELETE FROM session_activity WHERE id = ?1",
-		"DELETE FROM settings WHERE key = 'options:' || ?1 OR key = 'telemetry:' || ?1",
+		"DELETE FROM file_previews WHERE session = ?1",
+		"DELETE FROM preview_tabs WHERE session = ?1",
+		"DELETE FROM settings WHERE key = 'options:' || ?1 OR key = 'telemetry:' || ?1 OR key = 'goal:' || ?1",
+		"DELETE FROM cache WHERE key = 'history_usage:' || ?1",
 	} {
 		if _, err := s.db.Exec(q, id); err != nil {
 			return err
@@ -234,12 +245,19 @@ func (s *Store) Size() int64 {
 	return total
 }
 
-// Tidy prunes old events and compacts the file.
+// Tidy prunes old events, and file previews and preview tabs unused as
+// long, and compacts the file.
 func (s *Store) Tidy() {
-	if n, err := s.Prune(time.Now().Add(-eventRetention), eventsPerSession); err != nil {
+	before := time.Now().Add(-eventRetention)
+	if n, err := s.Prune(before, eventsPerSession); err != nil {
 		fmt.Fprintln(os.Stderr, "prune events:", err)
 	} else if n > 0 {
 		fmt.Fprintln(os.Stderr, "pruned", n, "old events")
+	}
+	if n, err := s.PrunePreviews(before); err != nil {
+		fmt.Fprintln(os.Stderr, "prune previews:", err)
+	} else if n > 0 {
+		fmt.Fprintln(os.Stderr, "pruned", n, "unused previews and tabs")
 	}
 	if err := s.Compact(); err != nil {
 		fmt.Fprintln(os.Stderr, "compact store:", err)

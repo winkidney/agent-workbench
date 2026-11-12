@@ -17,7 +17,9 @@ describe("panel widths", () => {
     expect(limitWidth("left", 50)).toBe(200);
     expect(limitWidth("left", 9999)).toBe(520);
     expect(limitWidth("right", 100)).toBe(280);
-    expect(limitWidth("right", 1200)).toBe(900);
+    // A preview may take most of a wide screen.
+    expect(limitWidth("right", 1200)).toBe(1200);
+    expect(limitWidth("right", 9999)).toBe(2400);
   });
 
   it("leaves room for the conversation column", () => {
@@ -77,6 +79,9 @@ describe("panel widths", () => {
       setItem: (k: string, v: string) => store.set(k, v),
     });
     saveWidths({ left: 333, right: 444 });
-    expect(loadWidths()).toEqual({ left: 333, right: 444 });
+    // No preview width yet: half the window.
+    expect(loadWidths()).toEqual({ left: 333, right: 444, preview: 0 });
+    saveWidths({ left: 333, right: 444, preview: 900 });
+    expect(loadWidths()).toEqual({ left: 333, right: 444, preview: 900 });
   });
 });

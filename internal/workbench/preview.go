@@ -27,6 +27,11 @@ type Preview struct {
 	// pages that cannot reach the preview origin (another device, a tunnel).
 	// Set per response: it carries a grant for the page that asked (files.go).
 	FileURL string `json:"fileUrl,omitempty"`
+	// What a service preview shows, so a tab can open it again: the server
+	// it attaches to, or the command the workbench runs and its port.
+	Target  string `json:"target,omitempty"`
+	Command string `json:"command,omitempty"`
+	Port    int    `json:"port,omitempty"`
 	// stop ends a managed service preview (its unit or process group).
 	stop   func() error
 	root   string
@@ -184,7 +189,15 @@ func (m *Manager) CreatePreview(id, kind, path, base, target, command string, po
 		if err != nil || !info.Mode().IsRegular() {
 			return nil, errors.New("select a regular file")
 		}
-		p.Entry = "/" + filepath.ToSlash(rel)
+		// A file preview is a row in the store, not kept here: the same
+		// file opens the same preview, and an unused one expires.
+		entry := "/" + filepath.ToSlash(rel)
+		fid, secret, err := m.store.filePreview(id, r.session.Cwd, entry)
+		if err != nil {
+			return nil, err
+		}
+		r.last = time.Now()
+		return m.filePreviewOf(fid, id, r.session.Cwd, entry, secret, listenPort), nil
 	case "service":
 		logs := ""
 		if command != "" {
@@ -200,6 +213,7 @@ func (m *Manager) CreatePreview(id, kind, path, base, target, command string, po
 				return nil, err
 			}
 			p.Owned = true
+			p.Command, p.Port = command, port
 			target = "http://127.0.0.1:" + strconv.Itoa(port)
 		}
 		u, err := url.Parse(target)
@@ -239,20 +253,45 @@ func (m *Manager) CreatePreview(id, kind, path, base, target, command string, po
 			p.Entry = entry
 		}
 		p.target = &url.URL{Scheme: u.Scheme, Host: u.Host}
+		if !p.Owned {
+			p.Target = u.String()
+		}
 	default:
 		return nil, errors.New("kind must be file or service")
+	}
+	// A server already attached in this session is opened again, not once
+	// more: tabs reopen what they show.
+	if !p.Owned {
+		for _, old := range r.previews {
+			if !old.Owned && old.target != nil && old.target.Host == p.target.Host && old.Entry == p.Entry {
+				r.last = time.Now()
+				return old, nil
+			}
+		}
 	}
 	r.previews[p.ID] = p
 	r.last = time.Now()
 	return p, nil
 }
+
+// filePreviewOf is a file preview from its row.
+func (m *Manager) filePreviewOf(id, session, root, entry, secret, port string) *Preview {
+	return &Preview{ID: id, Session: session, root: root, Entry: entry, secret: secret, URL: "http://p-" + id + ".agent.localhost:" + port}
+}
+
+// FindPreview finds a running service preview, or a file preview's row.
 func (m *Manager) FindPreview(id string) *Preview {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	for _, r := range m.sessions {
 		if p := r.previews[id]; p != nil {
+			m.mu.Unlock()
 			return p
 		}
+	}
+	port := m.previewPort
+	m.mu.Unlock()
+	if session, root, entry, secret, ok := m.store.filePreviewByID(id); ok {
+		return m.filePreviewOf(id, session, root, entry, secret, port)
 	}
 	return nil
 }
@@ -270,6 +309,9 @@ func (m *Manager) RemovePreview(id string) error {
 	}
 	m.mu.Unlock()
 	if found == nil {
+		if gone, err := m.store.forgetFilePreview(id); err != nil || gone {
+			return err
+		}
 		return errors.New("preview not found")
 	}
 	if found.stop != nil {

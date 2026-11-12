@@ -2,12 +2,14 @@
 // conversation column never gets narrower than MIN_CONVERSATION.
 
 export type Side = "left" | "right";
-export type Widths = Record<Side, number>;
+// The right panel has its own width while it shows a preview; 0 is half
+// the window.
+export type Widths = Record<Side, number> & { preview?: number };
 
 export const DEFAULT_WIDTHS: Widths = { left: 288, right: 360 };
 export const LIMITS: Record<Side, [number, number]> = {
   left: [200, 520],
-  right: [280, 900],
+  right: [280, 2400],
 };
 export const MIN_CONVERSATION = 420;
 const KEY = "workbench-widths";
@@ -52,6 +54,7 @@ export function loadWidths(): Widths {
     return {
       left: limitWidth("left", Number(v.left) || DEFAULT_WIDTHS.left),
       right: limitWidth("right", Number(v.right) || DEFAULT_WIDTHS.right),
+      preview: Number(v.preview) ? limitWidth("right", Number(v.preview)) : 0,
     };
   } catch {
     return { ...DEFAULT_WIDTHS };

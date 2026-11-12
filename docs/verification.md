@@ -522,3 +522,52 @@ These are maintainer notes on how each feature of Agent Workbench was verified, 
     - a thread whose record is gone showed the notice with its first message and token count, with a read-only composer;
     - the thread whose index names another home showed usage, and its history error now says where the record is.
   - Found on the way: the files panel refused every path of a session whose folder is reached through a symbolic link; both sides are now resolved.
+
+## Preview tabs, and nothing that grows forever
+
+- **Before:**
+  - The right panel was 360 px wide (900 at most) and laid pages out at that width.
+  - Hiding the panel destroyed the frame: pages on preview origins came back blank.
+  - Switching sessions cleared the preview, ✕ deleted it on the server, there was no reload, and a service preview had no new-tab button.
+  - Every file opened made a preview object in memory, kept until the session ended.
+  - An audit found more that grew with uptime or sessions shown:
+    - a runtime for every session ever opened (with the last Codex prompt);
+    - capability caches per directory;
+    - usage scans holding every Claude reply's usage map;
+    - follow state per session and per record;
+    - related projects of sessions gone;
+    - in the store, caches, goal `null`s, rows left by renamed or deleted sessions, and creation records.
+- **Change:**
+  - **Tabs:** preview tabs per session, the six most recent, kept on the workbench with their targets only. Only the tab shown loads, and nothing loads while the panel is hidden.
+  - **Toolbar:** page widths (Fit, Desktop 1280, Tablet 768, Phone 390) scaled to fit, reload, "Updated · Reload" after a turn changes the file, expand over the conversation, full screen, and open in a new tab.
+  - **Panel width:** a separate width for previews, half the window at first.
+  - **Files:** file previews are store rows reused per file. Previews and tabs expire after 7 days unused.
+  - **Retention:** as described in the architecture document's "Store and events".
+- **New tests:**
+  - **Go:**
+    - tabs are kept as targets, annotated with file stamps, limited to six and checked;
+    - file previews are rows, found, removed, and expired with their tabs;
+    - idle runtimes and stale caches are dropped, and those still needed are kept;
+    - a stopped engine lets go of its prompt;
+    - reconciling drops the rows of sessions gone for the retention and keeps those listed or loaded; an empty list changes nothing;
+    - caches expire, and an older store migrates;
+    - goals and renames leave nothing behind;
+    - following remembers only the tail.
+  - **Vitest:** six most recent with dedupe, closing shows a neighbour, targets stored, titles, scaling, widths.
+- **Real checks** (development instance, a test folder of pages and a short Haiku session):
+  - **On this computer (`agent.localhost`):**
+    - 7 files opened left the 6 newest tabs.
+    - Hiding the panel left no frame in the page; showing it loaded the page again.
+    - A preview opened at 720 of 1440 px; Desktop 1280 showed the page at 56%.
+    - Expand hid the conversation and Esc brought it back.
+    - Reload made a new frame, and the new tab opened the file with its grant.
+    - After a page reload, and after a restart of the workbench, the same tabs came back with the shown one loaded.
+    - The file changed and a turn ended: "Updated · Reload" appeared, and reloading showed the change.
+  - **From another address (as through a tunnel):** the same tabs. The file opened from the workbench's own address, sandboxed, with a new-tab button. A dev server tab said it opens only on the workbench computer, with no new-tab button.
+  - **A server started from the panel** (`python3 -m http.server`) opened as the newest tab. Closing it asked, and stopped it: the port was free.
+  - **Phone width:** the panel with its tabs and toolbar.
+  - **A copy of a real store** opened with this build:
+    - settings went from 83 to 25 rows (caches moved to `cache`, a `null` goal and orphaned options dropped);
+    - session rows went from 97 to 75;
+    - the 7 creation records without a date went;
+    - 1,404 existing sessions were recorded as seen.

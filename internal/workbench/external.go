@@ -124,6 +124,8 @@ type externalActivity struct {
 	primed bool
 	offset int64
 	state  activityState
+	// Last asked about; one unused for a while is dropped (retention.go).
+	used time.Time
 }
 
 func (a *externalActivity) read(agent string) error {
@@ -170,6 +172,7 @@ func (m *Manager) externalStatus(id, agent, path string) (bool, string) {
 		a = &externalActivity{path: path}
 		m.external[id] = a
 	}
+	a.used = time.Now()
 	m.extMu.Unlock()
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -393,18 +396,22 @@ func (t *externalTail) fresh(events []Event) ([]Event, bool) {
 		return nil, true
 	}
 	out := []Event{}
+	// Only what the page holds now is remembered: records older than the
+	// tail page do not come back.
+	sent := make(map[string]uint64, len(events))
 	for i, e := range events {
 		h := fnv.New64a()
 		h.Write(e.Data)
 		sum := h.Sum64()
+		if keys[i] != "" {
+			sent[keys[i]] = sum
+		}
 		if keys[i] != "" && t.sent[keys[i]] == sum {
 			continue
 		}
-		if keys[i] != "" {
-			t.sent[keys[i]] = sum
-		}
 		out = append(out, e)
 	}
+	t.sent = sent
 	return out, false
 }
 
