@@ -326,7 +326,7 @@ p {
   color: var(--success);
 }
 .row.tool.status-running .mark {
-  color: var(--muted-foreground);
+  color: var(--warning);
 }
 .row.tool.status-failed .mark,
 .child-line.status-failed .tool-dot {
@@ -1918,8 +1918,10 @@ textarea {
   color: var(--foreground);
 }
 .brand-mark {
-  background: var(--primary);
-  color: var(--primary-foreground);
+  width: auto;
+  height: auto;
+  background: none;
+  color: var(--foreground);
 }
 
 .error-text,
@@ -3820,20 +3822,123 @@ textarea {
   display: block;
   flex-shrink: 0;
 }
-.agent-ray {
-  stroke: var(--agent-claude);
-  stroke-width: 1.9;
-  stroke-linecap: round;
+/* Pixel art (components/pixel.tsx): animations step from frame to frame. */
+.pixel {
+  display: block;
+  flex-shrink: 0;
 }
-.agent-fill {
-  fill: var(--agent-codex);
+.row.tool .mark .pixel {
+  display: inline-block;
+  vertical-align: -1px;
 }
-.agent-glyph {
-  fill: none;
-  stroke: var(--background);
-  stroke-width: 1.6;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+.px-chase {
+  animation: px-chase 0.8s steps(1, end) infinite;
+}
+@keyframes px-chase {
+  0% {
+    opacity: 1;
+  }
+  12.5% {
+    opacity: 0.65;
+  }
+  25% {
+    opacity: 0.4;
+  }
+  37.5%,
+  100% {
+    opacity: 0.25;
+  }
+}
+.px-step {
+  animation: px-step 0.9s steps(1, end) infinite;
+}
+@keyframes px-step {
+  0% {
+    opacity: 1;
+  }
+  33.3%,
+  100% {
+    opacity: 0.3;
+  }
+}
+.px-blink {
+  animation: px-blink 1.2s steps(1, end) infinite;
+}
+@keyframes px-blink {
+  0% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+/* Text types out across the screen, then clears. */
+.px-type {
+  transform-box: fill-box;
+  transform-origin: left;
+  animation: px-type 1.6s steps(1, end) infinite;
+}
+@keyframes px-type {
+  0% {
+    transform: scaleX(0.25);
+  }
+  20% {
+    transform: scaleX(0.5);
+  }
+  40% {
+    transform: scaleX(0.75);
+  }
+  60% {
+    transform: scaleX(1);
+  }
+  85%,
+  100% {
+    transform: scaleX(1);
+    opacity: 0;
+  }
+}
+/* The logo's agents hop, and the cursor blinks, under the pointer. */
+.logo .px-hop {
+  transform-box: fill-box;
+}
+.logo .px-cursor {
+  opacity: 0;
+}
+.brand:hover .logo .px-hop,
+.pair-card:hover .logo .px-hop {
+  animation: px-hop 0.8s steps(1, end) infinite;
+}
+.brand:hover .logo .px-hop-late,
+.pair-card:hover .logo .px-hop-late {
+  animation-delay: -0.4s;
+}
+.brand:hover .logo .px-cursor,
+.pair-card:hover .logo .px-cursor {
+  animation: px-blink 1s steps(1, end) infinite;
+}
+@keyframes px-hop {
+  0% {
+    transform: translateY(0);
+  }
+  50%,
+  100% {
+    transform: translateY(-1px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* Held on a frame that still says what it means. */
+  .px-chase,
+  .px-step {
+    animation: none;
+    opacity: var(--px-rest, 1);
+  }
+  .px-blink,
+  .px-type,
+  .logo .px-hop,
+  .logo .px-cursor {
+    animation: none !important;
+  }
 }
 .conversation-title .agent-icon,
 .agent-switch .agent-icon {

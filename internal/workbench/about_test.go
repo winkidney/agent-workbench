@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 )
 
 func TestAboutReportsAgentsAndAsksForVersionsOnce(t *testing.T) {
@@ -153,5 +154,17 @@ func TestLatestReleaseIsAskedOnlyWhenNeeded(t *testing.T) {
 	}
 	if asked != 1 {
 		t.Fatalf("asked GitHub %d times", asked)
+	}
+}
+
+func TestTheTabIconIsServedAsAnImage(t *testing.T) {
+	m, _ := fixture(t)
+	s := NewServer(m, fstest.MapFS{
+		"index.html":  {Data: []byte("app")},
+		"favicon.svg": {Data: []byte(`<svg xmlns="http://www.w3.org/2000/svg"/>`)},
+	}, "agent.localhost:17880", "")
+	w := request(t, s, s.Host, "GET", "/favicon.svg", "", nil)
+	if w.Code != 200 || w.Header().Get("Content-Type") != "image/svg+xml" || !strings.HasPrefix(w.Body.String(), "<svg") {
+		t.Fatalf("favicon: %d %q", w.Code, w.Header().Get("Content-Type"))
 	}
 }

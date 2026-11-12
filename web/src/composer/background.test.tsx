@@ -117,7 +117,7 @@ describe("background work", () => {
     // A running turn still shows as running; a request for the user wins.
     expect(
       renderToStaticMarkup(<StatusIcon status="running" background={2} />),
-    ).toContain("spin");
+    ).toContain("px-chase");
     expect(
       renderToStaticMarkup(
         <StatusIcon status="idle" background={2} attention="approval" />,

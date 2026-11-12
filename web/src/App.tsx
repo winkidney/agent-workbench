@@ -26,6 +26,7 @@ import { NotifyToggle } from "./components/NotifyToggle";
 import { SuggestToggle } from "./components/SuggestToggle";
 import { useAttention } from "./attention";
 import { SettingsDialog } from "./components/settings/SettingsDialog";
+import { LogoMark } from "./components/Logo";
 import { canonicalAddress, fileFrameSandbox, previewMode } from "./lib/preview";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Timeline } from "./transcript/Timeline";
@@ -63,7 +64,6 @@ import {
   X,
   Globe,
   PanelRightClose,
-  Layers,
   PanelLeft,
   MoreHorizontal,
   ChevronRight,
@@ -743,7 +743,7 @@ export default function App() {
       <main className="pair-screen">
         <div className="pair-card">
           <div className="brand-mark">
-            <Layers size={23} />
+            <LogoMark scale={3} />
           </div>
           <p className="eyebrow">LOCAL AGENT CONTROL</p>
           <h1>
@@ -991,7 +991,7 @@ export default function App() {
                 </EnvContext.Provider>
               ) : (
                 <div className="empty-conversation">
-                  <AgentIcon agent={current.agent} size={40} />
+                  <AgentIcon agent={current.agent} size={48} />
                   <h1>Start here.</h1>
                   <p>
                     Send a task to start{" "}

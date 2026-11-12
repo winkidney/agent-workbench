@@ -397,3 +397,25 @@ These are maintainer notes on how each feature of Agent Workbench was verified, 
   - About showed `2.1.322 (Claude Code)` and `codex-cli 0.167.1`, as the CLIs print them, with both optional Claude features. Check for updates answered "You have the latest release." Copy diagnostics put the summary on the clipboard.
   - Light, dark and 390 px: no horizontal scroll, and the dialog the same size on every tab.
 
+## Pixel logo, status animations and agent icons
+
+- Before: the sidebar showed the word "workbench." as text, running sessions a generic spinner, sessions open in another client a generic monitor, and the agents line-drawn marks; the tab had no icon, and the sign-in page a generic one.
+- Change:
+  - **Drawing:** everything is pixel art on whole-pixel grids (`components/pixel.tsx`: grids of characters drawn as rectangles, runs merged across and down, crisp edges, sizes in whole multiples) in the theme's own colors.
+  - **Logo:** two agents (a coral spark and a slate prompt tile) on a bench, with "workbench." in a 7-pixel lowercase font. The agents hop and the cursor blinks under the pointer. The same mark is the tab icon (`favicon.svg`, light and dark) and the sign-in page's.
+  - **Status icons:** running is a block chasing round a ring (also on a running tool's row, at 8 px), connecting is three blocks in turn, and another client is a pixel monitor with a blinking cursor, or text typing across it while a turn runs there. The other states keep their icons.
+  - **Agent icons:** the agents are 16×16 pixel marks, drawn at 16 and 48 px.
+  - **Motion:** animations are CSS steps, with no timers; with reduced motion they hold a meaningful frame.
+  - **Server:** `.svg` files are served as `image/svg+xml`. They were `text/plain`, which, with `nosniff`, kept the tab icon from showing.
+- New tests:
+  - Vitest: rectangles merged across and down, unknown characters left out; every grid whole and the agent marks symmetric (the tile's outline); names kept (or hidden when decorative); each state's animation and label; the logo's name and size.
+  - Go: the tab icon's type.
+- Real checks (dev instance, screenshots at 4× device pixels):
+  - The logo in the Default theme light and dark, Gruvbox dark and Catppuccin light; its hop frames under the pointer.
+  - The agent icons in the sidebar and on the new-session page.
+  - The monitor's typing frames for a session running in another client.
+  - The chase frames, in the sidebar and on the tool row, while a test Claude session (Haiku) ran `sleep 10`.
+  - Reduced motion: two screenshots 450 ms apart were identical, with no animation running.
+  - The tab icon is served as `image/svg+xml`.
+  - The test session was deleted afterwards.
+

@@ -104,7 +104,16 @@ HTML and dev-server previews use `p-*.agent.localhost` addresses in a browser on
 
 ## The sidebar
 
-- **Agent icons:** the coral burst is Claude, the `>_` tile is Codex. At the right end of each row: a spinner while running, a hand while waiting for approval, a monitor when another client is using it, a triangle on error, a dot while the engine is loaded, otherwise the time of the last activity.
+- **Agent icons:** the coral pixel burst is Claude, the slate `>_` tile is Codex.
+- **Status icons:** the icon at the right end of each row shows what the session is doing:
+  - Running: a block chasing round a ring of pixels.
+  - Connecting: three blocks lighting in turn.
+  - Waiting for approval: a hand.
+  - Open in another client: a pixel monitor with a blinking cursor; when a turn is running there, text types across its screen.
+  - Error: a triangle.
+  - Engine loaded: a dot.
+  - Otherwise, the time of the last activity.
+- **Reduced motion:** with the system's reduce-motion setting on, the animations stop and hold a frame that still shows the state.
 - **Sessions that need you** (an approval, a question, a plan to decide on, including Codex's async questions and "Implement this plan?") get a filled bell badge and a highlighted row, come first under **Active** even while their engine sleeps, and the Active header counts them ("2 need you"). The tab title shows the count, as in "(2) Agent Workbench"; on narrow screens a dot on the sessions button points to them while the sidebar is closed.
 - **Desktop notifications** announce a session that starts needing you while the page is in the background. Turn them on or off per browser in the "⋯" menu (Desktop notifications); turning them on asks the browser for permission. They need https or localhost.
 - **Active** lists sessions that are running, waiting, loaded or in use elsewhere. **Pinned** keeps the sessions you pin, in pin order.

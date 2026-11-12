@@ -60,7 +60,7 @@ describe("sessions that need you", () => {
     expect(html).toContain("needs-you");
     expect(html).toContain('aria-label="Has a question for you"');
     expect(renderToStaticMarkup(<StatusIcon status="running" />)).toContain(
-      "spin",
+      "px-chase",
     );
   });
 

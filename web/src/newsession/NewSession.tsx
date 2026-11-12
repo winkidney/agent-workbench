@@ -136,7 +136,7 @@ export function NewSession({
                   remember({ agent: a });
                 }}
               >
-                <AgentIcon agent={a} size={13} decorative />
+                <AgentIcon agent={a} size={16} decorative />
                 {a === "claude" ? "Claude" : "Codex"}
               </button>
             ))}

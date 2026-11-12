@@ -1,19 +1,47 @@
-import { AlertTriangle, BellRing, Hand, Loader2, Monitor } from "lucide-react";
+import { AlertTriangle, BellRing, Hand } from "lucide-react";
 import { ATTENTION_LABEL } from "../attention";
+import { PixelChase, PixelDots, PixelMonitor, Pixels, PixelSvg } from "./pixel";
 
-const RAYS = Array.from({ length: 12 }, (_, i) => {
-  const a = (i * Math.PI) / 6;
-  const r = i % 2 ? 5.4 : 7;
-  return {
-    x1: 8 + Math.cos(a) * 1.6,
-    y1: 8 + Math.sin(a) * 1.6,
-    x2: 8 + Math.cos(a) * r,
-    y2: 8 + Math.sin(a) * r,
-  };
-});
+// Generic agent marks in pixels (not vendor logos): a coral starburst for
+// Claude and a slate prompt tile for Codex. 16×16; drawn at 16 or 48.
+export const CLAUDE_ICON = [
+  "................",
+  ".......CC.......",
+  "..C....CC....C..",
+  "...C...CC...C...",
+  "....C..CC..C....",
+  ".....C.CC.C.....",
+  "......CCCC......",
+  ".CCCCCCCCCCCCCC.",
+  ".CCCCCCCCCCCCCC.",
+  "......CCCC......",
+  ".....C.CC.C.....",
+  "....C..CC..C....",
+  "...C...CC...C...",
+  "..C....CC....C..",
+  ".......CC.......",
+  "................",
+];
+export const CODEX_ICON = [
+  "................",
+  "..XXXXXXXXXXXX..",
+  ".XXXXXXXXXXXXXX.",
+  ".XXXXXXXXXXXXXX.",
+  ".XXXXXXXXXXXXXX.",
+  ".XXXooXXXXXXXXX.",
+  ".XXXXooXXXXXXXX.",
+  ".XXXXXooXXXXXXX.",
+  ".XXXXooXXXXXXXX.",
+  ".XXXooXXooooXXX.",
+  ".XXXXXXXXXXXXXX.",
+  ".XXXXXXXXXXXXXX.",
+  ".XXXXXXXXXXXXXX.",
+  ".XXXXXXXXXXXXXX.",
+  "..XXXXXXXXXXXX..",
+  "................",
+];
+const AGENT_COLORS = { C: "var(--agent-claude)", X: "var(--agent-codex)" };
 
-// Generic agent marks (not vendor logos): a coral starburst for Claude and a
-// terminal prompt tile for Codex.
 export function AgentIcon({
   agent,
   size = 16,
@@ -21,40 +49,24 @@ export function AgentIcon({
   decorative,
 }: {
   agent: string;
+  // A multiple of 16 keeps the pixels sharp.
   size?: number;
   title?: string;
   // Next to a visible agent name the icon adds nothing for screen readers.
   decorative?: boolean;
 }) {
-  const name = agent === "codex" ? "Codex" : "Claude";
+  const codex = agent === "codex";
+  const name = codex ? "Codex" : "Claude";
   return (
-    <svg
-      className={"agent-icon " + (agent === "codex" ? "codex" : "claude")}
-      width={size}
-      height={size}
-      viewBox="0 0 16 16"
-      role={decorative ? undefined : "img"}
-      aria-hidden={decorative || undefined}
-      aria-label={decorative ? undefined : (title ?? name)}
+    <PixelSvg
+      w={16}
+      h={16}
+      scale={size / 16}
+      label={decorative ? undefined : (title ?? name)}
+      className={"agent-icon " + (codex ? "codex" : "claude")}
     >
-      {!decorative && <title>{title ?? name}</title>}
-      {agent === "codex" ? (
-        <>
-          <rect
-            x="1"
-            y="1"
-            width="14"
-            height="14"
-            rx="3.6"
-            className="agent-fill"
-          />
-          <path d="M4.4 5.4 7 8l-2.6 2.6" className="agent-glyph" />
-          <path d="M8.6 10.6h3" className="agent-glyph" />
-        </>
-      ) : (
-        RAYS.map((r, i) => <line key={i} {...r} className="agent-ray" />)
-      )}
-    </svg>
+      <Pixels grid={codex ? CODEX_ICON : CLAUDE_ICON} palette={AGENT_COLORS} />
+    </PixelSvg>
   );
 }
 
@@ -108,15 +120,16 @@ export function StatusIcon({
   const label = statusLabel[status];
   if (!label) return null;
   const common = { size, role: "img", "aria-label": label } as const;
+  // Pixel animations for work in progress, here or in another client.
   const icon =
-    status === "running" ||
-    status === "starting" ||
-    status === "external_running" ? (
-      <Loader2 {...common} className="spin" />
+    status === "running" ? (
+      <PixelChase label={label} />
+    ) : status === "starting" ? (
+      <PixelDots label={label} />
+    ) : status === "external" || status === "external_running" ? (
+      <PixelMonitor label={label} busy={status === "external_running"} />
     ) : status === "waiting" ? (
       <Hand {...common} />
-    ) : status === "external" ? (
-      <Monitor {...common} />
     ) : status === "error" ? (
       <AlertTriangle {...common} />
     ) : (

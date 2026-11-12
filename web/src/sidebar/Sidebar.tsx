@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { AgentIcon, StatusIcon, statusLabel } from "../components/AgentIcon";
+import { LogoLockup } from "../components/Logo";
 import { ATTENTION_LABEL } from "../attention";
 import {
   buildSidebar,
@@ -329,7 +330,7 @@ const SessionRow = memo(function SessionRow({
             title={`${node.title} · ${s.agent === "codex" ? "Codex" : "Claude"} · ${(s.attention && ATTENTION_LABEL[s.attention]) || statusLabels[s.status] || s.status}`}
             onClick={() => actions.onSelect(s.id)}
           >
-            <AgentIcon agent={s.agent} size={15} />
+            <AgentIcon agent={s.agent} size={16} />
             {line2 ? (
               <span className="session-stack">
                 <span className="session-line">
@@ -850,7 +851,7 @@ export function Sidebar({
   return (
     <aside className="sidebar">
       <div className="brand">
-        <span>workbench.</span>
+        <LogoLockup />
         <Button
           variant="ghost"
           size="icon"

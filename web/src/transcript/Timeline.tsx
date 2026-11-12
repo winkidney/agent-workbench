@@ -7,7 +7,8 @@ import {
   useState,
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { ArrowDown, ArrowUpRight, ChevronRight, Loader2 } from "lucide-react";
+import { ArrowDown, ArrowUpRight, ChevronRight } from "lucide-react";
+import { PixelChase } from "../components/pixel";
 import {
   formatDuration,
   record,
@@ -331,7 +332,7 @@ function ToolRowBody({ block, kids, open, onToggle }: RowProps) {
   return (
     <div className={"row tool status-" + t.status}>
       <span className="mark tool-dot" aria-label={t.status}>
-        {t.status === "running" ? <Loader2 size={11} className="spin" /> : "●"}
+        {t.status === "running" ? <PixelChase size={8} /> : "●"}
       </span>
       <div className="body">
         {child && env.openSession ? (

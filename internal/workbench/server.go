@@ -288,6 +288,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if strings.HasSuffix(path, ".html") {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	}
+	// The tab icon: with nosniff, browsers show it only by its own type.
+	if strings.HasSuffix(path, ".svg") {
+		w.Header().Set("Content-Type", "image/svg+xml")
+	}
 	_, _ = w.Write(data)
 }
 func (s *Server) api(w http.ResponseWriter, r *http.Request) {
