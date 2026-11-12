@@ -222,7 +222,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		mode := s.remote
 		s.mu.Unlock()
 		w.Header().Set("Cache-Control", "no-store")
-		writeJSON(w, map[string]any{"authenticated": authenticated, "local": access == hostLocal, "method": mode})
+		// thisComputer: a browser on the workbench computer, where "Show in
+		// Files" opens; elsewhere paths download.
+		writeJSON(w, map[string]any{"authenticated": authenticated, "local": access == hostLocal, "thisComputer": thisComputer(r), "method": mode})
 		return
 	}
 	if r.URL.Path == "/api/login" && r.Method == "POST" {
@@ -809,6 +811,8 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 			v.Events = dropLiveTurnSummary(v.Events)
 		}
 		writeJSON(w, v)
+	case path == "download" && (r.Method == "GET" || r.Method == "HEAD"):
+		s.download(w, r)
 	case (path == "media" || path == "thumb") && r.Method == "GET":
 		if err := m.Attach(r.URL.Query().Get("session")); err != nil {
 			bad(w, err)
@@ -946,9 +950,12 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		case "reveal":
-			// Shows the file in the desktop file manager of this machine.
+			// Shows the file in the desktop file manager of this machine:
+			// only for a browser on it (elsewhere, paths download).
 			var v struct{ Path, Base string }
-			if err = decode(w, r, &v); err == nil {
+			if !thisComputer(r) {
+				err = errors.New("Show in Files opens on the workbench computer; download the file instead")
+			} else if err = decode(w, r, &v); err == nil {
 				if err = m.Attach(id); err == nil {
 					var full, rel string
 					if full, rel, err = m.ResolvePath(id, v.Base, v.Path); err == nil {

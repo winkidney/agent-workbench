@@ -40,3 +40,34 @@ export async function api<T>(
   if (!r.ok) throw new Error(await r.text());
   return r.json();
 }
+
+// Where a file or folder a session wrote downloads from: a file as it is,
+// a folder as a zip made while it is sent.
+export function downloadUrl(session: string, path: string, base?: string) {
+  return (
+    `/api/download?session=${encodeURIComponent(session)}&path=${encodeURIComponent(path)}` +
+    (base ? `&base=${encodeURIComponent(base)}` : "")
+  );
+}
+
+// Downloads it with the browser's own download, which streams it to disk
+// (nothing is held in the page). It is checked first, so a missing or
+// refused path is reported here rather than as a failed download.
+export async function download(session: string, path: string, base?: string) {
+  const url = downloadUrl(session, path, base);
+  const r = await fetch(url, { method: "HEAD" });
+  checkAccess(r, "download");
+  if (!r.ok)
+    throw new Error(
+      r.status === 404
+        ? `${path} no longer exists.`
+        : `Couldn't download ${path}.`,
+    );
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "";
+  a.hidden = true;
+  document.body.append(a);
+  a.click();
+  a.remove();
+}

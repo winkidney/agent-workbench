@@ -115,9 +115,10 @@ The interface uses a JSON API under `/api/`. Main endpoints:
 | `GET /api/media?session=&path=&base=` | Images and video |
 | `POST /api/previews`, `GET /api/previews` | Open a file or server preview (a file opens the same preview again); the running servers |
 | `GET/PUT /api/sessions/{id}/preview-tabs` | The session's preview tabs: at most six targets and the one shown; files read back with their stamp, servers with whether they run |
-| `POST /api/sessions/{id}/reveal` | Show a file in the desktop file manager |
+| `POST /api/sessions/{id}/reveal` | Show a file in the desktop file manager (refused unless the request comes from this computer) |
+| `GET/HEAD /api/download?session=&path=&base=` | Download a path the session reaches: a file as an attachment, with ranges; a folder as a zip made while it is sent, without symbolic links. HEAD checks it first |
 | `GET/POST /api/sidebar`, `GET /api/workspaces`, `GET /api/dirs?path=` | Sidebar preferences, projects, folder browser |
-| `GET /api/auth/status`, `POST /api/login` | Sign-in state, pairing |
+| `GET /api/auth/status`, `POST /api/login` | Sign-in state, and whether the page is on this computer (`thisComputer`: Show in Files, or else downloads); pairing |
 | `GET/PUT /api/settings`, `GET /api/settings/secrets` | Access from other devices, storage, signed-in devices (`signedIn`); the pairing code and password |
 | `POST /api/settings/signout-others` | End every pairing sign-in except the caller's (pairing mode only) |
 | `GET /api/about`, `GET /api/updates` | Versions, paths, run mode, data, and each CLI's `--version` (asked once per binary until it changes); the latest GitHub release, asked on request and kept 10 minutes |

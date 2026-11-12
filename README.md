@@ -40,7 +40,7 @@ Agent Workbench runs on your machine next to `claude` and `codex` and gives both
 **Files and previews**
 - Paths in replies open the file, resolved from where the agent was when it wrote them.
 - Images and videos open in a zoomable viewer; HTML, PDF, SVG and local dev servers open in an isolated preview panel.
-- Show any file in your desktop file manager.
+- Show any file in your desktop file manager, or, from another device, download it (a folder as a zip).
 
 **Status and usage**
 - A turn clock, live tokens per second, context usage and the provider's quota windows.

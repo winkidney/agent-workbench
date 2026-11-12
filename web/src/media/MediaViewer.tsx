@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   ChevronLeft,
   ChevronRight,
+  Download,
   FolderOpen,
   ImageOff,
   Maximize,
@@ -30,12 +31,16 @@ export function MediaViewer({
   onClose,
   onReveal,
   onPanel,
+  here = true,
 }: {
   items: ViewItem[];
   index: number;
   onClose: () => void;
   onReveal: (item: ViewItem) => void;
   onPanel: (item: ViewItem) => void;
+  // On the workbench computer: "Show in Files"; elsewhere, onReveal
+  // downloads.
+  here?: boolean;
 }) {
   const [at, setAt] = useState(index);
   const item = items[at] ?? items[0];
@@ -163,11 +168,13 @@ export function MediaViewer({
             <>
               <button
                 type="button"
-                title="Show in Files (opens on this computer)"
+                title={
+                  here ? "Show in Files (opens on this computer)" : "Download"
+                }
                 onClick={() => onReveal(item)}
               >
-                <FolderOpen size={15} />
-                <span>Show in Files</span>
+                {here ? <FolderOpen size={15} /> : <Download size={15} />}
+                <span>{here ? "Show in Files" : "Download"}</span>
               </button>
               <button
                 type="button"
@@ -251,7 +258,15 @@ export function MediaViewer({
             <p>Couldn't load {name}</p>
             {item.path && (
               <button type="button" onClick={() => onReveal(item)}>
-                <FolderOpen size={14} /> Show in Files
+                {here ? (
+                  <>
+                    <FolderOpen size={14} /> Show in Files
+                  </>
+                ) : (
+                  <>
+                    <Download size={14} /> Download
+                  </>
+                )}
               </button>
             )}
           </div>

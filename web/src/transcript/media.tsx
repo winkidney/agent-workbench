@@ -1,5 +1,6 @@
 import { createContext, useContext, useState } from "react";
 import {
+  Download,
   ExternalLink,
   File as FileIcon,
   Film,
@@ -19,8 +20,12 @@ export type Env = {
   openUrl: (url: string) => void;
   openPath: (path: string, base?: string) => void;
   thumb: (path: string, base?: string) => string | null;
-  // Shows the file in the file manager of the machine running the workbench.
+  // On the workbench computer, shows the file or folder in its file manager;
+  // anywhere else (another device, a tunnel), downloads it.
   reveal: (path: string, base?: string) => void;
+  // Whether this page runs on the workbench computer (reveal shows, rather
+  // than downloads).
+  here?: boolean;
   // Opens images and videos in the zoomable viewer.
   view: (items: ViewItem[], index: number) => void;
   // Sends a message as the composer would: into the running turn if there
@@ -110,7 +115,7 @@ export function pathItem(
 }
 
 // Images and videos open in the viewer, other previewable files in the
-// side panel, anything else in the file manager.
+// side panel, anything else in the file manager (downloads elsewhere).
 export function openWorkspacePath(env: Env, path: string, base?: string) {
   const item = pathItem(env, path, base);
   if (item) env.view([item], 0);
@@ -140,23 +145,32 @@ export function PathChip({ path }: { path: string }) {
   );
 }
 
+// What reveal does for a path, said on its button.
+export function revealLabel(env: Env, path: string) {
+  return env.here === false
+    ? `Download ${path}`
+    : `Show ${path} in Files (opens on this computer)`;
+}
+
 export function RevealButton({ path, base }: { path: string; base?: string }) {
   const env = useEnv();
+  const away = env.here === false;
   return (
     <button
       type="button"
       className="path-reveal"
-      title="Show in Files (opens on this computer)"
-      aria-label={`Show ${path} in Files`}
+      title={away ? "Download" : "Show in Files (opens on this computer)"}
+      aria-label={away ? `Download ${path}` : `Show ${path} in Files`}
       onClick={() => env.reveal(path, base)}
     >
-      <FolderOpen size={12} />
+      {away ? <Download size={12} /> : <FolderOpen size={12} />}
     </button>
   );
 }
 
 // Inline code that names a file or folder (not previewable): it keeps the
-// terminal look and shows the item in the file manager when clicked.
+// terminal look and shows the item in the file manager when clicked, or
+// downloads it away from the workbench computer.
 export const PATHLIKE =
   /^(?:~?\/|\.{1,2}\/)?[\w@.+-]+(?:\/[\w@.+-]+)+\/?$|^[\w@+-][\w@.+-]*\.(?:md|json|jsonl|ya?ml|toml|ini|cfg|conf|txt|log|csv|tsv|go|mod|sum|rs|py|ipynb|js|mjs|cjs|ts|tsx|jsx|css|scss|sh|bash|zsh|fish|sql|rb|java|kt|swift|c|h|cc|cpp|hpp|cs|lua|gd|gdshader|tscn|tres|glsl|wgsl|shader|lock|env|dockerfile|makefile|zip|tar|gz|wav|mp3|ogg|flac|blend|fbx|glb|gltf|obj|psd|kra|aseprite)$/i;
 
@@ -170,7 +184,7 @@ export function PathCode({ path }: { path: string }) {
       className="path-code"
       role="button"
       tabIndex={0}
-      title={`Show ${rel} in Files (opens on this computer)`}
+      title={revealLabel(env, rel)}
       onClick={() => env.reveal(rel, base)}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {

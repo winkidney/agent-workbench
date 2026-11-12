@@ -586,3 +586,29 @@ These are maintainer notes on how each feature of Agent Workbench was verified, 
   - **Measured** (same session viewed, real records, allocation profiles 30 s apart): v0.3.15 allocated 355 MB in 30 s, 89% of it rereading every transcript and copying the list for each lookup. Now about 3 MB, mostly sending the list to the page.
   - **New test:** a transcript with the same size and time is not read again, a grown one is, and a deleted one is forgotten. A thread added to Codex's index is listed.
 
+## Downloads away from the workbench computer
+
+- **Why:** on another device or through a tunnel, "Show in Files" opened a file manager window on the workbench computer, where nobody sees it.
+- **Change:**
+  - `GET /api/auth/status` says whether the page is on this computer (`thisComputer`: a loopback client and name, no proxy headers).
+  - There, path links and their buttons still show the item in Files. Elsewhere they download it, and the reveal action is refused on the server.
+  - `GET /api/download` sends a file with `http.ServeContent` (ranges, `Content-Disposition: attachment`, `nosniff`). A folder goes as a zip written straight to the response: compressed formats are stored, the rest deflated, and symbolic links and other non-regular entries are left out.
+  - The page checks the path with a HEAD first, then lets the browser download it with a link. So the browser streams it to disk, and a missing path is reported on the page instead of as a failed download.
+- **New Go tests:**
+  - From another device, signed in: a file with a non-ASCII name downloads as an attachment, a range returns 206, and HEAD has no body.
+  - A folder becomes a zip with its folders and files. Symbolic links to a file and to a folder outside are absent, a PNG is stored, and text is deflated.
+  - `../`, an absolute path outside the directory, a missing path and a device not signed in are refused: 400, 400, 404 and 401.
+  - The reveal action from another device returns 400 and names downloading.
+  - `thisComputer` is true on this computer, and false from the LAN and through a tunnel.
+- **New Vitest tests:**
+  - The download address encodes the session, the path and the base.
+  - The page checks with HEAD, then clicks one link with `download`.
+  - A 404 or a 400 is reported, and no download starts.
+  - Path links and buttons read "Show … in Files" on this computer and "Download …" elsewhere.
+- **Browser** (scratch instance with a written Claude record; Chromium with tunnel headers and a password, then as this computer):
+  - Through the tunnel, the path links read "Download notes.log" and "Download build/out", and the buttons by the chips read "Download report.pdf".
+  - `notes.log` downloaded in 50 ms with its content intact.
+  - `build/out` downloaded as `out.zip` (3 MB) in 90 ms, with `out/blob.bin` matching byte for byte and the symbolic link left out.
+  - A chip's button downloaded `report.pdf`, and the image viewer's **Download** downloaded `shot.png`.
+  - After renaming `notes.log` away, clicking it showed "notes.log no longer exists." and started no download.
+  - As this computer, the same page still read "Show … in Files", and the viewer showed **Show in Files**.

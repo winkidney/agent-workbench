@@ -20,7 +20,7 @@ type SteerResult = {
 import { Sidebar, statusLabels as labels } from "./sidebar/Sidebar";
 import { usePrefs } from "./sidebar/usePrefs";
 import { displayTitle, type Session } from "./sidebar/tree";
-import { api } from "./lib/api";
+import { api, download } from "./lib/api";
 import { Appearance } from "./components/Appearance";
 import { NotifyToggle } from "./components/NotifyToggle";
 import { SuggestToggle } from "./components/SuggestToggle";
@@ -110,6 +110,9 @@ export default function App() {
   } | null>(null);
   // Set when the server now serves a newer web build than this page runs.
   const [outdated, setOutdated] = useState(false);
+  // Whether this page runs on the workbench computer: there "Show in Files"
+  // opens its file manager; anywhere else paths download instead.
+  const [here, setHere] = useState(true);
   const [paired, setPaired] = useState(false),
     [code, setCode] = useState(""),
     [error, setError] = useState(""),
@@ -232,7 +235,11 @@ export default function App() {
     setConnectionError("");
     setError("");
     try {
-      const status = await api<{ authenticated: boolean }>("auth/status");
+      const status = await api<{
+        authenticated: boolean;
+        thisComputer?: boolean;
+      }>("auth/status");
+      setHere(status.thisComputer !== false);
       if (status.authenticated) {
         const list = await api<Session[]>("sessions");
         setSessions(list);
@@ -599,11 +606,16 @@ export default function App() {
       thumb: (path, base) =>
         `/api/media?session=${encodeURIComponent(active)}&path=${encodeURIComponent(path)}` +
         (base ? `&base=${encodeURIComponent(base)}` : ""),
+      here,
       reveal: (path, base) =>
-        void api(`sessions/${encodeURIComponent(active)}/reveal`, "POST", {
-          path,
-          base,
-        }).catch(catchError),
+        void (
+          here
+            ? api(`sessions/${encodeURIComponent(active)}/reveal`, "POST", {
+                path,
+                base,
+              })
+            : download(active, path, base)
+        ).catch(catchError),
       view: (items, index) => items.length && setViewer({ items, index }),
       subagentSession: ({ agentId, threadId }) => {
         const id =
@@ -637,6 +649,7 @@ export default function App() {
     }),
     [
       active,
+      here,
       current?.cwd,
       current?.readOnly,
       current?.archived,
@@ -1325,6 +1338,7 @@ export default function App() {
             items={viewer.items}
             index={viewer.index}
             onClose={() => setViewer(null)}
+            here={here}
             onReveal={(item) => item.path && env.reveal(item.path, item.base)}
             onPanel={(item) => {
               if (!item.path) return;
