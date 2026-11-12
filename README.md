@@ -19,6 +19,7 @@ Agent Workbench runs on your machine next to `claude` and `codex` and gives both
 - All Claude Code and Codex sessions on the machine, grouped by the project they were started in, with subagent sessions nested under their parent.
 - Search, pins, a live "Active" list, and archived or hidden sessions out of the way.
 - Sessions are the CLIs' own: continue one here or in a terminal (`claude --resume`, `codex resume`). A session another client is running is followed live, read-only.
+- Choose each agent's program and home folder in Settings (a pinned CLI version, a separate account), and sign a CLI in from the page, from any device.
 
 **Live control**
 - Replies, thinking and tool calls stream in and look like each CLI's terminal UI: its colors, diffs and ANSI output.
@@ -53,6 +54,7 @@ Agent Workbench runs on your machine next to `claude` and `codex` and gives both
 
 **Packaged for macOS, Windows and Linux**
 - One binary. `agent-workbench install` starts it at login (systemd user unit, launchd agent or Run key).
+- Run more than one workbench side by side, each with its own data directory, address and settings ([details](docs/install.md#more-than-one-workbench)).
 
 | Steering a running turn | Commands | Phone |
 | --- | --- | --- |
@@ -117,6 +119,8 @@ agent-workbench version
 | `--data-dir PATH` | per OS, see below | Private state: the session index, settings, event cache. |
 | `--idle DURATION` | `5m` | Put an idle engine to sleep after this long. |
 | `--env NAME` | | `install` only: also pass this environment variable to the service. |
+
+A second workbench takes its own `--data-dir` and `--listen`; it is named after its port, and later commands find it from `--data-dir` alone (see [More than one workbench](docs/install.md#more-than-one-workbench)).
 
 Data lives in `~/.local/state/agent-workbench` on Linux (or `$XDG_STATE_HOME`), `~/Library/Application Support/agent-workbench` on macOS, and `%LOCALAPPDATA%\agent-workbench` on Windows. Conversations themselves stay in the CLIs' records (`~/.claude`, `~/.codex`, or `CLAUDE_CONFIG_DIR` / `CODEX_HOME`).
 

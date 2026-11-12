@@ -58,7 +58,7 @@ func (s *Server) previewResponse(w http.ResponseWriter, r *http.Request, p *Prev
 		}
 		g := fileGrant{preview: p.ID, expires: now.Add(fileGrantLife), gen: s.signinGen, local: access == hostLocal}
 		if !g.local && s.remote == remotePairing {
-			if c, err := r.Cookie("workbench_session"); err == nil {
+			if c, err := r.Cookie(sessionCookie); err == nil {
 				g.session = c.Value
 			}
 		}

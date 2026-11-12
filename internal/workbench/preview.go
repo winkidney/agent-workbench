@@ -38,6 +38,11 @@ func confined(root, path string) (string, error) {
 	if filepath.IsAbs(path) {
 		return "", errors.New("path must be relative")
 	}
+	// Both sides resolved: a working directory reached through a link
+	// (~/workspace → /mnt/…) holds its own files.
+	if real, err := filepath.EvalSymlinks(root); err == nil {
+		root = real
+	}
 	full, err := filepath.EvalSymlinks(filepath.Join(root, path))
 	if err != nil {
 		return "", err
@@ -347,7 +352,7 @@ func (m *Manager) startPreviewService(id, cwd, command string) (stop func() erro
 		if err != nil {
 			return nil, "", err
 		}
-		unit := "agent-workbench-preview-" + id + ".service"
+		unit := instance + "-preview-" + id + ".service"
 		args := []string{}
 		for _, a := range unitArgs(unit, cwd) {
 			// No --pipe: this child is independently managed and logs to the journal.

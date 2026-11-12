@@ -39,7 +39,7 @@ func TestActivityIndexCountsToolCallsOnly(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "rollout.jsonl")
 	os.WriteFile(path, []byte(b.String()), 0600)
 	s := Session{ID: "codex:t", Agent: "codex", Workspace: root, Origin: "project"}
-	m.activity.Scan([]Session{s}, map[string]string{s.ID: path}, 1<<30)
+	m.activity.Scan([]Session{s}, map[string]recordFile{s.ID: {Path: path}}, 1<<30)
 	if got := strings.Join(m.activity.Related(s.ID), ","); got != "api-ctl,api-server" {
 		t.Fatalf("related %q", got)
 	}
@@ -49,7 +49,7 @@ func TestActivityIndexCountsToolCallsOnly(t *testing.T) {
 		fmt.Fprint(f, line(map[string]any{"type": "assistant", "message": map[string]any{"content": []any{map[string]any{"type": "tool_use", "name": "Edit", "input": map[string]any{"file_path": root + "/slides/deck.md"}}}}}))
 	}
 	f.Close()
-	m.activity.Scan([]Session{s}, map[string]string{s.ID: path}, 1<<30)
+	m.activity.Scan([]Session{s}, map[string]recordFile{s.ID: {Path: path}}, 1<<30)
 	if got := m.activity.Related(s.ID); len(got) == 0 || got[0] != "slides" {
 		t.Fatalf("incremental %v", got)
 	}
@@ -64,7 +64,7 @@ func TestActivityIndexCountsToolCallsOnly(t *testing.T) {
 	}
 	// Non-project and child sessions are skipped.
 	other := Session{ID: "codex:x", Agent: "codex", Workspace: root, Origin: "automation"}
-	m.activity.Scan([]Session{other}, map[string]string{other.ID: path}, 1<<30)
+	m.activity.Scan([]Session{other}, map[string]recordFile{other.ID: {Path: path}}, 1<<30)
 	if len(m.activity.Related(other.ID)) != 0 {
 		t.Fatal("indexed an automation session")
 	}

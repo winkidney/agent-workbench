@@ -14,12 +14,18 @@ import {
 import { copyField } from "../../lib/copy";
 import { Button } from "../ui/button";
 
+const HOME_SOURCES: Record<string, string> = {
+  setting: " (chosen in Settings)",
+  environment: " (from the environment)",
+  default: "",
+};
+
 const FEATURES: Record<string, string> = {
   "--prompt-suggestions": "Prompt suggestions",
   "--include-hook-events": "Hook events",
 };
 
-function CopyValue({ id, value }: { id: string; value: string }) {
+export function CopyValue({ id, value }: { id: string; value: string }) {
   const [done, setDone] = useState(false);
   return (
     <span className="about-copy">
@@ -57,6 +63,13 @@ export function AgentRow({ agent }: { agent: AboutAgent }) {
       </div>
       {agent.path && (
         <CopyValue id={`about-path-${agent.name}`} value={agent.path} />
+      )}
+      {(agent.source === "setting" || agent.home) && (
+        <p className="subtle about-agent-home">
+          {agent.source === "setting" && "Program chosen in Settings. "}
+          {agent.home &&
+            `Home: ${agent.home}${HOME_SOURCES[agent.homeSource ?? "default"]}`}
+        </p>
       )}
       {(agent.features?.length || agent.missing?.length) && (
         <ul className="about-features" aria-label={`${name} features`}>
@@ -166,6 +179,14 @@ export function AboutTab({ active }: { active: boolean }) {
           <dd>
             {w.platform} · {w.go}
           </dd>
+          {w.instance && w.instance !== "agent-workbench" && (
+            <>
+              <dt>Instance</dt>
+              <dd>
+                <code>{w.instance}</code>
+              </dd>
+            </>
+          )}
           {w.listen && (
             <>
               <dt>Address</dt>

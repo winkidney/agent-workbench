@@ -33,6 +33,7 @@ import { Timeline } from "./transcript/Timeline";
 import { IMPLEMENT_PLAN, freshPlanMessage } from "./transcript/plans";
 import type { Options } from "./agentOptions";
 import { useTranscript, type ExternalUpdate } from "./transcript/useTranscript";
+import { RecordMissing } from "./transcript/RecordMissing";
 import {
   EnvContext,
   isMedia,
@@ -989,6 +990,8 @@ export default function App() {
                     onLoadEarlier={transcript.loadEarlier}
                   />
                 </EnvContext.Provider>
+              ) : transcript.recordMissing ? (
+                <RecordMissing remains={transcript.recordMissing} />
               ) : (
                 <div className="empty-conversation">
                   <AgentIcon agent={current.agent} size={48} />
@@ -1124,7 +1127,11 @@ export default function App() {
               )}
               <Composer
                 key={current.id}
-                session={current}
+                session={
+                  transcript.recordMissing
+                    ? { ...current, readOnly: true, recordMissing: true }
+                    : current
+                }
                 running={running}
                 disabled={busy}
                 goal={goal}

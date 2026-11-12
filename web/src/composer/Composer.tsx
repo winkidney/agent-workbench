@@ -32,6 +32,8 @@ type ComposerSession = {
   source?: string;
   // A subagent's session: the parent session takes its messages.
   parentId?: string;
+  // Its native record is gone.
+  recordMissing?: boolean;
 };
 
 // Unsent drafts survive switching sessions.
@@ -262,13 +264,15 @@ export function Composer({
               ? suggestion
               : session.source === "subagent" || session.parentId
                 ? "Subagent transcript · read only; continue in the parent session"
-                : session.archived
-                  ? "Archived · unarchive to continue"
-                  : readOnly
-                    ? "Active in another client · read only"
-                    : running
-                      ? "Steer this turn — Enter sends it now"
-                      : "Describe a task or continue this conversation…"
+                : session.recordMissing
+                  ? "This conversation's record is gone · it cannot continue"
+                  : session.archived
+                    ? "Archived · unarchive to continue"
+                    : readOnly
+                      ? "Active in another client · read only"
+                      : running
+                        ? "Steer this turn — Enter sends it now"
+                        : "Describe a task or continue this conversation…"
           }
           className={suggestion ? "suggesting" : undefined}
           aria-describedby={suggestion ? "composer-suggestion" : undefined}

@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,7 +17,7 @@ import (
 	"time"
 )
 
-const Service = "agent-workbench.service"
+var Service = DefaultInstance + ".service"
 
 type Process interface {
 	Input(any) error
@@ -118,16 +119,38 @@ type Manager struct {
 	codexThread func(method string, params map[string]any) error
 
 	// Incremental readers of native records other clients are writing.
-	usageMu  sync.Mutex
-	usage    map[string]*usageScan
-	extMu    sync.Mutex
-	external map[string]*externalActivity
+	usageMu sync.Mutex
+	usage   map[string]*usageScan
+	// Sessions whose compressed record is being read for usage.
+	usageReading map[string]bool
+	extMu        sync.Mutex
+	external     map[string]*externalActivity
+	// The agents' programs and homes Settings chose (agents_setup.go).
+	agentsMu sync.Mutex
+	agents   AgentsSetup
+	// Logins under way from the page, and what the CLIs said of their
+	// logins (agents_login.go, agents_api.go).
+	loginsMu sync.Mutex
+	logins   map[string]*loginFlow
+	signIns  signInCache
 }
 
 func NewManager(store *Store, launch Launch, idle time.Duration) (*Manager, error) {
-	m := &Manager{store: store, launch: launch, idle: idle, sessions: map[string]*runtime{}, changes: newNotifier(), renameCodex: codexRename, codexThread: codexThreadRequest, activity: NewActivityIndex(store)}
+	m := &Manager{store: store, launch: launch, idle: idle, sessions: map[string]*runtime{}, changes: newNotifier(), activity: NewActivityIndex(store)}
+	m.renameCodex, m.codexThread = m.codexRename, m.codexThreadRequest
 	m.catalog = NewNativeCatalog()
+	m.catalog.startCodex = m.startCodexClient
+	m.loadAgents()
 	return m, nil
+}
+
+// startCodexClient starts a read-only app-server with the chosen codex.
+func (m *Manager) startCodexClient(name string) (*codexClient, error) {
+	run, err := m.cli("codex")
+	if err != nil {
+		return nil, err
+	}
+	return startCodexClientWith(run, name)
 }
 func (m *Manager) emit(id, kind string, data any) {
 	if _, err := m.store.Append(id, kind, data); err != nil {
@@ -227,7 +250,13 @@ func (m *Manager) Start(id string) error {
 	r.pending = map[string]any{}
 	r.rpc = map[string]chan map[string]any{}
 	r.caps, r.steering = nil, nil
-	proc, err := m.launch(r.session, func(v map[string]any) { m.receive(id, generation, v) }, func(err error) { m.exited(id, generation, err) })
+	launched := r.session
+	run, err := m.cli(launched.Agent)
+	var proc Process
+	if err == nil {
+		launched.run = run
+		proc, err = m.launch(launched, func(v map[string]any) { m.receive(id, generation, v) }, func(err error) { m.exited(id, generation, err) })
+	}
 	if err != nil {
 		m.emit(r.session.ID, "error", map[string]any{"message": err.Error()})
 		m.status(r, "error")
@@ -1193,9 +1222,13 @@ func unitArgs(unit, cwd string) []string {
 
 // agentCommand is the agent binary and arguments for a session's engine.
 func agentCommand(s Session) (string, []string, error) {
-	binary, err := exec.LookPath(s.Agent)
-	if err != nil {
-		return "", nil, err
+	binary := s.run.Binary
+	if binary == "" {
+		path, err := exec.LookPath(s.Agent)
+		if err != nil {
+			return "", nil, err
+		}
+		binary = path
 	}
 	if s.Agent == "codex" {
 		return binary, []string{"app-server"}, nil
@@ -1230,7 +1263,10 @@ func claudeTakes(binary string, flags ...string) []string {
 	claudeHelp.Lock()
 	defer claudeHelp.Unlock()
 	if claudeHelp.key != key {
-		out, _ := exec.Command(binary, "--help").Output()
+		// A program that does not answer is given no optional flags.
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		out, _ := exec.CommandContext(ctx, binary, "--help").Output()
+		cancel()
 		claudeHelp.key, claudeHelp.text = key, string(out)
 	}
 	var took []string
@@ -1288,9 +1324,15 @@ func SystemLaunch(s Session, onMessage func(map[string]any), onExit func(error))
 	if err != nil {
 		return nil, err
 	}
-	unit := "agent-workbench-session-" + s.ID + ".service"
+	unit := instance + "-session-" + s.ID + ".service"
 	args := unitArgs(unit, s.Cwd)
-	for _, entry := range os.Environ() {
+	// Variables are passed by name: systemd-run reads the values from its
+	// own environment, which carries the home Settings chose.
+	env := s.run.Env
+	if env == nil {
+		env = os.Environ()
+	}
+	for _, entry := range env {
 		name, _, _ := strings.Cut(entry, "=")
 		if name != "INVOCATION_ID" && name != "SYSTEMD_EXEC_PID" {
 			args = append(args, "--setenv="+name)
@@ -1298,6 +1340,7 @@ func SystemLaunch(s Session, onMessage func(map[string]any), onExit func(error))
 	}
 	args = append(append(args, "--", binary), agentArgs...)
 	cmd := exec.Command("systemd-run", args...)
+	cmd.Env = s.run.Env
 	in, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err

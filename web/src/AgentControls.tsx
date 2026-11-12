@@ -60,6 +60,8 @@ type Usage = {
   average?: number;
   scope: string;
   updated?: string;
+  // Usage is being read from a compressed record; it follows.
+  reading?: boolean;
   // What the user would likely type next, after a turn.
   suggestion?: string;
 };
@@ -469,10 +471,16 @@ export function UsageDetails({ ctl, session, hint }: Part & { hint?: string }) {
             : !["running", "waiting"].includes(session.status) && data?.average
               ? `${data.average.toFixed(1)} tok/s avg · `
               : ""}
-          {count(tokens(data?.total))} tokens · Context{" "}
-          {data?.context?.window
-            ? `${Math.round(((data.context.used ?? 0) / data.context.window) * 100)}%`
-            : "unavailable"}
+          {data?.reading ? (
+            "Reading usage from the compressed record…"
+          ) : (
+            <>
+              {count(tokens(data?.total))} tokens · Context{" "}
+              {data?.context?.window
+                ? `${Math.round(((data.context.used ?? 0) / data.context.window) * 100)}%`
+                : "unavailable"}
+            </>
+          )}
           {weekly
             ? ` · Weekly ${Math.max(0, 100 - weekly.percent).toFixed(0)}% left`
             : ""}

@@ -26,7 +26,9 @@ func DirectLaunch(s Session, onMessage func(map[string]any), onExit func(error))
 	if err != nil {
 		return nil, err
 	}
-	return startDirect(exec.Command(binary, args...), s.Cwd, onMessage, onExit)
+	cmd := exec.Command(binary, args...)
+	cmd.Env = s.run.Env
+	return startDirect(cmd, s.Cwd, onMessage, onExit)
 }
 
 func startDirect(cmd *exec.Cmd, cwd string, onMessage func(map[string]any), onExit func(error)) (*directProcess, error) {

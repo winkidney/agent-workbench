@@ -172,6 +172,17 @@ func TestSecurityPreviewRange(t *testing.T) {
 	if _, err := confined(root, "../secret"); err == nil {
 		t.Fatal("traversal accepted")
 	}
+	// A working directory reached through a link still holds its files.
+	linked := filepath.Join(t.TempDir(), "linked")
+	if err := os.Symlink(root, linked); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := confined(linked, "clip.mp4"); err != nil {
+		t.Fatalf("linked working directory: %v", err)
+	}
+	if _, err := confined(linked, "escape"); err == nil {
+		t.Fatal("symlink escaped through a linked working directory")
+	}
 	payload := fmt.Sprintf(`{"session":%q,"kind":"file","path":"clip.mp4"}`, session.ID)
 	w = request(t, s, s.Host, "POST", "/api/previews", payload, cookie)
 	if w.Code != 200 {

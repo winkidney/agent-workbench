@@ -10,6 +10,7 @@ The workbench works with the sessions the CLIs keep themselves. Every Claude Cod
 - **Running elsewhere.** A session another client is using is shown read-only and followed live: new records appear as the CLI writes them, with the turn's elapsed time. Replies arrive in whole blocks rather than word by word, and that client's approvals cannot be answered here. Once the other client lets go, you can continue the session here.
 - **Engines sleep.** Each session's agent stays running between turns. After 5 idle minutes (see `--idle`) it is put to sleep; the next message resumes the same session after a few seconds. A session with work in progress (a running tool, a pending approval, a dev server) is not put to sleep.
 - **End a session** from the header menu to stop its agent and everything it started. Files and history stay.
+- **Old Codex sessions.** Codex compresses a session's record after a week of rest (to `.jsonl.zst`). The workbench reads its usage and related projects from the compressed record, once; the first time, the usage line says it is reading. Codex still lists sessions whose records are gone (a deleted sessions folder, say): opening one says so and shows what Codex kept, its first message and token count. It can't be continued.
 
 ### Starting a session
 
@@ -158,18 +159,38 @@ The workbench listens on all interfaces by default (`0.0.0.0:17880`) and `start`
 
 ## Settings
 
-**⋯ → Settings** has three tabs:
+**⋯ → Settings** has four tabs:
 
 - **General:** appearance, desktop notifications and suggested next prompts. These are the same controls as the **⋯** menu, and they apply at once.
-- **Access & security:** how this page is connected, which devices may sign in and how, allowed origins, and signed-in devices (see [Access from other devices](#access-from-other-devices)). Saved with its button. Unsaved changes are marked on the tab and kept while you switch tabs. Closing asks before discarding them.
+- **Agents:** which program runs Claude Code and Codex, the folder each keeps its data in, and signing them in (see [Agents](#agents)). Saved with its button.
+- **Access & security:** how this page is connected, which devices may sign in and how, allowed origins, and signed-in devices (see [Access from other devices](#access-from-other-devices)). Saved with its button.
+- Unsaved changes on Agents or Access & security are marked on the tab and kept while you switch tabs. Closing asks before discarding them.
 - **About:**
   - This workbench: version with its release notes, web build, how long it has run, whether engines run as systemd units or child processes, platform and Go version, listen address, data directory, start at login.
-  - Each CLI: version, path, and for Claude Code the optional features the workbench uses that this version has.
+  - Each CLI: version, path, whether the program and its home folder were chosen in Settings, and for Claude Code the optional features the workbench uses that this version has.
+  - The instance name, for a workbench that is not the default one (see [More than one workbench](install.md#more-than-one-workbench)).
   - Local data: size, how long live events are kept, the number of sessions.
   - **Check for updates** asks GitHub for the latest release, only when you click it. The workbench makes the request, without anything about you or this machine.
   - **Copy diagnostics** copies the same facts as `agent-workbench doctor`, for a bug report.
 
 The tab you used last opens next time, per browser.
+
+## Agents
+
+**⋯ → Settings → Agents** chooses, for Claude Code and for Codex:
+
+- **Program.** Automatic runs the `claude` or `codex` on this computer's PATH, as the workbench's environment has it. Choose a program to run another one, for example a pinned Claude Code version (`~/.local/share/claude/versions/<version>`) or a CLI installed elsewhere; the field suggests what PATH has. A program is checked before it is saved: it must be an executable file that answers `--version` as that CLI.
+- **Home folder.** Where the CLI keeps its settings, login and conversations: `CLAUDE_CONFIG_DIR` for Claude Code, `CODEX_HOME` for Codex. Automatic uses the folder the workbench's environment names, or else the CLI's default (`~/.claude`, `~/.codex`). Choose a folder to keep a separate setup, such as another account. The folder must exist; create it first (`mkdir -p ~/.codex-work`).
+  - The sidebar lists the sessions of the home in use; choosing another lists that folder's sessions instead.
+  - A home can't change while one of that agent's sessions is at work (a turn running, an engine starting, a request waiting): try again when they finish. Idle sessions of that agent are put to sleep first.
+  - The workbench passes `CLAUDE_CONFIG_DIR` or `CODEX_HOME` only for a folder chosen here. Claude Code keeps a separate login for each folder name (on macOS, in the Keychain), so keep one spelling of a folder.
+  - Codex's databases follow `CODEX_SQLITE_HOME` when the workbench's environment sets it. A `sqlite_home` in Codex's `config.toml` is not read.
+- **Sign-in.** Each agent shows whether its CLI is signed in with that home, as the CLI itself reports it (`claude auth status`, `codex login status`), and a **Sign in** button:
+  - **Codex** shows a link and a one-time code: open the link on any device, sign in and enter the code.
+  - **Claude Code** shows a link to its sign-in page (pick a Claude subscription, the Anthropic Console or single sign-on first). Sign in there; the page then shows a code. Paste it into the box and choose **Submit code**.
+  - It works from any signed-in device, so a home can be signed in through a tunnel, from a phone. The CLI writes its own credentials into its home. The workbench never reads or keeps them, and passes the code you paste straight to the CLI. A sign-in left waiting ends after 10 minutes; **Cancel sign-in** ends it at once.
+  - The command for a terminal on this computer is shown too, with its home.
+- Changes apply as sessions start: a new session, or one woken from sleep. Running sessions keep their program until they sleep. Any signed-in device can change these settings.
 
 ## Appearance
 

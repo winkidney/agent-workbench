@@ -112,12 +112,22 @@ describe("about helpers", () => {
 });
 
 describe("settings tabs", () => {
-  it("is a tablist with one selected tab, and marks unsaved access changes", () => {
+  it("is a tablist with one selected tab, and marks tabs with unsaved changes", () => {
     const html = renderToStaticMarkup(
-      <SettingsTabs tab="about" dirty onSelect={() => {}} />,
+      <SettingsTabs tab="about" dirty={{ access: true }} onSelect={() => {}} />,
     );
     expect(html).toContain('role="tablist"');
-    expect(html.match(/role="tab"/g)?.length).toBe(3);
+    expect(html.match(/role="tab"/g)?.length).toBe(4);
+    expect(html.match(/tab-dot/g)?.length).toBe(1);
+    expect(
+      renderToStaticMarkup(
+        <SettingsTabs
+          tab="general"
+          dirty={{ agents: true, access: true }}
+          onSelect={() => {}}
+        />,
+      ).match(/tab-dot/g)?.length,
+    ).toBe(2);
     expect(html).toContain(
       'id="settings-tab-about" aria-selected="true" aria-controls="settings-panel-about" tabindex="0"',
     );
@@ -125,9 +135,45 @@ describe("settings tabs", () => {
     expect(html).toContain("tab-dot");
     expect(
       renderToStaticMarkup(
-        <SettingsTabs tab="general" dirty={false} onSelect={() => {}} />,
+        <SettingsTabs tab="general" dirty={{}} onSelect={() => {}} />,
       ),
     ).not.toContain("tab-dot");
+  });
+
+  it("says where an agent's program and home come from", () => {
+    const html = renderToStaticMarkup(
+      <AgentRow
+        agent={{
+          name: "claude",
+          path: "/opt/claude",
+          version: "2.1.322 (Claude Code)",
+          source: "setting",
+          home: "/home/u/.claude-work",
+          homeSource: "setting",
+        }}
+      />,
+    );
+    expect(html).toContain("Program chosen in Settings.");
+    expect(html).toContain("Home: /home/u/.claude-work (chosen in Settings)");
+    const report = diagnostics({
+      workbench: { version: "v1", instance: "agent-workbench-17881" },
+      agents: [
+        {
+          name: "codex",
+          path: "/bin/codex",
+          version: "codex-cli 1",
+          source: "setting",
+          home: "/c",
+          homeSource: "environment",
+        },
+      ],
+      data: {},
+    });
+    expect(report).toContain("instance: agent-workbench-17881");
+    expect(report).toContain(
+      "codex: /bin/codex (codex-cli 1) [chosen in Settings]",
+    );
+    expect(report).toContain("codex home: /c (environment)");
   });
 
   it("shows an agent that is missing, and features a CLI lacks", () => {

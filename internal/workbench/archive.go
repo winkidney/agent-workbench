@@ -83,8 +83,8 @@ func (m *Manager) threadOp(id, method string) error {
 	return nil
 }
 
-func codexThreadRequest(method string, params map[string]any) error {
-	return withCodexClient("workbench_threads", func(request codexRequest) error {
+func (m *Manager) codexThreadRequest(method string, params map[string]any) error {
+	return m.catalog.withCodexClient("workbench_threads", func(request codexRequest) error {
 		_, err := request("thread", method, params)
 		return err
 	})

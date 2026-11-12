@@ -209,8 +209,47 @@ func scanFile(path string, row *activityRow, m *subprojectMatcher, budget int64)
 	return read
 }
 
+// scanCompressed indexes a compressed record. It does not change, so it is
+// read once, from its start: bytes already counted (perhaps while it was
+// still plain) are decoded and skipped. Unless first in a pass, a record
+// that does not fit the budget waits for a pass that has room.
+func scanCompressed(f recordFile, row *activityRow, m *subprojectMatcher, budget int64, first bool) int64 {
+	size, known := zstdSize(f.Path)
+	if known && row.offset >= size {
+		return 0
+	}
+	if !known && row.path == f.Path && row.offset > 0 {
+		return 0
+	}
+	if !first && known && size-row.offset > budget {
+		return 0
+	}
+	r, err := f.open()
+	if err != nil {
+		return 0
+	}
+	defer r.Close()
+	skipped := int64(0)
+	if row.offset > 0 {
+		if skipped, err = io.CopyN(io.Discard, r, row.offset); err != nil {
+			return 0
+		}
+	}
+	read, err := eachRecordLine(r, true, toolRecord, func(line []byte) {
+		if len(line) < 8<<20 {
+			m.count(line, row.counts)
+		}
+	})
+	if err != nil {
+		return 0
+	}
+	row.path = f.Path
+	row.offset += read
+	return skipped + read
+}
+
 // Scan indexes project sessions within a byte budget per pass.
-func (a *ActivityIndex) Scan(sessions []Session, files map[string]string, budget int64) {
+func (a *ActivityIndex) Scan(sessions []Session, files map[string]recordFile, budget int64) {
 	namespaces := map[string]bool{}
 	for _, s := range sessions {
 		if s.Origin == "project" && s.ParentID == "" {
@@ -218,12 +257,13 @@ func (a *ActivityIndex) Scan(sessions []Session, files map[string]string, budget
 		}
 	}
 	matchers := map[string]*subprojectMatcher{}
+	first := true
 	for _, s := range sessions {
 		if budget <= 0 {
 			return
 		}
-		path := files[s.ID]
-		if path == "" || s.ParentID != "" || s.Origin != "project" || s.Workspace == "" {
+		file, ok := files[s.ID]
+		if !ok || s.ParentID != "" || s.Origin != "project" || s.Workspace == "" {
 			continue
 		}
 		m, ok := matchers[s.Workspace]
@@ -234,8 +274,15 @@ func (a *ActivityIndex) Scan(sessions []Session, files map[string]string, budget
 		if m == nil {
 			continue
 		}
-		row := a.load(s.ID, path)
-		if used := scanFile(path, &row, m, budget); used > 0 {
+		row := a.load(s.ID, file.Path)
+		var used int64
+		if file.Zstd {
+			used = scanCompressed(file, &row, m, budget, first)
+		} else {
+			used = scanFile(file.Path, &row, m, budget)
+		}
+		if used > 0 {
+			first = false
 			budget -= used
 			a.save(s.ID, row)
 		}
@@ -246,10 +293,12 @@ func (a *ActivityIndex) load(id, path string) activityRow {
 	row := activityRow{path: path, counts: map[string]int{}}
 	var raw, saved string
 	if a.store.db.QueryRow(`SELECT path,offset,counts FROM session_activity WHERE id=?`, id).Scan(&saved, &row.offset, &raw) == nil {
-		if saved != path {
-			row.offset = 0
-		} else {
+		// A record compressed since keeps its content: continue counting.
+		if saved == path || saved+".zst" == path {
+			row.path = saved
 			_ = json.Unmarshal([]byte(raw), &row.counts)
+		} else {
+			row.offset = 0
 		}
 	}
 	return row

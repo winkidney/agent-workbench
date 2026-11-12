@@ -24,6 +24,12 @@ type NativeCatalog struct {
 	paths                 map[string]string
 	updated               time.Time
 	CodexHome, ClaudeHome string
+	// Where Codex keeps its databases, when not in its home
+	// (CODEX_SQLITE_HOME).
+	CodexSQLiteHome string
+	// startCodex starts a read-only app-server (the manager's chosen
+	// program and home); replaced in tests.
+	startCodex func(name string) (*codexClient, error)
 }
 
 func NewNativeCatalog() *NativeCatalog {
@@ -35,7 +41,36 @@ func NewNativeCatalog() *NativeCatalog {
 	if b == "" {
 		b = filepath.Join(home, ".claude")
 	}
-	return &NativeCatalog{CodexHome: a, ClaudeHome: b, paths: map[string]string{}}
+	return &NativeCatalog{CodexHome: a, ClaudeHome: b, CodexSQLiteHome: os.Getenv("CODEX_SQLITE_HOME"), paths: map[string]string{}, startCodex: startCodexClient}
+}
+
+// codexStatePath is Codex's thread index.
+func (c *NativeCatalog) codexStatePath() string {
+	dir := c.CodexSQLiteHome
+	if dir == "" {
+		dir = c.CodexHome
+	}
+	return filepath.Join(dir, "state_5.sqlite")
+}
+
+// codexState opens Codex's thread index read-only.
+func (c *NativeCatalog) codexState() (*sql.DB, error) {
+	c.mu.Lock()
+	path := c.codexStatePath()
+	c.mu.Unlock()
+	return openCodexState(path)
+}
+
+func openCodexState(path string) (*sql.DB, error) {
+	if _, err := os.Stat(path); err != nil {
+		return nil, err
+	}
+	db, err := sql.Open("sqlite", "file:"+filepath.ToSlash(path)+"?mode=ro")
+	if err != nil {
+		return nil, err
+	}
+	db.SetMaxOpenConns(1)
+	return db, nil
 }
 func nativeKey(agent, id string) string { return agent + ":" + id }
 func (c *NativeCatalog) List() ([]Session, error) {
@@ -46,13 +81,7 @@ func (c *NativeCatalog) List() ([]Session, error) {
 	}
 	out := []Session{}
 	paths := map[string]string{}
-	dbPath := filepath.Join(c.CodexHome, "state_5.sqlite")
-	if _, err := os.Stat(dbPath); err == nil {
-		db, err := sql.Open("sqlite", "file:"+filepath.ToSlash(dbPath)+"?mode=ro")
-		if err != nil {
-			return nil, err
-		}
-		db.SetMaxOpenConns(1)
+	if db, err := openCodexState(c.codexStatePath()); err == nil {
 		// Archived threads too: the sidebar shows them on request.
 		rows, err := db.Query(`SELECT id,cwd,coalesce(nullif(name,''),title,''),updated_at,source,rollout_path,archived FROM threads ORDER BY updated_at DESC`)
 		if err != nil {
@@ -61,21 +90,22 @@ func (c *NativeCatalog) List() ([]Session, error) {
 		}
 		for rows.Next() {
 			var s Session
-			var timestamp int64
-			var source, path string
-			var archived int
-			if err := rows.Scan(&s.NativeID, &s.Cwd, &s.Title, &timestamp, &source, &path, &archived); err != nil {
+			// Any column may be NULL in a row Codex is still filling in.
+			var cwd, title, source, path sql.NullString
+			var timestamp, archived sql.NullInt64
+			if err := rows.Scan(&s.NativeID, &cwd, &title, &timestamp, &source, &path, &archived); err != nil || s.NativeID == "" {
 				continue
 			}
-			s.Archived = archived != 0
+			s.Cwd, s.Title = cwd.String, title.String
+			s.Archived = archived.Int64 != 0
 			s.Agent = "codex"
 			s.ID = nativeKey(s.Agent, s.NativeID)
-			s.Updated = time.Unix(timestamp, 0).UTC().Format(time.RFC3339)
+			s.Updated = time.Unix(timestamp.Int64, 0).UTC().Format(time.RFC3339)
 			s.Status = "sleeping"
-			s.Source = source
-			if strings.Contains(source, "subagent") {
+			s.Source = source.String
+			if strings.Contains(s.Source, "subagent") {
 				var value map[string]any
-				_ = json.Unmarshal([]byte(source), &value)
+				_ = json.Unmarshal([]byte(s.Source), &value)
 				spawn := obj(obj(obj(value["subagent"])["thread_spawn"]))
 				s.ParentID = str(spawn["parent_thread_id"])
 				if s.ParentID == "" {
@@ -91,7 +121,7 @@ func (c *NativeCatalog) List() ([]Session, error) {
 				}
 				s.ParentID = nativeKey("codex", s.ParentID)
 			}
-			paths[s.ID] = path
+			paths[s.ID] = path.String
 			out = append(out, s)
 		}
 		rows.Close()
@@ -292,21 +322,43 @@ func decodeClaudeProject(name string) string {
 	return found
 }
 
-// Files returns the native transcript path of each listed session.
-func (c *NativeCatalog) Files() map[string]string {
+// Files returns the native record of each listed session that has one.
+func (c *NativeCatalog) Files() map[string]recordFile {
 	if _, err := c.List(); err != nil {
 		return nil
 	}
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	out := make(map[string]string, len(c.paths))
+	paths := make(map[string]string, len(c.paths))
 	for id, p := range c.paths {
-		if p != "" && !filepath.IsAbs(p) {
-			p = filepath.Join(c.CodexHome, p)
+		paths[id] = p
+	}
+	home := c.CodexHome
+	c.mu.Unlock()
+	out := make(map[string]recordFile, len(paths))
+	for id, p := range paths {
+		if f, ok := recordOf(home, id, p); ok {
+			out[id] = f
 		}
-		out[id] = p
 	}
 	return out
+}
+
+// record is a listed session's native record as it is on disk now.
+func (c *NativeCatalog) record(id string) (recordFile, bool) {
+	c.mu.Lock()
+	p, home := c.paths[id], c.CodexHome
+	c.mu.Unlock()
+	return recordOf(home, id, p)
+}
+
+func recordOf(codexHome, id, recorded string) (recordFile, bool) {
+	if strings.HasPrefix(id, "codex:") {
+		return codexRecord(codexHome, recorded)
+	}
+	if recorded == "" || !regularFile(recorded) {
+		return recordFile{}, false
+	}
+	return recordFile{Path: recorded}, true
 }
 
 // IndexActivity runs one bounded pass of the related-project index.
@@ -393,7 +445,26 @@ func (c *NativeCatalog) History(s Session, before string, limit int) (HistoryPag
 		return HistoryPage{}, err
 	}
 	if s.Agent == "codex" {
-		return codexHistory(s, before, limit)
+		page, err := c.codexHistory(s, before, limit)
+		if err != nil {
+			// Codex lists threads whose records are gone (deleted, or from
+			// a home that no longer has them): say so instead of failing.
+			file, ok := c.record(s.ID)
+			if !ok {
+				if gone, ok := c.codexRemains(s.NativeID); ok {
+					return HistoryPage{Events: []Event{}, RecordMissing: &gone}, nil
+				}
+			}
+			// Its index names the record under another home: Codex itself
+			// cannot open it there.
+			c.mu.Lock()
+			recorded := c.paths[s.ID]
+			c.mu.Unlock()
+			if ok && recorded != "" && filepath.IsAbs(recorded) && !strings.HasPrefix(file.Path, recorded) {
+				return page, fmt.Errorf("Codex cannot open this conversation: its index names the record as %s, which is not where it is now (%s). %w", recorded, file.Path, err)
+			}
+		}
+		return page, err
 	}
 	c.mu.Lock()
 	path := c.paths[s.ID]
@@ -438,8 +509,18 @@ type codexClient struct {
 	mu    sync.Mutex
 }
 
+// startCodexClient starts the codex on PATH, as the workbench's own
+// environment has it.
 func startCodexClient(name string) (*codexClient, error) {
-	cmd := exec.Command("codex", "app-server")
+	run, err := runFor("codex", AgentSetup{})
+	if err != nil {
+		return nil, err
+	}
+	return startCodexClientWith(run, name)
+}
+
+func startCodexClientWith(run agentRun, name string) (*codexClient, error) {
+	cmd := run.command("app-server")
 	in, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err
@@ -510,8 +591,8 @@ func (c *codexClient) Close() {
 }
 
 // withCodexClient runs fn against a short-lived app-server.
-func withCodexClient(name string, fn func(codexRequest) error) error {
-	c, err := startCodexClient(name)
+func (c0 *NativeCatalog) withCodexClient(name string, fn func(codexRequest) error) error {
+	c, err := c0.startCodex(name)
 	if err != nil {
 		return err
 	}
@@ -520,9 +601,9 @@ func withCodexClient(name string, fn func(codexRequest) error) error {
 }
 
 // A short-lived read-only protocol client: never resumes a thread or calls a model.
-func codexHistory(s Session, before string, limit int) (HistoryPage, error) {
+func (c *NativeCatalog) codexHistory(s Session, before string, limit int) (HistoryPage, error) {
 	var page HistoryPage
-	err := withCodexClient("workbench_history", func(request codexRequest) error {
+	err := c.withCodexClient("workbench_history", func(request codexRequest) error {
 		var e error
 		page, e = codexHistoryPage(request, s, before, limit)
 		return e
@@ -712,10 +793,7 @@ func (m *Manager) NativeList() ([]Session, error) {
 		if s.Status != "external" {
 			continue
 		}
-		m.catalog.mu.Lock()
-		path := m.catalog.paths[s.ID]
-		m.catalog.mu.Unlock()
-		if running, _ := m.externalRunning(s, path); path != "" && running {
+		if running, _ := m.externalRunning(s); running {
 			list[i].Status = "external_running"
 		}
 	}
@@ -731,7 +809,10 @@ func (c *NativeCatalog) Workspaces() ([]string, error) {
 	for _, s := range list {
 		set[s.Workspace] = true
 	}
-	db, err := sql.Open("sqlite", "file:"+filepath.Join(c.CodexHome, "state_5.sqlite")+"?mode=ro")
+	c.mu.Lock()
+	statePath := c.codexStatePath()
+	c.mu.Unlock()
+	db, err := openCodexState(statePath)
 	if err == nil {
 		defer db.Close()
 		rows, e := db.Query("SELECT path FROM project_roots")

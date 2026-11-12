@@ -43,6 +43,8 @@ type Telemetry struct {
 	Estimated bool    `json:"estimated"`
 	Updated   string  `json:"updated"`
 	Scope     string  `json:"scope"`
+	// The usage is being read from a compressed record; it follows.
+	Reading bool `json:"reading,omitempty"`
 	// The session's /goal, if any (goal.go).
 	Goal *Goal `json:"goal,omitempty"`
 	// What runs outside the turns, and recently ended (background.go).
@@ -96,13 +98,13 @@ func (m *Manager) SetOptions(id string, o Options) error {
 }
 
 // Read-only metadata probes do not create threads, send prompts or start MCP servers.
-func probe(agent, cwd string) (*exec.Cmd, func(string, any) (map[string]any, error), func(), error) {
+func probe(run agentRun, agent, cwd string) (*exec.Cmd, func(string, any) (map[string]any, error), func(), error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	args := []string{"app-server"}
 	if agent == "claude" {
 		args = []string{"-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--strict-mcp-config", "--mcp-config", `{"mcpServers":{}}`}
 	}
-	cmd := exec.Command(agent, args...)
+	cmd := run.command(args...)
 	cmd.Dir = cwd
 	in, e := cmd.StdinPipe()
 	if e != nil {
@@ -172,6 +174,10 @@ func (m *Manager) Metadata(agent, cwd string) metadata {
 	m.metaMu.Lock()
 	defer m.metaMu.Unlock()
 	key := agent + ":" + cwd
+	if k := m.cacheKey(agent); k != "" {
+		// Models, skills and permissions come from the program and home.
+		key = agent + ":" + k + ":" + cwd
+	}
 	if m.metadata == nil {
 		m.metadata = map[string]metadata{}
 	}
@@ -179,7 +185,12 @@ func (m *Manager) Metadata(agent, cwd string) metadata {
 		return v
 	}
 	result := metadata{Models: []any{}, Permissions: []any{}, Modes: []any{}, at: time.Now(), Updated: time.Now().UTC().Format(time.RFC3339)}
-	_, call, close, e := probe(agent, cwd)
+	run, e := m.cli(agent)
+	if e != nil {
+		result.Error = e.Error()
+		return result
+	}
+	_, call, close, e := probe(run, agent, cwd)
 	if e != nil {
 		result.Error = e.Error()
 		return result
@@ -368,7 +379,9 @@ func (m *Manager) telemetry(id string) Telemetry {
 	m.mu.Unlock()
 	if !live {
 		native := m.nativeUsage(id)
-		if native.Total != nil && native.Updated > t.Updated {
+		if native.Reading {
+			t.Reading = true
+		} else if native.Total != nil && native.Updated > t.Updated {
 			t = native
 		}
 	}
@@ -446,7 +459,7 @@ func (m *Manager) track(r *runtime, v map[string]any) {
 	if v["type"] == "system" && v["subtype"] == "init" {
 		r.effective = claudeInitOptions(r.effective, v)
 		// Skills and terminal-only commands for the "$" and "/" menus.
-		m.store.setting("claude-init:"+r.session.Cwd, claudeInitInfo{Skills: strs(v["skills"]), Terminal: strs(v["terminal_slash_commands"])})
+		m.store.setting(m.claudeInitKey(r.session.Cwd), claudeInitInfo{Skills: strs(v["skills"]), Terminal: strs(v["terminal_slash_commands"])})
 	}
 	if v["type"] == "assistant" {
 		model := str(obj(v["message"])["model"])
@@ -580,12 +593,16 @@ func (u *usageScan) scan(f *os.File, agent string) error {
 	}
 }
 
-func (u *usageScan) add(line []byte, agent string) {
+// usageLine is whether a record line can carry usage.
+func usageLine(line []byte, agent string) bool {
 	if agent == "codex" {
-		if !bytes.Contains(line, []byte(`"token_count"`)) && !bytes.Contains(line, []byte(`"turn_context"`)) {
-			return
-		}
-	} else if !bytes.Contains(line, []byte(`"assistant"`)) {
+		return bytes.Contains(line, []byte(`"token_count"`)) || bytes.Contains(line, []byte(`"turn_context"`))
+	}
+	return bytes.Contains(line, []byte(`"assistant"`))
+}
+
+func (u *usageScan) add(line []byte, agent string) {
+	if !usageLine(line, agent) {
 		return
 	}
 	var v map[string]any
@@ -639,9 +656,11 @@ func (m *Manager) nativeUsage(id string) Telemetry {
 	if !ok {
 		return t
 	}
-	m.catalog.mu.Lock()
-	path := m.catalog.paths[id]
-	m.catalog.mu.Unlock()
+	file, ok := m.catalog.record(id)
+	if !ok {
+		return t
+	}
+	path := file.Path
 	info, e := os.Stat(path)
 	if e != nil {
 		return t
@@ -649,6 +668,9 @@ func (m *Manager) nativeUsage(id string) Telemetry {
 	key := "history_usage:" + id
 	// The version prefix invalidates summaries cached by older builds.
 	stamp := fmt.Sprintf("v2:%d:%d", info.Size(), info.ModTime().UnixNano())
+	if file.Zstd {
+		stamp = "z" + stamp
+	}
 	m.usageMu.Lock()
 	u := m.usage[id]
 	m.usageMu.Unlock()
@@ -660,6 +682,9 @@ func (m *Manager) nativeUsage(id string) Telemetry {
 		m.store.readSetting(key, &cached)
 		if cached.Stamp == stamp {
 			return cached.Data
+		}
+		if file.Zstd {
+			return m.compressedUsage(id, s.Agent, file, info.ModTime(), stamp, key)
 		}
 		m.usageMu.Lock()
 		if m.usage == nil {
@@ -704,6 +729,50 @@ func (m *Manager) nativeUsage(id string) Telemetry {
 	return t
 }
 
+// One compressed record is read at a time: the largest decompress to
+// gigabytes.
+var compressedReads = make(chan struct{}, 1)
+
+// compressedUsage reads usage from a compressed record in the background,
+// once: it does not change, so the summary is kept until it does. Until
+// then the telemetry says it is being read.
+func (m *Manager) compressedUsage(id, agent string, file recordFile, mod time.Time, stamp, key string) Telemetry {
+	m.usageMu.Lock()
+	if m.usageReading == nil {
+		m.usageReading = map[string]bool{}
+	}
+	busy := m.usageReading[id]
+	m.usageReading[id] = true
+	m.usageMu.Unlock()
+	if !busy {
+		go func() {
+			defer func() {
+				m.usageMu.Lock()
+				delete(m.usageReading, id)
+				m.usageMu.Unlock()
+			}()
+			compressedReads <- struct{}{}
+			defer func() { <-compressedReads }()
+			r, err := file.open()
+			if err != nil {
+				return
+			}
+			defer r.Close()
+			u := &usageScan{seen: map[string]map[string]any{}}
+			if _, err := eachRecordLine(r, true, func(line []byte) bool { return usageLine(line, agent) }, func(line []byte) { u.add(line, agent) }); err != nil {
+				return
+			}
+			t := u.result()
+			t.Updated = mod.UTC().Format(time.RFC3339)
+			m.store.setting(key, struct {
+				Stamp string
+				Data  Telemetry
+			}{stamp, t})
+		}()
+	}
+	return Telemetry{Scope: "Main conversation (native history)", Reading: true}
+}
+
 // claudeInitInfo is what Claude's system/init lists for one directory.
 type claudeInitInfo struct {
 	Skills   []string `json:"skills"`
@@ -715,21 +784,35 @@ type claudeInitInfo struct {
 // without saving a session (no model call: verified cost 0, no transcript).
 func (m *Manager) claudeInit(cwd string) claudeInitInfo {
 	var info claudeInitInfo
-	m.store.readSetting("claude-init:"+cwd, &info)
+	key := m.claudeInitKey(cwd)
+	m.store.readSetting(key, &info)
 	if info.Skills != nil {
 		return info
 	}
-	if probed, err := probeClaudeInit(cwd); err == nil {
+	run, err := m.cli("claude")
+	if err != nil {
+		return info
+	}
+	if probed, err := probeClaudeInit(run, cwd); err == nil {
 		info = probed
-		m.store.setting("claude-init:"+cwd, info)
+		m.store.setting(key, info)
 	}
 	return info
 }
 
-func probeClaudeInit(cwd string) (claudeInitInfo, error) {
+// claudeInitKey keeps what Claude lists per directory, and per program and
+// home when Settings chose them: skills and commands come from the home.
+func (m *Manager) claudeInitKey(cwd string) string {
+	if k := m.cacheKey("claude"); k != "" {
+		return "claude-init:" + k + ":" + cwd
+	}
+	return "claude-init:" + cwd
+}
+
+func probeClaudeInit(run agentRun, cwd string) (claudeInitInfo, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	cmd := exec.Command("claude", "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--no-session-persistence", "--strict-mcp-config", "--mcp-config", `{"mcpServers":{}}`)
+	cmd := run.command("-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--no-session-persistence", "--strict-mcp-config", "--mcp-config", `{"mcpServers":{}}`)
 	cmd.Dir = cwd
 	in, err := cmd.StdinPipe()
 	if err != nil {

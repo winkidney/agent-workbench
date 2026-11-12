@@ -34,6 +34,11 @@ type aboutAgent struct {
 	// Claude: the optional flags it takes, and those it lacks.
 	Features []string `json:"features,omitempty"`
 	Missing  []string `json:"missing,omitempty"`
+	// Where the program comes from ("setting" or "path"), the home it uses
+	// and where that comes from ("setting", "environment" or "default").
+	Source     string `json:"source,omitempty"`
+	Home       string `json:"home,omitempty"`
+	HomeSource string `json:"homeSource,omitempty"`
 }
 
 // cliVersions keeps one --version answer per agent, for its binary's path,
@@ -71,13 +76,18 @@ func cliVersion(name, path string) (version, failure string) {
 	return version, failure
 }
 
-func aboutAgentOf(name string) aboutAgent {
-	a := aboutAgent{Name: name}
-	path, err := exec.LookPath(name)
+func (m *Manager) aboutAgent(name string) aboutAgent {
+	a := aboutAgent{Name: name, Source: "path"}
+	a.Home, a.HomeSource = m.agentHome(name)
+	if m.Agents().of(name).Path != "" {
+		a.Source = "setting"
+	}
+	run, err := m.cli(name)
 	if err != nil {
 		a.Error = "not found on PATH"
 		return a
 	}
+	path := run.Binary
 	a.Path = path
 	a.Version, a.Error = cliVersion(name, path)
 	if name == "claude" {
@@ -103,7 +113,7 @@ func (s *Server) about() map[string]any {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			agents[i] = aboutAgentOf(name)
+			agents[i] = s.Manager.aboutAgent(name)
 		}()
 	}
 	wg.Wait()
@@ -124,6 +134,7 @@ func (s *Server) about() map[string]any {
 		"os":       goruntime.GOOS,
 		"arch":     goruntime.GOARCH,
 		"dataDir":  s.Manager.store.dir,
+		"instance": instance,
 		"listen":   s.listen,
 		"engines":  s.mode,
 		"repo":     "https://github.com/winkidney/agent-workbench",
@@ -163,7 +174,7 @@ func (s *Server) signedInLocked() int {
 // (s.mu held); file previews granted to them end with them (files.go).
 func (s *Server) signOutOthersLocked(r *http.Request) int {
 	keep := ""
-	if c, err := r.Cookie("workbench_session"); err == nil {
+	if c, err := r.Cookie(sessionCookie); err == nil {
 		if expires, ok := s.auth[c.Value]; ok && time.Now().Before(expires) {
 			keep = c.Value
 		}

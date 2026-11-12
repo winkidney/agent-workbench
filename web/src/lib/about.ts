@@ -8,6 +8,10 @@ export type AboutAgent = {
   error?: string;
   features?: string[];
   missing?: string[];
+  // Where the program and the home come from (Settings → Agents).
+  source?: "setting" | "path";
+  home?: string;
+  homeSource?: "setting" | "environment" | "default";
 };
 export type About = {
   workbench: {
@@ -16,6 +20,7 @@ export type About = {
     go?: string;
     platform?: string;
     dataDir?: string;
+    instance?: string;
     listen?: string;
     engines?: string;
     started?: string;
@@ -129,15 +134,18 @@ export function diagnostics(a: About, now = Date.now()): string {
     w.build && `web build: ${w.build}`,
     w.started && `running for: ${uptime(w.started, now)}`,
     w.engines && `engines: ${ENGINES[w.engines] ?? w.engines}`,
+    w.instance && `instance: ${w.instance}`,
     w.listen && `listen: ${w.listen}`,
     w.dataDir && `data dir: ${w.dataDir}`,
     w.autostart && `autostart: ${w.autostart}`,
-    ...a.agents.map((g) =>
+    ...a.agents.flatMap((g) => [
       g.path
         ? `${g.name}: ${g.path} (${g.version || g.error || "unknown version"})` +
+          (g.source === "setting" ? " [chosen in Settings]" : "") +
           (g.missing?.length ? ` — lacks ${g.missing.join(", ")}` : "")
         : `${g.name}: ${g.error ?? "not found"}`,
-    ),
+      g.home && `${g.name} home: ${g.home} (${g.homeSource ?? "default"})`,
+    ]),
     a.data.storageBytes !== undefined &&
       `local data: ${bytes(a.data.storageBytes)}, events kept ${a.data.retentionDays ?? 7} days`,
     a.data.sessions &&

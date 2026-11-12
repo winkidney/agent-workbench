@@ -108,7 +108,7 @@ func decode(w http.ResponseWriter, r *http.Request, v any) error {
 	return json.NewDecoder(http.MaxBytesReader(w, r.Body, 2*1024*1024)).Decode(v)
 }
 func (s *Server) validSessionLocked(r *http.Request) bool {
-	c, err := r.Cookie("workbench_session")
+	c, err := r.Cookie(sessionCookie)
 	if err != nil {
 		return false
 	}
@@ -163,7 +163,7 @@ func (s *Server) ensurePairingCode() error {
 	return nil
 }
 func (s *Server) sessionCookie(w http.ResponseWriter, key string) {
-	http.SetCookie(w, &http.Cookie{Name: "workbench_session", Value: key, HttpOnly: true, SameSite: http.SameSiteStrictMode, Path: "/", MaxAge: 43200})
+	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: key, HttpOnly: true, SameSite: http.SameSiteStrictMode, Path: "/", MaxAge: 43200})
 }
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -298,6 +298,93 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/api/")
 	m := s.Manager
 	switch {
+	case path == "agents/setup":
+		// Which program runs each agent and where it keeps its data.
+		switch r.Method {
+		case "GET":
+		case "PUT":
+			var v AgentsSetup
+			if err := decode(w, r, &v); err != nil {
+				bad(w, err)
+				return
+			}
+			if err := m.SetAgents(v); err != nil {
+				var conflict conflictError
+				if errors.As(err, &conflict) {
+					http.Error(w, err.Error(), http.StatusConflict)
+					return
+				}
+				bad(w, err)
+				return
+			}
+		default:
+			http.Error(w, "method not allowed", 405)
+			return
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		writeJSON(w, m.AgentsView())
+	case strings.HasPrefix(path, "agents/") && (strings.HasSuffix(path, "/check") || strings.Contains(path, "/login")):
+		parts := strings.Split(path, "/")
+		if len(parts) < 3 || (parts[1] != "codex" && parts[1] != "claude") {
+			http.NotFound(w, r)
+			return
+		}
+		agent := parts[1]
+		switch {
+		case len(parts) == 3 && parts[2] == "check" && r.Method == "POST":
+			var v AgentSetup
+			if err := decode(w, r, &v); err != nil {
+				bad(w, err)
+				return
+			}
+			view, err := m.CheckAgent(agent, v)
+			if err != nil {
+				bad(w, err)
+				return
+			}
+			writeJSON(w, view)
+		case len(parts) == 3 && parts[2] == "login":
+			switch r.Method {
+			case "POST":
+				var v struct{ Method string }
+				if err := decode(w, r, &v); err != nil {
+					bad(w, err)
+					return
+				}
+				st, err := m.StartLogin(agent, v.Method)
+				if err != nil {
+					bad(w, err)
+					return
+				}
+				writeJSON(w, st)
+			case "GET":
+				w.Header().Set("Cache-Control", "no-store")
+				if st := m.loginState(agent); st != nil {
+					writeJSON(w, st)
+				} else {
+					writeJSON(w, loginState{State: "none"})
+				}
+			case "DELETE":
+				m.CancelLogin(agent)
+				writeJSON(w, map[string]any{"ok": true})
+			default:
+				http.Error(w, "method not allowed", 405)
+			}
+		case len(parts) == 4 && parts[2] == "login" && parts[3] == "code" && r.Method == "POST":
+			var v struct{ Code string }
+			if err := decode(w, r, &v); err != nil {
+				bad(w, err)
+				return
+			}
+			st, err := m.LoginCode(agent, v.Code)
+			if err != nil {
+				bad(w, err)
+				return
+			}
+			writeJSON(w, st)
+		default:
+			http.NotFound(w, r)
+		}
 	case strings.HasPrefix(path, "agents/"):
 		parts := strings.Split(path, "/")
 		if len(parts) != 3 || (parts[1] != "codex" && parts[1] != "claude") {
@@ -682,10 +769,7 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if !live && m.isExternal(native) {
-			m.catalog.mu.Lock()
-			path := m.catalog.paths[native.ID]
-			m.catalog.mu.Unlock()
-			live, _ = m.externalRunning(native, path)
+			live, _ = m.externalRunning(native)
 		}
 		// A running turn's unfinished tools are still running, and the
 		// separate reader reports a running Codex turn as interrupted.

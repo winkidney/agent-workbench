@@ -17,6 +17,8 @@ import (
 // launched from: it decides the project grouping and where resume runs; later
 // working-directory changes inside the session are ignored.
 type Session struct {
+	// How to start this session's CLI, set as its engine starts.
+	run       agentRun
 	Workspace string `json:"workspace"`
 	// Origin: project, automation (codex exec), temporary or chat (home / app chats).
 	Origin string `json:"origin,omitempty"`

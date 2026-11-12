@@ -7,6 +7,8 @@ export type Session = {
   readOnly?: boolean;
   // Archived in the native client (Codex); read-only until unarchived.
   archived?: boolean;
+  // Its native record is gone (set by the page from the history).
+  recordMissing?: boolean;
   source?: string;
   id: string;
   agent: "claude" | "codex";

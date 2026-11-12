@@ -19,6 +19,14 @@ type Page = {
   hasMore: boolean;
   // A turn is in flight here or in another client (decided by the server).
   running?: boolean;
+  // The native record is gone; what the CLI's index still keeps.
+  recordMissing?: RecordRemains;
+};
+
+export type RecordRemains = {
+  firstMessage?: string;
+  tokensUsed?: number;
+  created?: string;
 };
 
 type Action =
@@ -101,6 +109,9 @@ export function useTranscript(
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadingEarlier, setLoadingEarlier] = useState(false);
+  const [recordMissing, setRecordMissing] = useState<RecordRemains | null>(
+    null,
+  );
   const [turnStarted, setTurnStarted] = useState<number | null>(null);
   const [pendingQueue, setQueue] = useState<{
     items: { id: string; text: string }[];
@@ -139,6 +150,7 @@ export function useTranscript(
     dispatch({ type: "reset" });
     setApprovals(new Map());
     setHasMore(false);
+    setRecordMissing(null);
     setLoading(true);
     setTurnStarted(null);
     setQueue({ items: [], paused: false });
@@ -162,6 +174,7 @@ export function useTranscript(
         });
         before.current = p.before;
         setHasMore(p.hasMore);
+        setRecordMissing(p.recordMissing ?? null);
       })
       .catch((e) => !cancelled && errorRef.current(e))
       .finally(() => !cancelled && setLoading(false));
@@ -324,5 +337,6 @@ export function useTranscript(
     external,
     turnStarted,
     queue: pendingQueue,
+    recordMissing,
   };
 }

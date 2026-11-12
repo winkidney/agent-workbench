@@ -476,3 +476,49 @@ These are maintainer notes on how each feature of Agent Workbench was verified, 
   - Screenshots at 4× device pixels: Default theme light and dark, Darcula dark and light.
   - The busy monitor's typing frames show the line at 2, 4, 6 and 8 px.
   - Reduced motion: two screenshots 450 ms apart were identical.
+
+## Agents settings, more than one workbench, and old Codex records
+
+- **Basis.** Claude Code 2.1.322 and Codex 0.167.1, read from their binaries and `--help`:
+  - `CLAUDE_CONFIG_DIR` moves Claude's whole data folder, `.claude.json` included. With it set, the macOS Keychain login is named after a hash of the exact string.
+  - `CODEX_HOME` moves Codex's, and must exist. `CODEX_SQLITE_HOME` or `sqlite_home` moves its databases.
+  - Logins without a terminal were tried in throwaway homes and cancelled before completing. `codex login --device-auth` prints a link and a one-time code. `claude auth login` prints its sign-in link and reads the code from a pipe; a wrong code fails with its own message.
+  - Codex compresses a rollout idle for 7 days to `.zst` (3,813 threads here only had one). It keeps the full rollout for paginated threads too. 259 threads from before 2026-07-30 have no rollout at all, and one names a file under another home.
+- **Before:**
+  - Programs came only from PATH, homes only from the environment at start.
+  - A second workbench clashed with the first: service, engine units and sign-in cookie. Its engines could not run as units, and `uninstall --purge` removed the shared program.
+  - Old compressed Codex sessions showed no usage, no related projects and no running state. Threads whose records were gone failed with an error.
+- **New tests:**
+  - **Go:**
+    - Where the program and home come from: setting, environment, default. A home variable is set only when one is chosen.
+    - An engine runs the chosen program with the chosen home.
+    - `doctor` reads the setting without opening the store for writing.
+    - Checks refuse a relative path, a missing file, a non-executable, another program's `--version` and a missing folder. A home change is refused (409) while that agent is at work.
+    - Signed-in devices may change the settings; signed-out ones may not.
+    - Sign-in from the page with fake CLIs: link and code, a pasted code reaching only the CLI's stdin, a wrong code's message, cancel, expiry. No browser, no display.
+    - Instances: name rules, `instance.json`, units bound to their own service, a cookie per instance, other login starts seen, the legacy unit recognized.
+    - A real second workbench started and stopped with only `--data-dir` and `--listen`.
+    - Codex records: compressed, moved and missing found as they are; usage read once from `.zst` and cached; NULL columns in the index kept.
+    - The related-project index counts a record compressed after it was indexed only once. A large compressed record waits for a pass with room.
+    - A held thread with only a compressed record asks app-server, every 2 s.
+    - The record line reader handles long and unfinished lines.
+  - **Vitest:** the setup helpers, sign-in wording, four tabs with a dot per unsaved tab, About's program and home sources and instance, the missing-record notice.
+- **Real checks** (development instances on your own CLIs; throwaway homes and sessions, deleted afterwards):
+  - The Agents tab in light and dark. A pinned Claude Code (`versions/2.1.322`) with an empty home and an empty Codex home were saved through the page:
+    - both read "Not signed in" with the terminal command for that home;
+    - the sidebar listed no sessions;
+    - About named the program and home chosen;
+    - a Claude session there ran `versions/2.1.322 -p …` with only `CLAUDE_CONFIG_DIR` set, and showed the CLI's own "Not logged in".
+  - Sign-in from the page for both empty homes: Codex showed its device link and code, Claude its sign-in link and the code box. Cancelling ended both CLIs.
+  - Back to automatic, all sessions returned. A Codex home change while a Codex turn ran was refused with the reason; the turn finished.
+  - A second workbench, `start --data-dir … --listen 127.0.0.1:17998`:
+    - it ran as `agent-workbench-17998.service`, and its engine as `agent-workbench-17998-session-….service` bound to it (this found and fixed the instance being named after the engine launcher was chosen);
+    - `stop`, `status` and `start` worked from `--data-dir` alone;
+    - one browser signed in to both on `agent.localhost` stayed signed in to both, with `workbench_session_17997` and `workbench_session_17998`.
+  - Old Codex sessions from `~/.codex`, read-only:
+    - usage from compressed records matched Codex's own `tokens_used` exactly (10,428,908; 1,527,296), with model and context window;
+    - the largest compressed record (6.45 GB, 9.5 GB decompressed) was read in 12.5 s, with the process at 39 MB at most;
+    - the related-project index had counted 99 compressed records (4.5 GB decompressed) within 40 minutes;
+    - a thread whose record is gone showed the notice with its first message and token count, with a read-only composer;
+    - the thread whose index names another home showed usage, and its history error now says where the record is.
+  - Found on the way: the files panel refused every path of a session whose folder is reached through a symbolic link; both sides are now resolved.

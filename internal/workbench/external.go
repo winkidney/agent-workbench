@@ -182,8 +182,13 @@ func (m *Manager) externalStatus(id, agent, path string) (bool, string) {
 // externalRunning is whether another client is running a turn in the
 // session. A Claude process reports busy or idle itself, which wins over
 // reading the record (a compaction summary, for one, looks like a prompt).
-func (m *Manager) externalRunning(s Session, path string) (bool, string) {
-	running, since := m.externalStatus(s.ID, s.Agent, path)
+// A compressed Codex record (one being restored as its thread resumes) says
+// nothing yet.
+func (m *Manager) externalRunning(s Session) (bool, string) {
+	running, since := false, ""
+	if file, ok := m.catalog.record(s.ID); ok && !file.Zstd {
+		running, since = m.externalStatus(s.ID, s.Agent, file.Path)
+	}
 	if s.Agent == "claude" {
 		switch m.catalog.ClaudeStatus(s) {
 		case "idle":
@@ -246,8 +251,11 @@ type externalTail struct {
 	polled   time.Time
 	sent     map[string]uint64
 	lastKey  string
-	claude   *claudeIndex
-	codex    *codexClient
+	// When records were last asked for while only a compressed record
+	// exists.
+	fetched time.Time
+	claude  *claudeIndex
+	codex   *codexClient
 }
 
 func (m *Manager) followExternal(id string) *externalTail {
@@ -273,16 +281,23 @@ func (t *externalTail) poll() *externalUpdate {
 	if !ok {
 		return nil
 	}
-	m.catalog.mu.Lock()
-	path := m.catalog.paths[t.id]
-	m.catalog.mu.Unlock()
+	file, ok := m.catalog.record(t.id)
+	if !ok {
+		return nil
+	}
+	path := file.Path
 	info, err := os.Stat(path)
-	if path == "" || err != nil {
+	if err != nil {
 		return nil
 	}
 	external := m.isExternal(s)
 	changed := info.Size() != t.size || !info.ModTime().Equal(t.mod)
 	t.size, t.mod = info.Size(), info.ModTime()
+	if file.Zstd {
+		// The thread is being resumed and its plain record restored: ask
+		// for new records every two seconds until it is.
+		changed = time.Since(t.fetched) >= 2*time.Second
+	}
 	first := !t.primed
 	t.primed = true
 	if !external && !t.external {
@@ -291,7 +306,7 @@ func (t *externalTail) poll() *externalUpdate {
 	}
 	u := &externalUpdate{Session: t.id, External: external, Status: s.Status}
 	if external {
-		u.Running, u.StartedAt = m.externalRunning(s, path)
+		u.Running, u.StartedAt = m.externalRunning(s)
 		u.Status = externalStatusName(u.Running)
 	}
 	stateChanged := external != t.external || u.Running != t.running
@@ -303,6 +318,7 @@ func (t *externalTail) poll() *externalUpdate {
 	if !changed && !stateChanged {
 		return nil
 	}
+	t.fetched = time.Now()
 	if events, err := t.tail(s, path, u.Running); err == nil {
 		u.Events, u.Reset = t.fresh(events)
 	}
@@ -322,7 +338,7 @@ func (t *externalTail) poll() *externalUpdate {
 func (t *externalTail) tail(s Session, path string, running bool) ([]Event, error) {
 	if s.Agent == "codex" {
 		if t.codex == nil {
-			c, err := startCodexClient("workbench_follow")
+			c, err := t.m.catalog.startCodex("workbench_follow")
 			if err != nil {
 				return nil, err
 			}

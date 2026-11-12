@@ -8,6 +8,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/winkidney/agent-workbench/internal/workbench"
 	"golang.org/x/sys/windows/registry"
 )
 
@@ -38,7 +39,7 @@ func stopService(config) (bool, error)          { return false, nil }
 // runCommand is the login command line: the windowless build, so no
 // console window opens.
 func runCommand(c config, exe string) string {
-	args := []string{backgroundExe(exe), "serve", "--data-dir", c.dataDir, "--listen", c.listen, "--idle", c.idle.String(), "--env-file", envPath(c)}
+	args := []string{backgroundExe(exe), "serve", "--name", c.name, "--data-dir", c.dataDir, "--listen", c.listen, "--idle", c.idle.String(), "--env-file", envPath(c)}
 	for i, a := range args {
 		args[i] = syscall.EscapeArg(a)
 	}
@@ -70,6 +71,33 @@ func uninstallAutostart(c config) error {
 		return err
 	}
 	return nil
+}
+
+// autostartFor is whether c's login start runs the workbench of dataDir.
+func autostartFor(c config, dataDir string) bool {
+	key, err := registry.OpenKey(registry.CURRENT_USER, runKey, registry.QUERY_VALUE)
+	if err != nil {
+		return false
+	}
+	defer key.Close()
+	v, _, err := key.GetStringValue(c.name)
+	return err == nil && strings.Contains(v, syscall.EscapeArg(dataDir))
+}
+
+// otherAutostarts is whether another workbench starts at login.
+func otherAutostarts(c config) bool {
+	key, err := registry.OpenKey(registry.CURRENT_USER, runKey, registry.QUERY_VALUE)
+	if err != nil {
+		return false
+	}
+	defer key.Close()
+	names, _ := key.ReadValueNames(0)
+	for _, n := range names {
+		if strings.HasPrefix(n, workbench.DefaultInstance) && n != c.name {
+			return true
+		}
+	}
+	return false
 }
 
 func autostartState(c config) string {

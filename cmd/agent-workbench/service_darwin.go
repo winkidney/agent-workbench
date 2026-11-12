@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+
+	"github.com/winkidney/agent-workbench/internal/workbench"
 )
 
 func defaultDataDir() string {
@@ -84,7 +86,7 @@ func plist(c config, exe string) []byte {
 	<key>ProgramArguments</key>
 	<array>
 `)
-	for _, a := range []string{exe, "serve", "--data-dir", c.dataDir, "--listen", c.listen, "--idle", c.idle.String(), "--env-file", envPath(c)} {
+	for _, a := range []string{exe, "serve", "--name", c.name, "--data-dir", c.dataDir, "--listen", c.listen, "--idle", c.idle.String(), "--env-file", envPath(c)} {
 		b.WriteString("\t\t" + str(a) + "\n")
 	}
 	b.WriteString(`	</array>
@@ -134,6 +136,25 @@ func uninstallAutostart(c config) error {
 		return os.Remove(path)
 	}
 	return nil
+}
+
+// autostartFor is whether c's login start runs the workbench of dataDir.
+func autostartFor(c config, dataDir string) bool {
+	b, err := os.ReadFile(plistPath(c))
+	var e bytes.Buffer
+	_ = xml.EscapeText(&e, []byte(dataDir))
+	return err == nil && bytes.Contains(b, []byte("<string>"+e.String()+"</string>"))
+}
+
+// otherAutostarts is whether another workbench starts at login.
+func otherAutostarts(c config) bool {
+	files, _ := filepath.Glob(filepath.Join(filepath.Dir(plistPath(c)), "local."+workbench.DefaultInstance+"*.plist"))
+	for _, f := range files {
+		if f != plistPath(c) {
+			return true
+		}
+	}
+	return false
 }
 
 func autostartState(c config) string {

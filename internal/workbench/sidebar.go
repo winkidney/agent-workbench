@@ -144,8 +144,8 @@ func (m *Manager) Rename(id, title string) (bool, error) {
 	return native, m.savePrefs(p)
 }
 
-func codexRename(params map[string]any) error {
-	return withCodexClient("workbench_rename", func(request codexRequest) error {
+func (m *Manager) codexRename(params map[string]any) error {
+	return m.catalog.withCodexClient("workbench_rename", func(request codexRequest) error {
 		_, err := request("rename", "thread/name/set", params)
 		return err
 	})

@@ -3,14 +3,18 @@ import { X } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "../ui/dialog";
 import { AccessTab } from "./AccessTab";
 import { AboutTab } from "./AboutTab";
+import { AgentsTab } from "./AgentsTab";
 import { GeneralTab } from "./GeneralTab";
 
-export type SettingsTab = "general" | "access" | "about";
+export type SettingsTab = "general" | "agents" | "access" | "about";
 export const TABS: { id: SettingsTab; label: string }[] = [
   { id: "general", label: "General" },
+  { id: "agents", label: "Agents" },
   { id: "access", label: "Access & security" },
   { id: "about", label: "About" },
 ];
+// Tabs with unsaved changes.
+export type Dirty = Partial<Record<SettingsTab, boolean>>;
 const KEY = "workbench:settings-tab";
 
 function storedTab(): SettingsTab {
@@ -30,7 +34,7 @@ export function SettingsTabs({
   onSelect,
 }: {
   tab: SettingsTab;
-  dirty: boolean;
+  dirty: Dirty;
   onSelect: (t: SettingsTab) => void;
 }) {
   return (
@@ -62,7 +66,7 @@ export function SettingsTabs({
           onClick={() => onSelect(t.id)}
         >
           {t.label}
-          {t.id === "access" && dirty && (
+          {dirty[t.id] && (
             <span
               className="tab-dot"
               title="Not saved"
@@ -75,9 +79,9 @@ export function SettingsTabs({
   );
 }
 
-// Settings in three tabs: General (applies at once), Access & security
-// (saved with its button), About (read only). Unsaved access changes stay
-// across tabs and are confirmed before closing.
+// Settings in four tabs: General (applies at once), Agents and Access &
+// security (saved with their buttons), About (read only). Unsaved changes
+// stay across tabs and are confirmed before closing.
 export function SettingsDialog({
   open,
   onOpenChange,
@@ -86,8 +90,11 @@ export function SettingsDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const [tab, setTab] = useState<SettingsTab>(storedTab);
-  const [dirty, setDirty] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [dirty, setDirty] = useState<Dirty>({});
+  const [working, setWorking] = useState<Dirty>({});
+  const busy = Object.values(working).some(Boolean);
+  const mark = (set: typeof setDirty, id: SettingsTab) => (v: boolean) =>
+    set((x) => (!!x[id] === v ? x : { ...x, [id]: v }));
   const select = (t: SettingsTab) => {
     setTab(t);
     try {
@@ -98,7 +105,10 @@ export function SettingsDialog({
   };
   const close = () => {
     if (busy) return;
-    if (dirty && !confirm("Discard the access settings you haven't saved?"))
+    if (
+      Object.values(dirty).some(Boolean) &&
+      !confirm("Discard the settings you haven't saved?")
+    )
       return;
     onOpenChange(false);
   };
@@ -130,8 +140,19 @@ export function SettingsDialog({
         <div {...panel("general")}>
           <GeneralTab />
         </div>
+        <div {...panel("agents")}>
+          <AgentsTab
+            open={open}
+            onDirty={mark(setDirty, "agents")}
+            onBusy={mark(setWorking, "agents")}
+          />
+        </div>
         <div {...panel("access")}>
-          <AccessTab open={open} onDirty={setDirty} onBusy={setBusy} />
+          <AccessTab
+            open={open}
+            onDirty={mark(setDirty, "access")}
+            onBusy={mark(setWorking, "access")}
+          />
         </div>
         <div {...panel("about")}>
           <AboutTab active={open && tab === "about"} />

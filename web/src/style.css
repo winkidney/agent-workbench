@@ -2465,6 +2465,121 @@ textarea {
   font-size: 13px;
 }
 
+/* Settings → Agents. */
+.agents-save {
+  margin-top: 18px;
+}
+.modal .agents-intro {
+  margin: 0 0 4px;
+}
+.agent-setup {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.agent-setup h3 {
+  margin-bottom: 0;
+}
+.agent-setup .access-secret {
+  margin: 4px 0 0;
+}
+.agent-setup .access-secret .warn,
+.agent-setup .access-secret [role="status"] {
+  margin: 2px 0 0;
+  font-size: 12px;
+}
+.agent-setup .secret-row {
+  gap: 6px;
+}
+.agent-browser {
+  margin-top: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  max-height: 320px;
+  overflow: auto;
+}
+.agent-signin {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+}
+.agent-signin-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+}
+.agent-signin-head .ok {
+  color: var(--success, var(--foreground));
+}
+.agent-signin-start {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.agent-signin-start select {
+  width: auto;
+  font-size: 12.5px;
+  padding: 4px 6px;
+}
+.agent-login {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--ring);
+  border-radius: 8px;
+  background: var(--accent);
+}
+.agent-login p {
+  margin: 0;
+}
+.agent-login a {
+  overflow-wrap: anywhere;
+}
+.agent-login .secret-row {
+  align-self: stretch;
+  gap: 6px;
+}
+.agent-login-code {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.agent-login-code code {
+  font: 600 18px/1.3 var(--mono);
+  letter-spacing: 0.08em;
+}
+.agent-terminal {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.modal .about-agent-home {
+  margin: 4px 0 0;
+}
+.record-missing blockquote {
+  max-width: 560px;
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border-left: 3px solid var(--border);
+  color: var(--foreground);
+  font-size: 13px;
+  line-height: 1.6;
+  text-align: left;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.empty-conversation.record-missing h1 {
+  font-size: 26px;
+  letter-spacing: -0.8px;
+}
+
 .usage-body p {
   margin: 4px 0 10px;
 }

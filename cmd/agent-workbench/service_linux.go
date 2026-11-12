@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/winkidney/agent-workbench/internal/workbench"
 )
 
 func defaultDataDir() string {
@@ -70,7 +72,7 @@ func startService(c config, exe string) (bool, error) {
 			args = append(args, "--setenv="+name)
 		}
 	}
-	args = append(args, "--", exe, "serve", "--data-dir", c.dataDir, "--listen", c.listen, "--idle", c.idle.String())
+	args = append(args, "--", exe, "serve", "--name", c.name, "--data-dir", c.dataDir, "--listen", c.listen, "--idle", c.idle.String())
 	cmd := exec.Command("systemd-run", args...)
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	return true, cmd.Run()
@@ -84,9 +86,9 @@ func stopService(c config) (bool, error) {
 }
 
 // unitFile runs serve at login under the user manager. Session units are
-// bound to it (BindsTo=agent-workbench.service).
+// bound to it (BindsTo=<name>.service).
 func unitFile(c config, exe string) string {
-	args := []string{exe, "serve", "--data-dir", c.dataDir, "--listen", c.listen, "--idle", c.idle.String(), "--env-file", envPath(c)}
+	args := []string{exe, "serve", "--name", c.name, "--data-dir", c.dataDir, "--listen", c.listen, "--idle", c.idle.String(), "--env-file", envPath(c)}
 	for i, a := range args {
 		args[i] = unitQuote(a)
 	}
@@ -147,6 +149,23 @@ func uninstallAutostart(c config) error {
 		return err
 	}
 	return systemctl("daemon-reload")
+}
+
+// autostartFor is whether c's login start runs the workbench of dataDir.
+func autostartFor(c config, dataDir string) bool {
+	b, err := os.ReadFile(unitPath(c))
+	return err == nil && strings.Contains(string(b), unitQuote(dataDir))
+}
+
+// otherAutostarts is whether another workbench starts at login.
+func otherAutostarts(c config) bool {
+	files, _ := filepath.Glob(filepath.Join(filepath.Dir(unitPath(c)), workbench.DefaultInstance+"*.service"))
+	for _, f := range files {
+		if filepath.Base(f) != unitName(c) {
+			return true
+		}
+	}
+	return false
 }
 
 func autostartState(c config) string {

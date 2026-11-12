@@ -14,17 +14,20 @@ export type DirListing = {
 // Only the home directory tree is listed.
 export function DirBrowser({
   start,
+  hidden = false,
   onPick,
   onCancel,
 }: {
   start?: string;
+  // Show hidden folders from the start (a CLI's home is one).
+  hidden?: boolean;
   onPick: (path: string) => void;
   onCancel: () => void;
 }) {
   const [listing, setListing] = useState<DirListing | null>(null);
   const [path, setPath] = useState(start ?? "");
   const [selected, setSelected] = useState("");
-  const [showHidden, setShowHidden] = useState(false);
+  const [showHidden, setShowHidden] = useState(hidden);
   const [error, setError] = useState("");
   useEffect(() => {
     let cancelled = false;

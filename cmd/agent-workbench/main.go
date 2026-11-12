@@ -47,6 +47,11 @@ Flags:
   --idle 5m            idle engine timeout
   --env NAME           install: also pass this variable to the service
   --purge              uninstall: also delete the data directory
+
+More than one workbench: give each its own --data-dir and --listen. One
+with its own data directory is named after its port (the service
+agent-workbench-17881, for --listen 127.0.0.1:17881); stop, status and
+uninstall then find it from --data-dir alone.
 `
 
 // config is the command line, shared by all commands.
@@ -89,8 +94,9 @@ func run() error {
 		return nil
 	})
 	flags.BoolVar(&c.purge, "purge", false, "uninstall: also delete the data directory")
-	// A second instance (tests, trials) needs its own service name.
-	flags.StringVar(&c.name, "name", "agent-workbench", "service name")
+	// The service name; by default the instance's, from --data-dir and
+	// --listen (instance.go).
+	flags.StringVar(&c.name, "name", workbench.DefaultInstance, "service name")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -102,6 +108,13 @@ func run() error {
 		return err
 	}
 	c.dataDir = dir
+	given := map[string]bool{}
+	flags.Visit(func(f *flag.Flag) { given[f.Name] = true })
+	if action != "version" && action != "help" && action != "-h" && action != "--help" {
+		if err := resolveInstance(&c, given, action); err != nil {
+			return err
+		}
+	}
 	switch action {
 	case "serve":
 		return serve(c)
@@ -128,6 +141,8 @@ func run() error {
 }
 
 func serve(c config) error {
+	// Named first: whether engines run as units depends on it.
+	workbench.SetInstance(c.name)
 	if c.envFile != "" {
 		if err := loadEnv(c.envFile); err != nil {
 			return err
@@ -156,6 +171,7 @@ func serve(c config) error {
 	}
 	workbench.Version = version
 	workbench.Autostart = func() string { return autostartState(c) }
+	writeInstance(c)
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	return workbench.Run(ctx, manager, assets, c.listen, strings.TrimSpace(string(code)))
@@ -225,7 +241,7 @@ func startDetached(c config, exe string) (<-chan error, error) {
 		return nil, err
 	}
 	defer logs.Close()
-	args := []string{"serve", "--data-dir", c.dataDir, "--listen", c.listen, "--idle", c.idle.String()}
+	args := []string{"serve", "--name", c.name, "--data-dir", c.dataDir, "--listen", c.listen, "--idle", c.idle.String()}
 	if env := envPath(c); exists(env) {
 		args = append(args, "--env-file", env)
 	}
@@ -308,6 +324,7 @@ func status(c config) error {
 	}
 	fmt.Printf("Autostart %s\n", autostartState(c))
 	fmt.Printf("Data      %s\n", c.dataDir)
+	fmt.Printf("Instance  %s\n", c.name)
 	return nil
 }
 
@@ -331,6 +348,10 @@ func install(c config) error {
 		return err
 	}
 	if err := writeEnv(envPath(c), c.env); err != nil {
+		return err
+	}
+	writeInstance(c)
+	if err := migrateLegacyAutostart(c); err != nil {
 		return err
 	}
 	exited, err := installAutostart(c, target)
@@ -364,7 +385,9 @@ func uninstall(c config) error {
 		}
 		fmt.Printf("Deleted %s\n", c.dataDir)
 		target := filepath.Join(installDir(), binaryName)
-		if exists(target) {
+		if exists(target) && otherAutostarts(c) {
+			fmt.Printf("Kept %s: another workbench starts with it at login.\n", target)
+		} else if exists(target) {
 			if err := os.Remove(target); err != nil {
 				fmt.Printf("Delete %s yourself: %v\n", target, err)
 			} else {
@@ -379,7 +402,9 @@ func doctor(c config) error {
 	fmt.Printf("agent-workbench %s (%s/%s)\n", version, runtime.GOOS, runtime.GOARCH)
 	fmt.Printf("data dir: %s\n", c.dataDir)
 	for _, name := range []string{"claude", "codex"} {
-		path, err := exec.LookPath(name)
+		// The program and home Settings chose, or else PATH and the
+		// environment.
+		path, home, from, err := workbench.AgentCLI(c.dataDir, name)
 		if err != nil {
 			fmt.Printf("%s: not found on PATH\n", name)
 			continue
@@ -392,6 +417,7 @@ func doctor(c config) error {
 			v = err.Error()
 		}
 		fmt.Printf("%s: %s (%s)\n", name, path, v)
+		fmt.Printf("%s home: %s (%s)\n", name, home, from)
 	}
 	fmt.Printf("autostart: %s\n", autostartState(c))
 	return doctorPlatform()
@@ -515,7 +541,7 @@ func onPath(dir string) bool {
 // The environment install hands to the service, which does not start from
 // a shell: where the agents are, and how to reach the network. Secrets are
 // left out unless named with --env.
-var serviceEnv = []string{"PATH", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "all_proxy", "no_proxy", "CODEX_HOME", "CLAUDE_CONFIG_DIR"}
+var serviceEnv = []string{"PATH", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "all_proxy", "no_proxy", "CODEX_HOME", "CODEX_SQLITE_HOME", "CLAUDE_CONFIG_DIR"}
 
 func envPath(c config) string { return filepath.Join(c.dataDir, "service-env.json") }
 

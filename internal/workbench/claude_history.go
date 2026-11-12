@@ -27,6 +27,8 @@ type HistoryPage struct {
 	HasMore bool    `json:"hasMore"`
 	// Running: a turn is in flight here or in another client.
 	Running bool `json:"running"`
+	// The native record is gone; only what the CLI's index keeps remains.
+	RecordMissing *recordRemains `json:"recordMissing,omitempty"`
 	// Claude Agent calls on the page and the subagents their results name,
 	// for the subagents' lines (subagents.go).
 	agentCalls []agentCall
