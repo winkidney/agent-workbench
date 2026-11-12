@@ -22,6 +22,8 @@ import { usePrefs } from "./sidebar/usePrefs";
 import { displayTitle, type Session } from "./sidebar/tree";
 import { api } from "./lib/api";
 import { Appearance } from "./components/Appearance";
+import { NotifyToggle } from "./components/NotifyToggle";
+import { useAttention } from "./attention";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { canonicalAddress, fileFrameSandbox, previewMode } from "./lib/preview";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -340,6 +342,20 @@ export default function App() {
     // On narrow screens the sidebar overlays the conversation.
     if (innerWidth <= 850) setLeft(false);
   };
+  // Sessions waiting for the user: the tab title counts them, and a desktop
+  // notification announces each new one while the page is in the background.
+  const titled = useMemo(
+    () =>
+      sessions.map((s) => ({
+        id: s.id,
+        agent: s.agent,
+        attention: s.attention,
+        title: displayTitle(s, sidebarPrefs.prefs),
+      })),
+    [sessions, sidebarPrefs.prefs],
+  );
+  const waiting = useAttention(titled, paired, (id) => selectSession(id));
+  const waitingElsewhere = waiting.some((s) => s.id !== active);
   // New sessions start inline in the conversation area, like a new chat.
   const openNewSession = (dir?: string) => {
     setComposing({ cwd: dir });
@@ -567,6 +583,11 @@ export default function App() {
               planRef.current.runCommand("default", IMPLEMENT_PLAN),
             implementPlanFresh: (plan: string) =>
               planRef.current.startFromPlan(plan),
+            dismissPlan: () =>
+              void api(
+                `sessions/${encodeURIComponent(active)}/plan-dismiss`,
+                "POST",
+              ).catch(() => {}),
           }
         : {}),
     }),
@@ -765,6 +786,9 @@ export default function App() {
               onClick={() => setLeft(!left)}
             >
               <PanelLeft size={17} />
+              {!left && waitingElsewhere && (
+                <span className="toggle-dot" aria-label="A session needs you" />
+              )}
             </Button>
             <div className="conversation-title" title={current?.cwd}>
               <h2>
@@ -806,6 +830,7 @@ export default function App() {
               </summary>
               <div className="conversation-menu-content">
                 <Appearance />
+                <NotifyToggle />
                 <Button
                   variant="ghost"
                   size="sm"

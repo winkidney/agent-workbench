@@ -42,6 +42,38 @@ func codexProfile(sandbox map[string]any) string {
 	return ""
 }
 
+// codexAutoReview is the workbench's permission choice for the Codex TUI's
+// "Approve for me": the workspace sandbox, with approval requests reviewed
+// by Codex's auto-review agent instead of the user.
+const codexAutoReview = "auto-review"
+
+// codexPermissions is the permission choice a sandbox and an approvals
+// reviewer amount to.
+func codexPermissions(sandbox map[string]any, reviewer string) string {
+	profile := codexProfile(sandbox)
+	if profile == ":workspace" && (reviewer == "auto_review" || reviewer == "guardian_subagent") {
+		return codexAutoReview
+	}
+	return profile
+}
+
+// builtinDefaults are the settings new sessions start with when the user saved
+// none: approvals in each CLI's automatic mode (Claude Code's auto mode,
+// Codex's auto-review).
+func builtinDefaults(agent string) Options {
+	if agent == "codex" {
+		return Options{Permissions: codexAutoReview}
+	}
+	return Options{Permissions: "auto"}
+}
+
+// newSessionDefaults are the built-in defaults with the user's saved ones on top.
+func (m *Manager) newSessionDefaults(agent string) Options {
+	var saved Options
+	m.store.readSetting("defaults:"+agent, &saved)
+	return mergeOptions(builtinDefaults(agent), saved)
+}
+
 // codexTurnOptions reads the settings a Codex turn ran with from a rollout
 // turn_context record.
 func codexTurnOptions(p map[string]any) Options {
@@ -50,7 +82,7 @@ func codexTurnOptions(p map[string]any) Options {
 		Effort:      str(p["effort"]),
 		Speed:       str(p["service_tier"]),
 		Mode:        str(obj(p["collaboration_mode"])["mode"]),
-		Permissions: codexProfile(obj(p["sandbox_policy"])),
+		Permissions: codexPermissions(obj(p["sandbox_policy"]), str(p["approvals_reviewer"])),
 	}
 	if o.Mode == "" {
 		o.Mode = "default"
@@ -66,7 +98,7 @@ func codexThreadOptions(result map[string]any) Options {
 		Effort:      str(result["reasoningEffort"]),
 		Speed:       str(result["serviceTier"]),
 		Mode:        str(obj(result["collaborationMode"])["mode"]),
-		Permissions: codexProfile(obj(result["sandbox"])),
+		Permissions: codexPermissions(obj(result["sandbox"]), str(result["approvalsReviewer"])),
 	}
 	if o.Speed == "" {
 		o.Speed = "default"

@@ -42,6 +42,8 @@ Commands (`/…`) cannot steer; they run after the turn. If an approval is pendi
 
 **Settings pills.** Model, effort, speed, mode and permissions sit under the input. Each shows the value in effect: your choice for this session, else what the running agent reports, else the CLI's configured default (shown muted). Changes apply from the next turn. The usage menu can save the current choices as defaults for new sessions without changing the CLI's own configuration.
 
+**Approvals in new sessions.** Unless you saved other defaults, new sessions start with each CLI's automatic approvals: Claude Code's **Auto** mode (a reviewer model screens actions; Claude asks only when it can't decide) and Codex's **Auto-review**, the "Approve for me" of its TUI (the workspace sandbox, with requests to go beyond it reviewed by Codex's auto-review agent instead of you). Each auto-review decision appears as a line in the conversation while you watch, a denial in the warning color. If the CLI can't use automatic approvals (for Claude, a model, plan or setting that doesn't allow auto mode), the session falls back to asking you and a line in the conversation says why. Pick Ask (Claude) or Workspace (Codex) in the permissions pill to be asked every time; existing sessions keep their settings. When a Claude session that was in auto mode before planning presents its plan, the plan card offers **Yes, and use auto mode** first, as Claude Code does.
+
 ### Commands and skills
 
 Type `/` or `$` to open a list that filters as you type (prefix matches first, aliases included). Use ↑/↓ to choose, Tab or Enter to complete, Esc to close.
@@ -86,6 +88,8 @@ HTML and dev-server previews use `p-*.agent.localhost` addresses in a browser on
 ## The sidebar
 
 - **Agent icons:** the coral burst is Claude, the `>_` tile is Codex. At the right end of each row: a spinner while running, a hand while waiting for approval, a monitor when another client is using it, a triangle on error, a dot while the engine is loaded, otherwise the time of the last activity.
+- **Sessions that need you** (an approval, a question, a plan to decide on, including Codex's async questions and "Implement this plan?") get a filled bell badge and a highlighted row, come first under **Active** even while their engine sleeps, and the Active header counts them ("2 need you"). The tab title shows the count, as in "(2) Agent Workbench"; on narrow screens a dot on the sessions button points to them while the sidebar is closed.
+- **Desktop notifications** announce a session that starts needing you while the page is in the background. Turn them on or off per browser in the "⋯" menu (Desktop notifications); turning them on asks the browser for permission. They need https or localhost.
 - **Active** lists sessions that are running, waiting, loaded or in use elsewhere. **Pinned** keeps the sessions you pin, in pin order.
 - **Projects** groups sessions by the directory they were started in (moving elsewhere inside the session doesn't change that), nests subdirectories, and folds shared path prefixes into one folder. A session that worked across several subprojects shows them on a second line (`↗ api, web`) and is listed under each of them as related.
 - **Other** holds sessions that are not project work: `codex exec` runs, temporary directories, and chats from the home directory or the Codex app.

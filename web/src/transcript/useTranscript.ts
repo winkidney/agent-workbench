@@ -167,7 +167,8 @@ export function useTranscript(
       .finally(() => !cancelled && setLoading(false));
     // Approvals raised before this page subscribed are not in the event stream.
     getJSON<{
-      pending: { id: string; request: unknown }[];
+      // As the approval events have them (planResume and the like too).
+      pending: { id: string; request: unknown; [key: string]: unknown }[];
       turnStartedAt?: string;
       queue?: { id: string; text: string }[];
       queuePaused?: boolean;
@@ -186,7 +187,7 @@ export function useTranscript(
               session: id,
               kind: "approval",
               time: "",
-              data: { id: p.id, request: p.request },
+              data: { ...p },
             });
           return next;
         });

@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 )
@@ -188,7 +189,7 @@ func (m *Manager) Metadata(agent, cwd string) metadata {
 				result.Models, _ = v["data"].([]any)
 			}
 			v, _ = call("permissionProfile/list", map[string]any{"cwd": cwd, "limit": 100})
-			result.Permissions, _ = v["data"].([]any)
+			result.Permissions = withAutoReview(asList(v["data"]))
 			v, _ = call("collaborationMode/list", map[string]any{})
 			result.Modes, _ = v["data"].([]any)
 			result.Usage, _ = call("account/rateLimits/read", map[string]any{})
@@ -310,8 +311,26 @@ func (m *Manager) applyOptions(id string) error {
 			}
 		}
 		if p := claudePermissionMode(o); p != "" {
+			m.mu.Lock()
+			r.requestedMode = p
+			m.mu.Unlock()
 			if _, e := m.rpc(id, "set_permission_mode", map[string]any{"mode": p}); e != nil {
-				return e
+				if p != "auto" {
+					return e
+				}
+				// Auto mode depends on the model, the plan, fast mode and
+				// settings; without it, approvals ask.
+				m.mu.Lock()
+				r.requestedMode = "default"
+				m.mu.Unlock()
+				if _, e2 := m.rpc(id, "set_permission_mode", map[string]any{"mode": "default"}); e2 != nil {
+					return e
+				}
+				o.Permissions = "manual"
+				m.mu.Lock()
+				_ = m.store.setting("options:"+r.session.ID, o)
+				m.mu.Unlock()
+				m.notice(id, "Auto mode isn't available here ("+strings.TrimPrefix(e.Error(), "CLI control: ")+"); approvals will ask you.")
 			}
 		}
 	}
@@ -408,6 +427,9 @@ func (m *Manager) track(r *runtime, v map[string]any) {
 		r.context = map[string]any{"used": r.usage["inputTokens"], "window": u["modelContextWindow"], "estimated": false}
 	}
 	trackProgress(r, v)
+	if v["type"] == "system" && v["subtype"] == "status" && str(v["permissionMode"]) != "" {
+		m.claudeModeReported(r, str(v["permissionMode"]))
+	}
 	if v["type"] == "system" && v["subtype"] == "init" {
 		r.effective = claudeInitOptions(r.effective, v)
 		// Skills and terminal-only commands for the "$" and "/" menus.
@@ -466,7 +488,12 @@ func codexOptions(params map[string]any, o Options) {
 	}
 	if o.Permissions != "" {
 		delete(params, "sandbox")
-		params["permissions"] = o.Permissions
+		// Codex keeps a turn's reviewer for later turns, so every choice names
+		// its reviewer.
+		params["permissions"], params["approvalsReviewer"] = o.Permissions, "user"
+		if o.Permissions == codexAutoReview {
+			params["permissions"], params["approvalsReviewer"] = ":workspace", "auto_review"
+		}
 	}
 	if o.Mode != "" {
 		params["collaborationMode"] = map[string]any{"mode": o.Mode, "settings": map[string]any{"model": o.Model, "reasoning_effort": nil, "developer_instructions": nil}}
@@ -475,6 +502,19 @@ func codexOptions(params map[string]any, o Options) {
 			settings["reasoning_effort"] = o.Effort
 		}
 	}
+}
+
+// withAutoReview adds the auto-review choice after the workspace profile, as
+// the Codex TUI offers "Approve for me" next to its default permissions.
+func withAutoReview(profiles []any) []any {
+	out := []any{}
+	for _, raw := range profiles {
+		out = append(out, raw)
+		if p := obj(raw); str(p["id"]) == ":workspace" {
+			out = append(out, map[string]any{"id": codexAutoReview, "allowed": p["allowed"] != false, "description": "Workspace, with approval requests reviewed by Codex's auto-review instead of you"})
+		}
+	}
+	return out
 }
 
 func (m *Manager) ContextUsage(id string) {
@@ -729,4 +769,21 @@ func strs(v any) []string {
 		}
 	}
 	return out
+}
+
+// claudeModeReported follows a permission mode Claude Code reports. When it
+// leaves auto mode on its own (the model, plan, fast mode or a failing safety
+// check no longer allow it), the session's setting follows, so the next turn
+// does not ask for auto mode again (m.mu held).
+func (m *Manager) claudeModeReported(r *runtime, mode string) {
+	r.effective.Mode, r.effective.Permissions = claudePermissionOptions(mode)
+	if mode == r.requestedMode || mode == "auto" || mode == "plan" || r.applied.Permissions != "auto" || r.applied.Mode == "plan" {
+		return
+	}
+	_, permissions := claudePermissionOptions(mode)
+	o := m.options(r.session.ID)
+	o.Permissions = permissions
+	_ = m.store.setting("options:"+r.session.ID, o)
+	r.applied.Permissions = permissions
+	m.emit(r.session.ID, "notice", map[string]any{"text": "Claude Code left auto mode; approvals will ask you."})
 }

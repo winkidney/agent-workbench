@@ -133,6 +133,13 @@ func (m *Manager) steerCodex(id, text, prepared string, attach []Skill) (SteerRe
 		m.retract(id, prepared)
 		return m.queueInstead(id, text, "Codex did not take it ("+err.Error()+")")
 	}
+	// A message into the turn answers (or sets aside) Codex's async questions.
+	m.mu.Lock()
+	if r := m.find(id); r != nil {
+		userActed(r)
+		m.syncAttention(r)
+	}
+	m.mu.Unlock()
 	return SteerResult{Steered: true}, nil
 }
 

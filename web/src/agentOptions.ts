@@ -64,6 +64,7 @@ const NAMES: Partial<Record<keyof Options, Record<string, string>>> = {
   permissions: {
     ":read-only": "Read only",
     ":workspace": "Workspace",
+    "auto-review": "Auto-review",
     ":danger-full-access": "Full access",
     manual: "Ask",
     acceptEdits: "Accept edits",

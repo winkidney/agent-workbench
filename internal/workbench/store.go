@@ -34,7 +34,10 @@ type Session struct {
 	Title    string `json:"title"`
 	NativeID string `json:"nativeId"`
 	Status   string `json:"status"`
-	Updated  string `json:"updated"`
+	// Attention: what the session waits for from the user (attention.go);
+	// computed, not stored.
+	Attention string `json:"attention,omitempty"`
+	Updated   string `json:"updated"`
 	// ExplicitName: the user typed a name, so it is written as the native name.
 	ExplicitName bool `json:"-"`
 }

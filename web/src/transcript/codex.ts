@@ -11,6 +11,39 @@ import {
 } from "./model";
 import type { Context, Draft } from "./reducer";
 import { asyncQuestions } from "./questions";
+import { unwrapShell } from "./summarize";
+
+// What an auto-review looked at, in a few words.
+export function reviewTarget(action: Record<string, unknown>): string {
+  switch (action.type) {
+    case "command":
+      return unwrapShell(text(action.command));
+    case "execve":
+      return [text(action.program), ...list(action.argv).map(text).slice(1)]
+        .join(" ")
+        .trim();
+    case "applyPatch": {
+      const files = list(action.files).length;
+      return files === 1 ? "a file change" : `changes to ${files} files`;
+    }
+    case "networkAccess":
+      return "network access to " + (text(action.host) || text(action.target));
+    case "mcpToolCall":
+      return `${text(action.server)} · ${text(action.toolTitle) || text(action.toolName)}`;
+    case "requestPermissions":
+      return text(action.reason) || "more permissions";
+    case "writeStdin":
+      return "input to a running command";
+  }
+  return text(action.type);
+}
+
+const REVIEW_WORDS: Record<string, string> = {
+  approved: "approved",
+  denied: "denied",
+  timedOut: "timed out on",
+  aborted: "stopped reviewing",
+};
 
 const num = (v: unknown) => (typeof v === "number" ? v : undefined);
 
@@ -364,11 +397,33 @@ export function applyCodex(
         });
       return;
     }
+    // Codex's auto-review deciding an approval request in the user's place.
+    case "item/autoApprovalReview/completed": {
+      const review = record(p.review);
+      const status = text(review.status);
+      const risk = text(review.riskLevel);
+      const target = reviewTarget(record(p.action));
+      const head = `Auto-review ${REVIEW_WORDS[status] ?? status}${target ? ": " + (target.length > 160 ? target.slice(0, 159) + "…" : target) : ""}${risk ? ` (${risk} risk)` : ""}`;
+      d.upsert({
+        key: "review:" + (text(p.reviewId) || ctx.seq),
+        kind: "notice",
+        tone: status === "approved" ? undefined : "warn",
+        text: [head, text(review.rationale)].filter(Boolean).join("\n"),
+        local: true,
+      });
+      return;
+    }
     case "warning":
     case "configWarning":
     case "deprecationNotice":
     case "guardianWarning": {
       const message = text(p.message) || text(p.summary);
+      // Auto-review decisions are shown from their own records.
+      if (
+        method === "guardianWarning" &&
+        /^Automatic approval review /.test(message)
+      )
+        return;
       // Startup warnings repeat on every resume; keep one per text.
       if (message)
         d.upsert({

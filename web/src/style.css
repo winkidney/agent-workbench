@@ -3322,6 +3322,98 @@ textarea {
 .status-icon.error {
   color: var(--destructive);
 }
+/* Waiting for the user: a filled badge, unlike any working state. */
+.status-icon.needs-you {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--warning);
+  color: var(--background);
+  animation: needs-you 1.8s ease-out infinite;
+}
+.status-icon.needs-you svg {
+  width: 11px;
+  height: 11px;
+}
+@keyframes needs-you {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in oklch, var(--warning) 55%, transparent);
+  }
+  70%,
+  100% {
+    box-shadow: 0 0 0 6px transparent;
+  }
+}
+.session-row.needs-you {
+  --row-bg: color-mix(in oklch, var(--warning) 13%, transparent);
+  background: var(--row-bg);
+  box-shadow: inset 2px 0 0 var(--warning);
+}
+.session-row.needs-you.selected {
+  --row-bg: color-mix(in oklch, var(--warning) 20%, var(--muted));
+}
+.section-badge {
+  padding: 0 6px;
+  border-radius: 9px;
+  background: var(--warning);
+  color: var(--background);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: none;
+  line-height: 16px;
+  white-space: nowrap;
+}
+/* On the sessions button while the sidebar is hidden. */
+.conversation-heading > button {
+  position: relative;
+}
+.toggle-dot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--warning);
+  box-shadow: 0 0 0 2px var(--background);
+}
+.notify-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  padding: 6px 8px;
+  color: var(--foreground);
+  font-size: 13px;
+  text-align: left;
+}
+.notify-toggle:hover:not(:disabled) {
+  background: var(--muted);
+}
+.notify-toggle:disabled {
+  opacity: 0.6;
+}
+.notify-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+.notify-text small {
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+.notify-state {
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+.notify-toggle[aria-checked="true"] .notify-state {
+  color: var(--success);
+}
 .status-idle-dot {
   width: 7px;
   height: 7px;
@@ -3392,6 +3484,7 @@ body.resizing iframe {
 @media (prefers-reduced-motion: reduce) {
   .spin,
   .status-icon.waiting svg,
+  .status-icon.needs-you,
   .status-glyph {
     animation: none;
   }

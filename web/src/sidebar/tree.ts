@@ -14,6 +14,8 @@ export type Session = {
   title: string;
   nativeId: string;
   status: string;
+  // What the session waits for from the user: approval, question, plan.
+  attention?: string;
   updated: string;
   // project | automation | temporary | chat, decided by the launch directory.
   origin?: string;
@@ -158,12 +160,15 @@ export type SidebarModel = {
   searching: boolean;
 };
 
+// Sessions waiting for the user come first, then those at work.
 const activeRank = (s: Session) =>
-  BUSY.includes(s.status) || s.status === "external_running"
-    ? 0
-    : s.status === "external"
-      ? 2
-      : 1;
+  s.attention
+    ? -1
+    : BUSY.includes(s.status) || s.status === "external_running"
+      ? 0
+      : s.status === "external"
+        ? 2
+        : 1;
 const originOf = (s: Session) => s.origin || "project";
 const within = (path: string, root: string) =>
   path.startsWith(root.replace(/\/$/, "") + "/");
@@ -404,7 +409,7 @@ export function buildSidebar(
     .filter((n): n is Node => !!n)
     .map((n) => ({ ...n, children: [] }));
   const active = flat
-    .filter((n) => ACTIVE.includes(n.session.status))
+    .filter((n) => ACTIVE.includes(n.session.status) || !!n.session.attention)
     .sort(
       (a, b) =>
         activeRank(a.session) - activeRank(b.session) || byUpdated(a, b),

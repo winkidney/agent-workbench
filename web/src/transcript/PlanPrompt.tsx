@@ -14,6 +14,10 @@ export function PlanPrompt({ plan }: { plan: string }) {
   const [dismissed, setDismissed] = useState(false);
   if (dismissed || !env.implementPlan || !env.implementPlanFresh) return null;
   const { implementPlan, implementPlanFresh } = env;
+  const dismiss = () => {
+    setDismissed(true);
+    env.dismissPlan?.();
+  };
   const options = [
     {
       label: "Yes, implement this plan",
@@ -28,14 +32,14 @@ export function PlanPrompt({ plan }: { plan: string }) {
   const choose = async (i: number) => {
     setSelected(i);
     if (busy) return;
-    if (i === 2) return setDismissed(true);
+    if (i === 2) return dismiss();
     setBusy(true);
     setError("");
     try {
       if (i === 0) await implementPlan();
       else {
         await implementPlanFresh(plan);
-        setDismissed(true);
+        dismiss();
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -55,7 +59,7 @@ export function PlanPrompt({ plan }: { plan: string }) {
       void choose(selected);
     } else if (e.key === "Escape") {
       e.preventDefault();
-      setDismissed(true);
+      dismiss();
     }
   };
   return (

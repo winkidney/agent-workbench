@@ -23,7 +23,7 @@ import { Choices } from "./Choices";
 
 export type Decision = "allow" | "allowAlways" | "deny" | "cancel";
 // The permission mode an approved Claude plan continues in.
-export type PlanMode = "acceptEdits" | "default";
+export type PlanMode = "auto" | "acceptEdits" | "default";
 export type Reply = (
   id: string,
   decision: Decision,
@@ -300,11 +300,16 @@ export function ApprovalCard({
   };
 
   // Claude Code's own plan choices: each "Yes" also sets how edits are
-  // approved from then on.
-  const planModes: PlanMode[] = ["acceptEdits", "default"];
+  // approved from then on. A session that was in auto mode before planning
+  // is offered auto mode again first, as Claude Code does.
+  const resumeAuto = event.data.planResume === "auto";
+  const planModes: PlanMode[] = resumeAuto
+    ? ["auto", "acceptEdits", "default"]
+    : ["acceptEdits", "default"];
   const toolOptions =
     parsed.kind === "plan"
       ? [
+          ...(resumeAuto ? [{ label: "Yes, and use auto mode" }] : []),
           { label: "Yes, auto-accept edits" },
           { label: "Yes, manually approve edits" },
           { label: "No, keep planning", hint: "tell Claude what to change" },

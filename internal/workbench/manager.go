@@ -58,11 +58,20 @@ type runtime struct {
 	caps map[string]bool
 	// Claude: steered messages, by uuid, that no turn has answered yet.
 	steering map[string]*steered
+	// Codex: the last turn/start sent, to send again without auto-review if
+	// Codex refuses it.
+	turnRequest map[string]any
+	// Claude: the permission mode last sent, to tell the CLI's own mode
+	// changes from ours.
+	requestedMode string
 	// The session's /goal (also kept in the store for the page); Claude's
 	// is read from its JSONL (goal.go).
 	goal      *Goal
 	goalScan  *claudeGoalScan
 	goalTimer *time.Timer
+	// Codex: an async question awaits an answer; a plan-mode turn ended with
+	// a plan that awaits a decision (planSeen: this turn produced one).
+	asking, planReady, planSeen bool
 }
 type Manager struct {
 	// closing: the workbench is shutting down (Shutdown); engines it stops
@@ -105,6 +114,7 @@ func (m *Manager) emit(id, kind string, data any) {
 }
 func (m *Manager) status(r *runtime, state string) {
 	r.session.Status = state
+	r.session.Attention = attentionOf(r)
 	r.last = time.Now()
 	if err := m.store.Save(r.session); err != nil {
 		fmt.Fprintln(os.Stderr, "save session:", err)
@@ -292,6 +302,7 @@ func (m *Manager) Send(id, text string) error {
 				m.mu.Unlock()
 				return errors.New("session is busy")
 			}
+			userActed(r)
 			m.beginTurn(r)
 			m.emit(r.session.ID, "user", map[string]any{"text": text})
 			var v any
@@ -308,7 +319,9 @@ func (m *Manager) Send(id, text string) error {
 					chosen.Model = r.effective.Model
 				}
 				codexOptions(params, chosen)
-				v = map[string]any{"id": "turn:" + token(), "method": "turn/start", "params": params}
+				request := map[string]any{"id": "turn:" + token(), "method": "turn/start", "params": params}
+				r.turnRequest = request
+				v = request
 			} else {
 				v = map[string]any{"type": "user", "message": map[string]any{"role": "user", "content": text}, "parent_tool_use_id": nil, "session_id": r.session.NativeID}
 			}
@@ -375,6 +388,7 @@ func (m *Manager) receive(id string, generation int, v map[string]any) {
 	if r == nil || r.proc == nil || r.generation != generation {
 		return
 	}
+	defer m.syncAttention(r)
 	key := str(v["id"])
 	response := obj(v["response"])
 	if v["type"] == "control_response" {
@@ -422,6 +436,9 @@ func (m *Manager) receive(id string, generation int, v map[string]any) {
 		m.emit(r.session.ID, "diagnostic", v)
 	}
 	if r.session.Agent == "codex" {
+		if v["error"] != nil && m.retryWithoutAutoReview(r, v) {
+			return
+		}
 		if v["error"] != nil {
 			m.emit(r.session.ID, "error", v["error"])
 			r.turn = false
@@ -433,6 +450,13 @@ func (m *Manager) receive(id string, generation int, v map[string]any) {
 			_ = r.proc.Input(map[string]any{"method": "initialized"})
 			method := "thread/start"
 			params := map[string]any{"cwd": r.session.Cwd, "approvalPolicy": "on-request", "sandbox": "workspace-write"}
+			// The reviewer from the start, so turns Codex starts itself (a goal)
+			// already have it.
+			if p := m.options(r.session.ID).Permissions; p == codexAutoReview {
+				params["approvalsReviewer"] = "auto_review"
+			} else if p != "" {
+				params["approvalsReviewer"] = "user"
+			}
 			if r.session.NativeID != "" {
 				method = "thread/resume"
 				params["threadId"] = r.session.NativeID
@@ -470,6 +494,7 @@ func (m *Manager) receive(id string, generation int, v map[string]any) {
 		}
 		method := str(v["method"])
 		params := obj(v["params"])
+		trackAttention(r, method, params)
 		if method == "mcpServer/startupStatus/updated" {
 			r.mcp[str(params["name"])] = str(params["status"])
 			if mcpSettled(r) && !r.turn {
@@ -496,7 +521,7 @@ func (m *Manager) receive(id string, generation int, v map[string]any) {
 		if v["id"] != nil && method != "" {
 			key := fmt.Sprint(v["id"])
 			r.pending[key] = v
-			m.emit(r.session.ID, "approval", map[string]any{"id": key, "request": v})
+			m.emit(r.session.ID, "approval", m.approvalData(r, key, v))
 			m.status(r, "waiting")
 		}
 		if method == "turn/started" {
@@ -554,7 +579,7 @@ func (m *Manager) receive(id string, generation int, v map[string]any) {
 		case "control_request":
 			key := str(v["request_id"])
 			r.pending[key] = v
-			m.emit(r.session.ID, "approval", map[string]any{"id": key, "request": v})
+			m.emit(r.session.ID, "approval", m.approvalData(r, key, v))
 			m.status(r, "waiting")
 		case "control_cancel_request":
 			delete(r.pending, str(v["request_id"]))
@@ -616,7 +641,8 @@ func (m *Manager) Reply(id, key string, allow bool, answers map[string]any) erro
 // allowAlways (session-scoped), deny (the turn continues, message is shown to
 // the agent) or cancel (deny and interrupt the turn). mode is the permission
 // mode an approved Claude plan continues in, as Claude Code's own choices set
-// it: acceptEdits, or default (edits approved one by one; also when empty).
+// it: auto, acceptEdits, or default (edits approved one by one; also when
+// empty).
 func (m *Manager) ReplyDecision(id, key, decision, message string, answers map[string]any, mode string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -681,9 +707,9 @@ func (m *Manager) ReplyDecision(id, key, decision, message string, answers map[s
 				switch mode {
 				case "", "default", "manual":
 					mode = "default"
-				case "acceptEdits":
+				case "acceptEdits", "auto":
 				default:
-					return errors.New("an approved plan continues in acceptEdits or default mode")
+					return errors.New("an approved plan continues in auto, acceptEdits or default mode")
 				}
 				response["updatedPermissions"] = []any{map[string]any{"type": "setMode", "destination": "session", "mode": mode}}
 				leavesPlan = true
@@ -695,6 +721,7 @@ func (m *Manager) ReplyDecision(id, key, decision, message string, answers map[s
 		return err
 	}
 	delete(r.pending, key)
+	r.session.Attention = attentionOf(r)
 	if leavesPlan {
 		m.leavePlan(r, mode)
 	}
@@ -703,13 +730,25 @@ func (m *Manager) ReplyDecision(id, key, decision, message string, answers map[s
 	return nil
 }
 
+// approvalData is an approval as the page gets it. A Claude plan in a session
+// that was in auto mode before planning says so: Claude Code then offers to
+// go back to auto mode (m.mu held).
+func (m *Manager) approvalData(r *runtime, key string, v any) map[string]any {
+	data := map[string]any{"id": key, "request": v}
+	req := obj(obj(v)["request"])
+	if r.session.Agent == "claude" && str(req["tool_name"]) == "ExitPlanMode" && m.options(r.session.ID).Permissions == "auto" {
+		data["planResume"] = "auto"
+	}
+	return data
+}
+
 // leavePlan records that an approved plan took a Claude session out of plan
 // mode into mode, so the settings shown, and those set before the next turn,
 // are no longer plan mode.
 func (m *Manager) leavePlan(r *runtime, mode string) {
 	permissions := "manual"
-	if mode == "acceptEdits" {
-		permissions = "acceptEdits"
+	if mode == "acceptEdits" || mode == "auto" {
+		permissions = mode
 	}
 	o := m.options(r.session.ID)
 	o.Mode, o.Permissions = "default", permissions
@@ -735,7 +774,7 @@ func (m *Manager) Live(id string) map[string]any {
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
-		pending = append(pending, map[string]any{"id": k, "request": r.pending[k]})
+		pending = append(pending, m.approvalData(r, k, r.pending[k]))
 	}
 	out["pending"] = pending
 	out["queue"] = append([]queued{}, r.queue...)
@@ -771,6 +810,8 @@ func (m *Manager) Interrupt(id string) error {
 		return err
 	}
 	r.interrupted = true
+	userActed(r)
+	m.syncAttention(r)
 	return nil
 }
 func (m *Manager) Stop(id string, sleep bool) error {
@@ -1145,4 +1186,27 @@ func (m *Manager) findUnlocked(id string) *runtime {
 // Owns is whether pid is one of the unit's processes.
 func (p *systemProcess) Owns(pid int) bool {
 	return p.processes()[strconv.Itoa(pid)]
+}
+
+// retryWithoutAutoReview sends a turn Codex refused because of auto-review
+// again with approvals asked of the user, and keeps that choice for the
+// session (m.mu held).
+func (m *Manager) retryWithoutAutoReview(r *runtime, v map[string]any) bool {
+	sent := r.turnRequest
+	if sent == nil || str(sent["id"]) != str(v["id"]) {
+		return false
+	}
+	params := obj(sent["params"])
+	reason := fmt.Sprint(obj(v["error"])["message"])
+	if params["approvalsReviewer"] != "auto_review" || !strings.Contains(strings.ToLower(reason), "review") {
+		return false
+	}
+	params["approvalsReviewer"], params["permissions"] = "user", ":workspace"
+	retry := map[string]any{"id": "turn:" + token(), "method": "turn/start", "params": params}
+	r.turnRequest = retry
+	o := m.options(r.session.ID)
+	o.Permissions = ":workspace"
+	_ = m.store.setting("options:"+r.session.ID, o)
+	m.emit(r.session.ID, "notice", map[string]any{"text": "Codex couldn't use auto-review (" + reason + "); approvals will ask you."})
+	return r.proc.Input(retry) == nil
 }

@@ -635,6 +635,10 @@ func (m *Manager) NativeList() ([]Session, error) {
 		if related := m.activity.Related(s.ID); len(related) > 0 {
 			list[i].Related = related
 		}
+		if r := m.find(s.ID); r != nil {
+			// Async questions wait for an answer while the engine sleeps.
+			list[i].Attention = r.session.Attention
+		}
 		if r := m.find(s.ID); r != nil && r.proc != nil {
 			list[i].Status = r.session.Status
 			if o, ok := r.proc.(processOwner); ok && s.Agent == "claude" && m.catalog.ClaudeBusyExcept(s, o.Owns) {

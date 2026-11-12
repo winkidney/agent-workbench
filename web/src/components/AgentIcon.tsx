@@ -1,4 +1,5 @@
-import { AlertTriangle, Hand, Loader2, Monitor } from "lucide-react";
+import { AlertTriangle, BellRing, Hand, Loader2, Monitor } from "lucide-react";
+import { ATTENTION_LABEL } from "../attention";
 
 const RAYS = Array.from({ length: 12 }, (_, i) => {
   const a = (i * Math.PI) / 6;
@@ -67,14 +68,24 @@ export const statusLabel: Record<string, string> = {
   idle: "Engine loaded",
 };
 
-// What a session is doing right now; null when it is asleep or stopped.
+// What a session is doing right now; null when it is asleep or stopped. A
+// session that waits for the user (attention) says so instead, loudly.
 export function StatusIcon({
   status,
+  attention,
   size = 13,
 }: {
   status: string;
+  attention?: string;
   size?: number;
 }) {
+  const wants = attention ? ATTENTION_LABEL[attention] : undefined;
+  if (wants)
+    return (
+      <span className={"status-icon needs-you " + attention} title={wants}>
+        <BellRing size={size} role="img" aria-label={wants} />
+      </span>
+    );
   const label = statusLabel[status];
   if (!label) return null;
   const common = { size, role: "img", "aria-label": label } as const;

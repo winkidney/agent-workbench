@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { AgentIcon, StatusIcon, statusLabel } from "../components/AgentIcon";
+import { ATTENTION_LABEL } from "../attention";
 import {
   buildSidebar,
   relativeTime,
@@ -274,6 +275,7 @@ const SessionRow = memo(function SessionRow({
           (selected ? " selected" : "") +
           (node.hidden ? " is-hidden" : "") +
           (node.archived ? " is-archived" : "") +
+          (s.attention ? " needs-you" : "") +
           (actions.menu === menuKey ? " menu-open" : "")
         }
         style={{ paddingLeft: 6 + depth * 12 }}
@@ -324,7 +326,7 @@ const SessionRow = memo(function SessionRow({
             type="button"
             className="session-main"
             aria-current={selected ? "page" : undefined}
-            title={`${node.title} · ${s.agent === "codex" ? "Codex" : "Claude"} · ${statusLabels[s.status] ?? s.status}`}
+            title={`${node.title} · ${s.agent === "codex" ? "Codex" : "Claude"} · ${(s.attention && ATTENTION_LABEL[s.attention]) || statusLabels[s.status] || s.status}`}
             onClick={() => actions.onSelect(s.id)}
           >
             <AgentIcon agent={s.agent} size={15} />
@@ -334,7 +336,7 @@ const SessionRow = memo(function SessionRow({
                   <span className="session-name">
                     <Highlight text={node.title} query={actions.query} />
                   </span>
-                  <StatusIcon status={s.status} />
+                  <StatusIcon status={s.status} attention={s.attention} />
                 </span>
                 <span className="session-sub">
                   {[
@@ -356,8 +358,8 @@ const SessionRow = memo(function SessionRow({
                 {node.children.length > 0 && !open && (
                   <span className="session-kids">{node.children.length}</span>
                 )}
-                {statusLabel[s.status] ? (
-                  <StatusIcon status={s.status} />
+                {statusLabel[s.status] || s.attention ? (
+                  <StatusIcon status={s.status} attention={s.attention} />
                 ) : (
                   <span className="session-time">
                     {relativeTime(s.updated, actions.now)}
@@ -692,6 +694,7 @@ function Section({
   count,
   forceOpen,
   defaultOpen = true,
+  badge,
   children,
 }: {
   id: string;
@@ -699,6 +702,8 @@ function Section({
   count: number;
   forceOpen: boolean;
   defaultOpen?: boolean;
+  // Shown even while the section is closed (sessions waiting for the user).
+  badge?: string;
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(
@@ -718,6 +723,7 @@ function Section({
       >
         <ChevronRight size={11} className={expanded ? "chev open" : "chev"} />
         <span>{title}</span>
+        {badge && <span className="section-badge">{badge}</span>}
         <span className="section-count">{count}</span>
       </button>
       {expanded && <div className="section-body">{children}</div>}
@@ -899,6 +905,10 @@ export function Sidebar({
             id="active"
             title="Active"
             count={model.active.length}
+            badge={(() => {
+              const n = model.active.filter((x) => x.session.attention).length;
+              return n ? `${n} need${n === 1 ? "s" : ""} you` : undefined;
+            })()}
             forceOpen={model.searching}
           >
             {model.active.map((n) => (

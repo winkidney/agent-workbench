@@ -30,6 +30,9 @@ export type Env = {
   // mode), or in a new session that starts from the plan alone.
   implementPlan?: () => Promise<void>;
   implementPlanFresh?: (plan: string) => Promise<void>;
+  // The user decided about the plan here (kept planning, or implemented it
+  // in a new session): it no longer needs them.
+  dismissPlan?: () => void;
 };
 
 export type ViewItem = {

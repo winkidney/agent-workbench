@@ -315,9 +315,9 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 			}
-			var o Options
-			m.store.readSetting(key, &o)
-			writeJSON(w, o)
+			// What new sessions start with: the built-in defaults (automatic
+			// approvals) under the saved ones.
+			writeJSON(w, m.newSessionDefaults(agent))
 			return
 		}
 		if r.Method != "GET" || (parts[2] != "capabilities" && parts[2] != "usage") {
@@ -565,8 +565,7 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 			bad(w, err)
 			return
 		}
-		var options Options
-		m.store.readSetting("defaults:"+v.Agent, &options)
+		options := m.newSessionDefaults(v.Agent)
 		if v.Options != nil {
 			options = *v.Options
 		}
@@ -800,6 +799,8 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 			}
 		case "interrupt":
 			err = m.Interrupt(id)
+		case "plan-dismiss":
+			err = m.DismissPlan(id)
 		case "archive":
 			err = m.Archive(id)
 		case "unarchive":
