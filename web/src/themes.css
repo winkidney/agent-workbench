@@ -965,6 +965,134 @@
    headings, links, quotes and code highlighting follow the theme instead of
    each CLI's own colors. These selectors outrank the per-agent rules in
    style.css, which stay as they are for Default. */
+/* Darcula: JetBrains' classic dark scheme, with IntelliJ Light as its light
+   pair. Colors from the IntelliJ Platform's own schemes (editor, console,
+   Markdown and UI themes); a few dim greys raised to stay readable. Code
+   and tool output use JetBrains Mono where it is installed. */
+:root[data-palette="darcula"],
+[data-palette="darcula"] {
+  --background: #ffffff;
+  --foreground: #080808;
+  --card: #f7f7f7;
+  --card-foreground: #080808;
+  --popover: #ffffff;
+  --popover-foreground: #080808;
+  --primary: #2675bf;
+  --primary-foreground: #ffffff;
+  --secondary: #ebebeb;
+  --secondary-foreground: #080808;
+  --muted: #f4f7f9;
+  --muted-foreground: #6e6e6e;
+  --accent: #e6e6e6;
+  --accent-foreground: #080808;
+  --border: #d1d1d1;
+  --input: #c4c4c4;
+  --ring: #97c3f3;
+  --sidebar: #f2f2f2;
+  --sidebar-foreground: #080808;
+  --destructive: #c7222d;
+  --success: #067d17;
+  --warning: #9e880d;
+  --info: #2470b3;
+  --diff-add: #bee6be;
+  --diff-del: #f5e6e7;
+  --ansi-0: #000000;
+  --ansi-1: #ce0505;
+  --ansi-2: #067d17;
+  --ansi-3: #b28c00;
+  --ansi-4: #063fdb;
+  --ansi-5: #b309b3;
+  --ansi-6: #028e8e;
+  --ansi-7: #929292;
+  --ansi-8: #656565;
+  --ansi-9: #ff1616;
+  --ansi-10: #16b42c;
+  --ansi-11: #b28c00;
+  --ansi-12: #2d61f0;
+  --ansi-13: #e617e6;
+  --ansi-14: #15c1c1;
+  --ansi-15: #c9c9c9;
+  --t-code: #067d17;
+  --t-h1: #0033b3;
+  --t-h2: #00627a;
+  --t-h3: #871094;
+  --t-link: #006dcc;
+  --t-quote: #6e6e6e;
+  --syn-keyword: #0033b3;
+  --syn-string: #067d17;
+  --syn-number: #1750eb;
+  --syn-function: #00627a;
+  --syn-type: #080808;
+  --syn-property: #871094;
+  --syn-variable: #080808;
+  --syn-punct: #080808;
+  --syn-comment: #8c8c8c;
+  --mono:
+    "JetBrains Mono", "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo,
+    monospace;
+}
+:root.dark[data-palette="darcula"],
+.dark [data-palette="darcula"] {
+  --background: #2b2b2b;
+  --foreground: #a9b7c6;
+  --card: #313335;
+  --card-foreground: #a9b7c6;
+  --popover: #3c3f41;
+  --popover-foreground: #bbbbbb;
+  --primary: #365880;
+  --primary-foreground: #ffffff;
+  --secondary: #4c5052;
+  --secondary-foreground: #bbbbbb;
+  --muted: #313335;
+  --muted-foreground: #ababab;
+  --accent: #46484a;
+  --accent-foreground: #bbbbbb;
+  --border: #515151;
+  --input: #646464;
+  --ring: #3d6185;
+  --sidebar: #3c3f41;
+  --sidebar-foreground: #bbbbbb;
+  --destructive: #ff6b68;
+  --success: #629755;
+  --warning: #be9117;
+  --info: #589df6;
+  --diff-add: #294436;
+  --diff-del: #593d41;
+  --ansi-0: #000000;
+  --ansi-1: #f0524f;
+  --ansi-2: #5c962c;
+  --ansi-3: #a68a0d;
+  --ansi-4: #3993d4;
+  --ansi-5: #a771bf;
+  --ansi-6: #00a3a3;
+  --ansi-7: #808080;
+  --ansi-8: #737373;
+  --ansi-9: #ff4050;
+  --ansi-10: #4fc414;
+  --ansi-11: #e5bf00;
+  --ansi-12: #1fb0ff;
+  --ansi-13: #ed7eed;
+  --ansi-14: #00e5e5;
+  --ansi-15: #ffffff;
+  --t-code: #6a8759;
+  --t-h1: #ffc66d;
+  --t-h2: #cc7832;
+  --t-h3: #9876aa;
+  --t-link: #589df6;
+  --t-quote: #ababab;
+  --syn-keyword: #cc7832;
+  --syn-string: #6a8759;
+  --syn-number: #6897bb;
+  --syn-function: #ffc66d;
+  --syn-type: #a9b7c6;
+  --syn-property: #9876aa;
+  --syn-variable: #a9b7c6;
+  --syn-punct: #a9b7c6;
+  --syn-comment: #808080;
+  --mono:
+    "JetBrains Mono", "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo,
+    monospace;
+}
 :root[data-palette] [data-agent] {
   --t-code: inherit;
   --t-h1: inherit;

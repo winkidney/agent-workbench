@@ -439,3 +439,23 @@ These are maintainer notes on how each feature of Agent Workbench was verified, 
   - A Claude background subagent showed as running under its parent ("1 sub") and was sleeping after.
   - Screenshots at 4× device pixels of the figure (16 px), the logo and the rows.
 
+## Darcula theme
+
+- **Basis:** JetBrains' own schemes from the IntelliJ Platform sources:
+  - the Darcula editor scheme (`DefaultColorSchemesManager.xml`) and IntelliJ Light (`themes/Light.xml`, on top of Default);
+  - their console colors;
+  - the Markdown plugin's Darcula and Default schemes;
+  - the Darcula and IntelliJ UI themes (`darcula.theme.json`, `intellijlaf.theme.json`).
+- **Change:** a Darcula theme, with Darcula in dark mode and IntelliJ Light in light mode.
+  - Surfaces: the editor (`#2b2b2b` / `#ffffff`) behind the conversation, tool windows (`#3c3f41` / `#f2f2f2`) for the sidebar and popovers, and the gutter or Markdown code background for cards and tool output.
+  - Code: keywords, strings, numbers, functions, fields and comments in the schemes' colors. Inline code takes the string color.
+  - Headings: function, keyword and field colors. Links take the UI link blue.
+  - Tool output: the console's ANSI colors.
+  - The theme lists JetBrains Mono first for code and tool output, where it is installed.
+- **Deviations from the schemes, for the readability floors the other themes meet:**
+  - Darcula's grey secondary text `#808080` / `#8c8c8c` is raised to `#ababab`, and its dark grey `#595959` (bright black) to `#737373`.
+  - The default button takes white text: Darcula's `#bbbbbb` reaches 3.9:1 on `#365880`.
+  - In IntelliJ Light, the console's bright yellow `#ecc32c` is replaced by its yellow `#b28c00`.
+- **Tests:** the theme suite, with a light and a dark block, every token, and contrast floors for text, conversation, syntax and terminal colors, also covers Darcula.
+- **Real checks:** a session's tool output, a reply with a heading, inline code, a link and a TypeScript block, and the theme menu, in dark and light. The test session was deleted.
+

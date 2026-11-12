@@ -185,6 +185,7 @@ The header's **⋯** menu sets the **Mode** (System, Light or Dark) and the **Th
 | Rosé Pine | Dawn | Moon | Muted rose and pine |
 | Nord | Snow Storm | Polar Night | Arctic blue-grey |
 | Tokyo Night | Day | Storm | Deep blue |
+| Darcula | IntelliJ Light | Darcula | JetBrains' classic schemes; code and tool output in JetBrains Mono where it is installed |
 
 A theme other than Default colors the whole page, and both agents the same way: the interface, headings, links, inline code, code highlighting and the ANSI colors in tool output. The colors come from each project's published palette. Where an accent was too faint to read on its background (yellows on light backgrounds, Nord's accents in light mode), only its lightness was changed, keeping the hue.
 

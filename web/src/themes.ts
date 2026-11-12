@@ -47,6 +47,11 @@ export const THEMES = [
     name: "Tokyo Night",
     description: "Deep blue: Day and Storm",
   },
+  {
+    id: "darcula",
+    name: "Darcula",
+    description: "JetBrains' classic dark, with IntelliJ Light",
+  },
 ] as const;
 
 export type Palette = (typeof THEMES)[number]["id"];
