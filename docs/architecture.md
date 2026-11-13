@@ -10,6 +10,8 @@ browser ──HTTP + SSE──▶ agent-workbench ──stdin/stdout JSON──�
                               └── preview proxy ──▶ loopback dev servers
 ```
 
+Decisions behind how it behaves, and their costs, are recorded in [docs/adr](adr/README.md).
+
 ## Engines
 
 Each session's agent is the official CLI, started in the session's launch directory and controlled over stdin and stdout.
