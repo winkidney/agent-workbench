@@ -18,7 +18,9 @@ export type Media =
   | { kind: "data"; src: string; mime?: string }
   | { kind: "path"; path: string }
   | { kind: "url"; url: string }
-  | { kind: "omitted"; bytes?: number };
+  // Left out of the record sent to the page; upload: the workbench's copy,
+  // when it was added there.
+  | { kind: "omitted"; bytes?: number; upload?: string };
 
 export type StepStatus = "pending" | "in_progress" | "completed";
 export type Step = { text: string; status: StepStatus };

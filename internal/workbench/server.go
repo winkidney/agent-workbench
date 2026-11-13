@@ -716,13 +716,21 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 		var v struct {
 			Agent, Cwd, Title, InitialMessage, RequestID string
 			Options                                      *Options `json:",omitempty"`
+			// Upload ids of the images and files added to the first message.
+			Images []string `json:",omitempty"`
+			Files  []string `json:",omitempty"`
 		}
 		if err := decode(w, r, &v); err != nil {
 			bad(w, err)
 			return
 		}
-		if strings.TrimSpace(v.InitialMessage) == "" {
+		if strings.TrimSpace(v.InitialMessage) == "" && len(v.Images) == 0 && len(v.Files) == 0 {
 			bad(w, errors.New("first message is required"))
+			return
+		}
+		files, err := m.uploads.Files(v.Files)
+		if err != nil {
+			bad(w, err)
 			return
 		}
 		s.creationMu.Lock()
@@ -741,7 +749,14 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		session, err := m.CreateSession(v.Agent, v.Cwd, v.Title, v.InitialMessage)
+		// Named by the text; without one, by the first file or "Image".
+		named := v.InitialMessage
+		if strings.TrimSpace(named) == "" && len(files) > 0 {
+			named = files[0].Name
+		} else if strings.TrimSpace(named) == "" {
+			named = "Image"
+		}
+		session, err := m.CreateSession(v.Agent, v.Cwd, v.Title, named)
 		if err != nil {
 			bad(w, err)
 			return
@@ -751,7 +766,7 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 			options = *v.Options
 		}
 		m.store.setting("options:"+session.ID, options)
-		if err := m.Send(session.ID, v.InitialMessage); err != nil {
+		if err := m.SendWith(session.ID, fileLines(v.InitialMessage, files), v.Images); err != nil {
 			bad(w, err)
 			return
 		}
@@ -786,6 +801,38 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, created)
 	case path == "events" && r.Method == "GET":
 		s.events(w, r)
+	case path == "uploads" && r.Method == "POST":
+		// An image for a message: its bytes, nothing else.
+		data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, uploadMax))
+		if err != nil {
+			http.Error(w, fmt.Sprintf("an image can be at most %.2f MB", float64(uploadMax)/(1<<20)), http.StatusRequestEntityTooLarge)
+			return
+		}
+		up, err := m.uploads.Save(data)
+		if errors.Is(err, errUnsupportedImage) {
+			http.Error(w, err.Error(), http.StatusUnsupportedMediaType)
+			return
+		}
+		if err != nil {
+			bad(w, err)
+			return
+		}
+		writeJSON(w, up)
+	case path == "uploads/files" && r.Method == "POST":
+		// A file of any kind for a message: its bytes, its name in the query.
+		up, err := m.uploads.SaveFile(http.MaxBytesReader(w, r.Body, uploadFileMax), r.URL.Query().Get("name"))
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			http.Error(w, fmt.Sprintf("a file can be at most %d MB", uploadFileMax>>20), http.StatusRequestEntityTooLarge)
+			return
+		}
+		if err != nil {
+			bad(w, err)
+			return
+		}
+		writeJSON(w, up)
+	case strings.HasPrefix(path, "uploads/") && (r.Method == "GET" || r.Method == "HEAD"):
+		s.serveUpload(w, r, strings.TrimPrefix(path, "uploads/"))
 	case path == "history" && r.Method == "GET":
 		id := r.URL.Query().Get("session")
 		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
@@ -916,22 +963,30 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 				Queue bool
 				// Steer: into the running turn now (a plain send when idle).
 				Steer bool
+				// Upload ids of the images and files added to the message.
+				Images, Files []string
 			}
 			err = decode(w, r, &v)
+			var files []attached
+			if err == nil {
+				// Files go as lines that say where they are.
+				files, err = m.uploads.Files(v.Files)
+				v.Text = fileLines(v.Text, files)
+			}
 			if err == nil && v.Steer {
 				var res SteerResult
-				if res, err = m.Steer(id, v.Text); err == nil {
+				if res, err = m.SteerWith(id, v.Text, v.Images); err == nil {
 					writeJSON(w, res)
 					return
 				}
 			} else if err == nil && v.Queue {
 				var wasQueued bool
-				if wasQueued, err = m.Enqueue(id, v.Text); err == nil {
+				if wasQueued, err = m.EnqueueWith(id, v.Text, v.Images); err == nil {
 					writeJSON(w, map[string]any{"ok": true, "queued": wasQueued})
 					return
 				}
 			} else if err == nil {
-				err = m.Send(id, v.Text)
+				err = m.SendWith(id, v.Text, v.Images)
 			}
 		case "queue-resume":
 			err = m.ResumeQueue(id)

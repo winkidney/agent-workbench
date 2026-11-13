@@ -27,14 +27,18 @@ type SteerResult struct {
 
 // steered is a Claude message sent while a turn ran, until a turn answers it.
 type steered struct {
-	text  string
-	state string // the CLI's command_lifecycle state: queued, started
+	text   string
+	images []string
+	state  string // the CLI's command_lifecycle state: queued, started
 }
 
 // Steer sends text into the running turn, or starts a turn when none runs.
-func (m *Manager) Steer(id, text string) (SteerResult, error) {
-	if strings.TrimSpace(text) == "" || len(text) > 1024*1024 {
-		return SteerResult{}, errors.New("message must contain 1 to 1048576 bytes")
+func (m *Manager) Steer(id, text string) (SteerResult, error) { return m.SteerWith(id, text, nil) }
+
+// SteerWith is Steer for a message with images.
+func (m *Manager) SteerWith(id, text string, images []string) (SteerResult, error) {
+	if err := checkMessage(text, images); err != nil {
+		return SteerResult{}, err
 	}
 	if m.findUnlocked(id) == nil {
 		if err := m.Attach(id); err != nil {
@@ -51,7 +55,7 @@ func (m *Manager) Steer(id, text string) (SteerResult, error) {
 	agent, cwd := r.session.Agent, r.session.Cwd
 	m.mu.Unlock()
 	if !running {
-		return m.queueInstead(id, text, "")
+		return m.queueInstead(id, text, images, "")
 	}
 	if isCommand(text) {
 		return SteerResult{}, errors.New("commands run after the turn; queue this instead")
@@ -60,13 +64,17 @@ func (m *Manager) Steer(id, text string) (SteerResult, error) {
 	if err != nil {
 		return SteerResult{}, err
 	}
+	pics, err := m.uploads.Read(images)
+	if err != nil {
+		return SteerResult{}, err
+	}
 	if agent == "codex" {
-		return m.steerCodex(id, text, prepared, attach)
+		return m.steerCodex(id, text, prepared, attach, images, pics)
 	}
 	if isCommand(prepared) {
 		return SteerResult{}, errors.New("skills run after the turn; queue this instead")
 	}
-	return m.steerClaude(id, text, prepared)
+	return m.steerClaude(id, text, prepared, images, pics)
 }
 
 func isCommand(text string) bool {
@@ -76,8 +84,8 @@ func isCommand(text string) bool {
 
 // queueInstead hands the message to the workbench queue, which sends it at
 // once when no turn runs.
-func (m *Manager) queueInstead(id, text, reason string) (SteerResult, error) {
-	queued, err := m.Enqueue(id, text)
+func (m *Manager) queueInstead(id, text string, images []string, reason string) (SteerResult, error) {
+	queued, err := m.EnqueueWith(id, text, images)
 	if err != nil {
 		return SteerResult{}, err
 	}
@@ -100,7 +108,7 @@ func (m *Manager) steerable(id string) (r *runtime, reason string) {
 	return r, ""
 }
 
-func (m *Manager) steerCodex(id, text, prepared string, attach []Skill) (SteerResult, error) {
+func (m *Manager) steerCodex(id, text, prepared string, attach []Skill, images []string, pics []pasted) (SteerResult, error) {
 	// turn/steer names the active turn, known once turn/started arrives.
 	deadline := time.Now().Add(2 * time.Second)
 	var turnID, native string
@@ -109,29 +117,25 @@ func (m *Manager) steerCodex(id, text, prepared string, attach []Skill) (SteerRe
 		r, reason := m.steerable(id)
 		if reason != "" {
 			m.mu.Unlock()
-			return m.queueInstead(id, text, reason)
+			return m.queueInstead(id, text, images, reason)
 		}
 		turnID, native = r.turnID, r.session.NativeID
 		if turnID != "" {
 			// Shown at once, as a sent message is; Codex's own item replaces it.
-			m.emit(r.session.ID, "user", map[string]any{"text": prepared, "steered": true})
+			m.emit(r.session.ID, "user", userShown(prepared, pics, map[string]any{"steered": true}))
 			m.mu.Unlock()
 			break
 		}
 		m.mu.Unlock()
 		if time.Now().After(deadline) {
-			return m.queueInstead(id, text, "the turn has not started yet")
+			return m.queueInstead(id, text, images, "the turn has not started yet")
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	input := []any{}
-	for _, s := range attach {
-		input = append(input, map[string]any{"type": "skill", "name": s.Name, "path": s.Path})
-	}
-	input = append(input, map[string]any{"type": "text", "text": prepared})
+	input := codexInput(attach, prepared, pics)
 	if _, err := m.rpc(id, "turn/steer", map[string]any{"threadId": native, "input": input, "expectedTurnId": turnID}); err != nil {
 		m.retract(id, prepared)
-		return m.queueInstead(id, text, "Codex did not take it ("+err.Error()+")")
+		return m.queueInstead(id, text, images, "Codex did not take it ("+err.Error()+")")
 	}
 	// A message into the turn answers (or sets aside) Codex's async questions.
 	m.mu.Lock()
@@ -143,22 +147,22 @@ func (m *Manager) steerCodex(id, text, prepared string, attach []Skill) (SteerRe
 	return SteerResult{Steered: true}, nil
 }
 
-func (m *Manager) steerClaude(id, text, prepared string) (SteerResult, error) {
+func (m *Manager) steerClaude(id, text, prepared string, images []string, pics []pasted) (SteerResult, error) {
 	m.mu.Lock()
 	r, reason := m.steerable(id)
 	if reason != "" {
 		m.mu.Unlock()
-		return m.queueInstead(id, text, reason)
+		return m.queueInstead(id, text, images, reason)
 	}
 	u := uuid.NewString()
 	if r.steering == nil {
 		r.steering = map[string]*steered{}
 	}
-	r.steering[u] = &steered{text: prepared}
+	r.steering[u] = &steered{text: prepared, images: images}
 	// Claude does not echo the message on its stream; history shows it later.
 	// The uuid lets the page offer send-now while it waits.
-	m.emit(r.session.ID, "user", map[string]any{"text": prepared, "steered": true, "uuid": u, "sendNow": r.caps["interrupt_send_now_v1"]})
-	err := r.proc.Input(map[string]any{"type": "user", "uuid": u, "message": map[string]any{"role": "user", "content": prepared}, "parent_tool_use_id": nil, "session_id": r.session.NativeID})
+	m.emit(r.session.ID, "user", userShown(prepared, pics, map[string]any{"steered": true, "uuid": u, "sendNow": r.caps["interrupt_send_now_v1"]}))
+	err := r.proc.Input(map[string]any{"type": "user", "uuid": u, "message": map[string]any{"role": "user", "content": claudeContent(prepared, pics)}, "parent_tool_use_id": nil, "session_id": r.session.NativeID})
 	if err != nil {
 		delete(r.steering, u)
 	}
@@ -222,7 +226,7 @@ func (m *Manager) claudeLifecycle(r *runtime, v map[string]any) {
 		delete(r.steering, u)
 	case "cancelled":
 		delete(r.steering, u)
-		r.queue = append([]queued{{ID: token()[:12], Text: s.text}}, r.queue...)
+		r.queue = append([]queued{{ID: token()[:12], Text: s.text, Images: s.images}}, r.queue...)
 		r.queuePaused = true
 		m.emitQueue(r)
 	default:
@@ -259,7 +263,7 @@ func (m *Manager) SteerQueued(id, qid string) (SteerResult, error) {
 	}
 	m.emitQueue(r)
 	m.mu.Unlock()
-	res, err := m.Steer(id, item.Text)
+	res, err := m.SteerWith(id, item.Text, item.Images)
 	if err != nil {
 		m.mu.Lock()
 		if r := m.find(id); r != nil {

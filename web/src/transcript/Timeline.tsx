@@ -7,7 +7,8 @@ import {
   useState,
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { ArrowDown, ArrowUpRight, ChevronRight } from "lucide-react";
+import { ArrowDown, ArrowUpRight, ChevronRight, FileText } from "lucide-react";
+import { splitFiles } from "./files";
 import { PixelChase } from "../components/pixel";
 import {
   formatDuration,
@@ -397,7 +398,12 @@ function ToolRowBody({ block, kids, open, onToggle }: RowProps) {
 }
 
 function UserRow({ block, open, onToggle }: RowProps) {
-  const lines = (block.text ?? "").split("\n");
+  // Files added to it are lines that say where they are: shown as the files.
+  const { text: said, files } = useMemo(
+    () => splitFiles(block.text ?? ""),
+    [block.text],
+  );
+  const lines = said.split("\n");
   const long = lines.length > 12;
   // Answers to Codex's questions read as question and answer.
   const replies = useMemo(() => parseAnswers(block.text), [block.text]);
@@ -414,9 +420,20 @@ function UserRow({ block, open, onToggle }: RowProps) {
               </div>
             ))}
           </div>
-        ) : (
+        ) : said || (!block.media?.length && !files.length) ? (
           <div className="user-text">
-            {long && !open ? lines.slice(0, 12).join("\n") : block.text}
+            {long && !open ? lines.slice(0, 12).join("\n") : said}
+          </div>
+        ) : null}
+        {files.length > 0 && (
+          <div className="user-files">
+            {files.map((f, i) => (
+              <span key={i} className="user-file" title={f.path}>
+                <FileText size={13} />
+                <span className="user-file-name">{f.name}</span>
+                <small>{f.size}</small>
+              </span>
+            ))}
           </div>
         )}
         {block.sending && <div className="user-sending">Sending…</div>}

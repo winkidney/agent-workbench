@@ -713,3 +713,67 @@ These are maintainer notes on how each feature of Agent Workbench was verified, 
     - **First run:** a drawn SVG was held by the render queue's last promise (`catch()` passes results on). Fixed.
   - **Caching:** on a second visit, the app's JS and CSS came from the browser's cache; only `index.html` was fetched.
   - **ELK:** Mermaid 12 lays diagrams out with ELK (1.4 MB) by default, so it loads with the first flowchart and is then cached like the rest.
+
+## Images and files in messages, and pinned sessions out of Active
+
+- **Why:**
+  - **Images and files:** the composer took text only, though the transcript already showed images in user messages.
+  - **Sidebar:** a session both pinned and active was listed twice, under Pinned and under Active.
+- **Change:**
+  - **Adding:**
+    - images can be pasted, dropped or picked with the paperclip button;
+    - files of any kind can be dropped or picked;
+    - paste adds images only, and only when the clipboard holds no text, so spreadsheet cells paste as text.
+  - **Uploads** (`/api/uploads`, behind the same sign-in and origin checks as the rest of the API):
+    - **Images:** sniffed from their bytes; only PNG, JPEG and WebP are kept. They are named by their SHA-256, at most 3.75 MB each, and served back sandboxed with `nosniff` and `immutable`.
+    - **Files:** up to 100 MB, kept under their own (sanitized) name, written to disk as they arrive, never served back.
+    - **Retention:** a week after last use, and 1 GB at most, by the hourly tidy.
+  - **Before upload (browser):** an image over 2000 px or 3.75 MB, or in another format, is redrawn: PNG, or JPEG when still too large. One the browser cannot read (SVG, HEIC in Chrome) is added as a file.
+  - **To the agents:**
+    - **Claude:** image blocks (base64), then the text.
+    - **Codex:** `image` items with data URLs, then the text.
+    - **Files:** a line each after the text, `[File (12 KB): /path]`; the page shows these lines as file chips.
+    - **Steering and the queue:** steered and queued messages carry them too. A Claude steer that is cancelled goes back to the queue with them.
+  - **History:** an image over 512 KB in a record (Claude's base64, and now Codex's data URLs, which were passed whole) is left out and named by its hash; the page shows the workbench's copy when it has one, and "Image omitted" otherwise.
+  - **Memory:** the page keeps no image data. Thumbnails are `<img>` of the workbench's address; drafts and the queue keep names only. A bitmap and canvas used to redraw an image are released at once. Uploads still running when the composer goes are stopped. An inline image is no longer named by its data (its `alt` and tooltip held the whole data URL).
+  - **Sidebar:** a pinned session, with its subsessions, is left out of Active, and the Pinned header counts the sessions that need you.
+- **New tests:**
+  - **Go:**
+    - uploads keep PNG, JPEG and WebP by content, and refuse SVG, HTML, GIF and text whatever the request claims;
+    - uploads are size-limited, need sign-in and the origin, and are served inert;
+    - bad names are 404s;
+    - Claude gets images before the text, and Codex gets data URLs;
+    - images or files alone are a message; unknown or too many are refused;
+    - the queue, Codex steering and a cancelled Claude steer keep their images;
+    - large record images are named by hash;
+    - file names are sanitized, file lines are formatted, and kept files are never served;
+    - retention removes old files and folders, and the oldest past the limit.
+  - **Vitest:**
+    - the paste rule, and which images are redrawn and to what size;
+    - the strip with images, files, progress and errors;
+    - queued images;
+    - sent images on the message at once and as echoed;
+    - large images found again or left out, and only the workbench's own names becoming addresses;
+    - file lines read back;
+    - a pinned subagent leaving its parent's family.
+- **Browser** (scratch instance on a separate data folder; Chrome via Playwright):
+  - **Adding:**
+    - a pasted PNG was added and shown from `/api/uploads`;
+    - text with an image, or a PDF, pasted nothing extra;
+    - a dropped image and picked files were added, and the dashed outline showed while dragging;
+    - a 4000×3000 PNG became 2000×1500; a 7.9 MB PNG became a 1.5 MB JPEG;
+    - SVG and text files became file chips;
+    - removing, the viewer, the new-session form, and a draft kept across a session switch all worked;
+    - at 390 px the page had no horizontal scroll.
+  - **Real sessions** (made in a scratch project, then deleted), Claude and Codex each:
+    - **First message:** the image answered right ("ZEBRA 7, yellow background").
+    - **A 1.2 MB image:** answered right ("FALCON 3, blue background").
+    - **An image steered into a running `sleep 12` turn:** taken in ("DONE / OTTER 5").
+    - **An attached text file:** read without a permission prompt in each CLI's automatic mode ("PELICAN-42").
+    - **Codex history:** the 1.2 MB image came back named by hash and showed from the workbench's copy.
+    - **Claude history:** Claude Code stored the image re-encoded (335 KB of base64), so it showed inline.
+  - **Memory** (JS heap after forced GC, after leaving a session with images for one without, 10 times):
+    - **Heap:** flat at 9.8 MB.
+    - **Left in memory:** two small inline images from the session just left, held through one element Chrome's document keeps (the last interacted element of that view), not accumulating.
+  - **Sidebar:** pinning an active session listed it under Pinned only; unpinning returned it to Active.
+  - **Size:** main JS chunk 784 kB (was 774 kB).

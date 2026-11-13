@@ -700,6 +700,12 @@ function OtherGroup({
   );
 }
 
+// How many of a section's sessions wait for the user, as its header says.
+function needsYouBadge(nodes: Node[]) {
+  const n = nodes.filter(needsYou).length;
+  return n ? `${n} need${n === 1 ? "s" : ""} you` : undefined;
+}
+
 function Section({
   id,
   title,
@@ -903,6 +909,7 @@ export function Sidebar({
             id="pinned"
             title="Pinned"
             count={model.pinned.length}
+            badge={needsYouBadge(model.pinned)}
             forceOpen={model.searching}
           >
             {model.pinned.map((n) => (
@@ -922,10 +929,7 @@ export function Sidebar({
             id="active"
             title="Active"
             count={model.active.length}
-            badge={(() => {
-              const n = model.active.filter(needsYou).length;
-              return n ? `${n} need${n === 1 ? "s" : ""} you` : undefined;
-            })()}
+            badge={needsYouBadge(model.active)}
             forceOpen={model.searching}
           >
             {model.active.map((n) => (

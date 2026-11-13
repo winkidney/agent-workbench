@@ -16,7 +16,12 @@ import type { Context, Draft } from "./reducer";
 import { stripAnsi } from "./ansi";
 
 export function imageMedia(c: Record<string, unknown>): Media {
-  if (c.omitted === true) return { kind: "omitted", bytes: Number(c.bytes) };
+  if (c.omitted === true)
+    return {
+      kind: "omitted",
+      bytes: Number(c.bytes),
+      upload: text(c.upload) || undefined,
+    };
   const source = record(c.source);
   if (source.type === "url") return { kind: "url", url: text(source.url) };
   const mime = text(source.media_type || c.mimeType) || "image/png";

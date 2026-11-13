@@ -8,6 +8,13 @@ import type { Prefs, Session } from "../sidebar/tree";
 import { ProjectPicker } from "./ProjectPicker";
 import { AgentIcon } from "../components/AgentIcon";
 import { recentProjects } from "./recent";
+import { pastedImages, useAttachments } from "../composer/attachments";
+import {
+  AddFiles,
+  AttachmentStrip,
+  useFileDrop,
+} from "../composer/AttachmentStrip";
+import type { ViewItem } from "../transcript/media";
 
 type Agent = "claude" | "codex";
 const STORE = "workbench-new";
@@ -28,12 +35,15 @@ export function NewSession({
   prefs,
   initialCwd,
   onCreated,
+  onView,
 }: {
   sessions: Session[];
   workspaces: string[];
   prefs: Prefs;
   initialCwd?: string;
   onCreated: (s: Session) => void;
+  // Opens added images in the viewer.
+  onView?: (items: ViewItem[], index: number) => void;
 }) {
   const recent = useMemo(
     () => recentProjects(sessions, prefs, workspaces),
@@ -49,6 +59,10 @@ export function NewSession({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const input = useRef<HTMLTextAreaElement>(null);
+  const images = useAttachments();
+  const drop = useFileDrop(!busy, images.add);
+  const sendable =
+    (!!text.trim() || images.ready.length > 0) && !images.uploading;
   useLayoutEffect(() => {
     const el = input.current;
     if (!el) return;
@@ -63,8 +77,7 @@ export function NewSession({
   };
   const project = recent.find((p) => p.path === cwd);
   const submit = async () => {
-    const message = text.trim();
-    if (!message || !cwd || busy) return;
+    if (!sendable || !cwd || busy) return;
     setBusy(true);
     setError("");
     remember({ agent, cwd });
@@ -73,6 +86,8 @@ export function NewSession({
         agent,
         cwd,
         initialMessage: text,
+        images: images.images.map((a) => a.id),
+        files: images.files.map((a) => a.id),
         options,
         requestID: crypto.randomUUID(),
       });
@@ -95,12 +110,23 @@ export function NewSession({
         </p>
       </div>
       <form
-        className={"composer new-composer" + (busy ? " busy" : "")}
+        className={
+          "composer new-composer" +
+          (busy ? " busy" : "") +
+          (drop.over ? " dropping" : "")
+        }
         onSubmit={(e) => {
           e.preventDefault();
           void submit();
         }}
+        {...drop.handlers}
       >
+        <AttachmentStrip
+          items={images.items}
+          notice={images.notice}
+          onRemove={images.remove}
+          onView={onView}
+        />
         <textarea
           ref={input}
           rows={2}
@@ -110,6 +136,12 @@ export function NewSession({
           value={text}
           disabled={busy}
           onChange={(e) => setText(e.target.value)}
+          onPaste={(e) => {
+            const files = pastedImages(e.clipboardData);
+            if (!files.length) return;
+            e.preventDefault();
+            images.add(files);
+          }}
           onKeyDown={(e) => {
             if (newlineKey(e)) return;
             if (e.key === "Enter" && !e.nativeEvent.isComposing) {
@@ -119,6 +151,7 @@ export function NewSession({
           }}
         />
         <div className="composer-bottom">
+          <AddFiles disabled={busy} onFiles={images.add} />
           <div className="agent-switch" role="radiogroup" aria-label="Agent">
             {(["claude", "codex"] as Agent[]).map((a) => (
               <button
@@ -152,7 +185,7 @@ export function NewSession({
               className="composer-send"
               aria-label="Start session"
               title="Start (Enter)"
-              disabled={busy || !text.trim() || !cwd}
+              disabled={busy || !sendable || !cwd}
             >
               {busy ? (
                 <Loader2 size={15} className="spin" />

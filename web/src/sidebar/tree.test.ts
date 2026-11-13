@@ -134,6 +134,46 @@ describe("sidebar tree", () => {
     expect(pinned.pinned[0].children.map((c) => c.session.id)).toEqual(
       expect.arrayContaining(["codex:k1", "codex:k2", "codex:k3"]),
     );
+    // ...and is listed there alone, not again under Active.
+    expect(tree(pinned)).toEqual([
+      ["claude:q", ["claude:q:agent-a1"]],
+      ["codex:orphan", []],
+    ]);
+    // A pinned subagent leaves its active parent's family.
+    expect(
+      tree(
+        buildSidebar(
+          list,
+          applyOp(emptyPrefs(), "pinSession", "claude:q:agent-a1"),
+        ),
+      ),
+    ).toEqual([
+      ["codex:p", ["codex:k1"]],
+      ["codex:orphan", []],
+    ]);
+  });
+
+  it("shows a session both pinned and active only under Pinned", () => {
+    const m = buildSidebar(
+      sessions,
+      applyOp(emptyPrefs(), "pinSession", "codex:a"),
+    );
+    expect(m.pinned.map((n) => n.session.id)).toEqual(["codex:a"]);
+    expect(m.active.map((n) => n.session.id)).toEqual([
+      "claude:e",
+      "claude:b",
+      "claude:c",
+    ]);
+    // Unpinned, it is active again.
+    const back = buildSidebar(
+      sessions,
+      applyOp(
+        applyOp(emptyPrefs(), "pinSession", "codex:a"),
+        "unpinSession",
+        "codex:a",
+      ),
+    );
+    expect(back.active[0].session.id).toBe("codex:a");
   });
 
   it("keeps pin order and puts pinned projects first", () => {

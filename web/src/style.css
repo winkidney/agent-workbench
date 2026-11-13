@@ -1573,6 +1573,25 @@ p {
   color: var(--muted-foreground);
   flex-shrink: 0;
 }
+.queue-images {
+  display: inline-flex;
+  flex: none;
+  gap: 3px;
+}
+.queue-item button.queue-image {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: zoom-in;
+}
+.queue-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
 .queue-text {
   flex: 1;
   min-width: 0;
@@ -3512,6 +3531,164 @@ textarea {
 }
 .composer-send:disabled {
   opacity: 0.3;
+}
+/* Images added to the message: pasted, dropped or picked. */
+.composer.dropping {
+  border-style: dashed;
+  border-color: var(--ring);
+}
+.composer-attach {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+.composer-attach:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--foreground);
+}
+.composer-attach:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+.composer-attach:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.attachments {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px 0;
+}
+.attachment {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  flex: none;
+}
+.attachment-view,
+.attachment-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--muted);
+  color: var(--muted-foreground);
+}
+.attachment-view {
+  cursor: zoom-in;
+}
+.attachment-view img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.attachment.failed .attachment-state {
+  border-color: color-mix(in oklch, var(--destructive) 45%, var(--border));
+  color: var(--destructive);
+}
+.attachment-remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 2px solid var(--card);
+  border-radius: 50%;
+  background: var(--foreground);
+  color: var(--background);
+  cursor: pointer;
+}
+.attachment-remove:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+/* A file: its kind, name and size, as wide as its name needs. */
+.attachment.file {
+  width: auto;
+  max-width: 220px;
+}
+.attachment-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 100%;
+  padding: 0 14px 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--muted);
+  color: var(--muted-foreground);
+}
+.attachment.file.failed .attachment-file {
+  border-color: color-mix(in oklch, var(--destructive) 45%, var(--border));
+  color: var(--destructive);
+}
+.attachment-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.3;
+}
+.attachment-name span {
+  overflow: hidden;
+  color: var(--foreground);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attachment-name small,
+.user-file small {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+/* Files sent with a message. */
+.user-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0;
+}
+.user-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--background);
+  color: var(--muted-foreground);
+}
+.user-file-name {
+  overflow: hidden;
+  color: var(--foreground);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attachments-notice {
+  color: var(--muted-foreground);
+  font-size: 11.5px;
 }
 .agent-selectors {
   display: flex;

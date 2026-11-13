@@ -20,8 +20,15 @@ import {
 } from "./commands";
 import { goalIntent, type Goal } from "./goal";
 import { shownSuggestion } from "./suggestion";
+import { pastedImages, useAttachments, type Attachment } from "./attachments";
+import { AddFiles, AttachmentStrip, useFileDrop } from "./AttachmentStrip";
+import type { ViewItem } from "../transcript/media";
 
 export type SendMode = "send" | "steer" | "queue";
+// What a message carries besides its text: images (their upload, and where
+// each is shown from) and files (their upload).
+export type SentImage = { id: string; url: string };
+export type Attached = { images: SentImage[]; files: string[] };
 
 type ComposerSession = {
   id: string;
@@ -37,8 +44,10 @@ type ComposerSession = {
   recordMissing?: boolean;
 };
 
-// Unsent drafts survive switching sessions.
+// Unsent drafts survive switching sessions: the text, and the images and
+// files added (only their names; the workbench keeps them).
 const drafts = new Map<string, string>();
+const imageDrafts = new Map<string, Attachment[]>();
 
 // Command and skill catalogs per session, refreshed after a minute.
 const catalogs = new Map<string, { at: number; value: Promise<Catalog> }>();
@@ -67,6 +76,7 @@ export function Composer({
   onAction,
   onInterrupt,
   onBackground,
+  onView,
 }: {
   session: ComposerSession;
   running: boolean;
@@ -75,7 +85,11 @@ export function Composer({
   goal?: Goal | null;
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
   // send: a new turn; steer: into the running turn; queue: after it.
-  onSend: (text: string, how: SendMode) => Promise<unknown>;
+  onSend: (
+    text: string,
+    how: SendMode,
+    attached?: Attached,
+  ) => Promise<unknown>;
   // A workbench (or Codex) "/" command.
   onCommand: (name: string, args: string) => Promise<unknown>;
   // A command the page carries out, such as /new.
@@ -83,6 +97,8 @@ export function Composer({
   onInterrupt: () => void;
   // Ctrl+B: move what the turn waits on to the background (Claude).
   onBackground?: () => void;
+  // Opens added images in the viewer.
+  onView?: (items: ViewItem[], index: number) => void;
 }) {
   const ctl = useAgentControls({ session });
   const [prompt, setPromptState] = useState(() => drafts.get(session.id) ?? "");
@@ -90,6 +106,11 @@ export function Composer({
     drafts.set(session.id, v);
     setPromptState(v);
   };
+  const images = useAttachments(imageDrafts.get(session.id));
+  useEffect(() => {
+    if (images.ready.length) imageDrafts.set(session.id, images.ready);
+    else imageDrafts.delete(session.id);
+  }, [images.items, session.id]);
   const local = useRef<HTMLTextAreaElement>(null);
   const ref = inputRef ?? local;
   // "/" and "$" menu: the token at the caret decides what is listed.
@@ -156,6 +177,10 @@ export function Composer({
       Math.min(el.scrollHeight, Math.round(innerHeight * 0.4)) + "px";
   }, [prompt, ref]);
   const readOnly = !!session.readOnly || !!session.archived;
+  const drop = useFileDrop(!readOnly, images.add);
+  // Something to send: text, images or files, none still being added.
+  const sendable =
+    (!!prompt.trim() || images.ready.length > 0) && !images.uploading;
   // What the user would likely type next: in grey in the empty prompt, as
   // Claude Code shows it; Tab (or the key cap) fills it in.
   const suggestion = shownSuggestion({
@@ -167,7 +192,7 @@ export function Composer({
   // During a turn Enter steers; the Queue button keeps it for after.
   const submit = async (queue = false) => {
     const text = prompt;
-    if (!text.trim() || disabled || readOnly) return;
+    if (!sendable || disabled || readOnly) return;
     let r: Route = { kind: "send" };
     const trimmed = text.trim();
     if (trimmed.startsWith("/") && !trimmed.startsWith("//")) {
@@ -194,11 +219,21 @@ export function Composer({
           ?.setAttribute("open", "");
       return onAction(r.action, r.args);
     }
-    const done =
-      r.kind === "command"
-        ? onCommand(r.name, r.args)
-        : onSend(text, !running ? "send" : queue ? "queue" : "steer");
-    done.catch(() => setPrompt(text));
+    if (r.kind === "command")
+      return onCommand(r.name, r.args).catch(() => setPrompt(text));
+    // Commands leave images and files for the next message; a message takes
+    // them.
+    const sent = images.ready;
+    images.set([]);
+    onSend(text, !running ? "send" : queue ? "queue" : "steer", {
+      images: sent
+        .filter((a) => a.kind === "image")
+        .map((a) => ({ id: a.id!, url: a.url! })),
+      files: sent.filter((a) => a.kind === "file").map((a) => a.id!),
+    }).catch(() => {
+      setPrompt(text);
+      images.set(sent);
+    });
   };
   return (
     <div className="composer-wrap" ref={wrap}>
@@ -249,12 +284,23 @@ export function Composer({
         </div>
       )}
       <form
-        className={"composer" + (readOnly ? " read-only" : "")}
+        className={
+          "composer" +
+          (readOnly ? " read-only" : "") +
+          (drop.over ? " dropping" : "")
+        }
         onSubmit={(e) => {
           e.preventDefault();
           void submit();
         }}
+        {...drop.handlers}
       >
+        <AttachmentStrip
+          items={images.items}
+          notice={images.notice}
+          onRemove={images.remove}
+          onView={onView}
+        />
         <textarea
           ref={ref}
           rows={1}
@@ -284,6 +330,12 @@ export function Composer({
             setDismissed(false);
           }}
           onSelect={(e) => syncCaret(e.currentTarget)}
+          onPaste={(e) => {
+            const files = pastedImages(e.clipboardData);
+            if (!files.length) return;
+            e.preventDefault();
+            images.add(files);
+          }}
           onKeyDown={(e) => {
             if (open && !e.nativeEvent.isComposing) {
               if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -357,6 +409,7 @@ export function Composer({
           </span>
         )}
         <div className="composer-bottom">
+          <AddFiles disabled={readOnly} onFiles={images.add} />
           <AgentSelectors ctl={ctl} session={session} />
           <div className="composer-actions">
             <ContextRing ctl={ctl} />
@@ -385,7 +438,7 @@ export function Composer({
                 disabled={
                   disabled ||
                   readOnly ||
-                  !prompt.trim() ||
+                  !sendable ||
                   session.status === "stopping"
                 }
                 onClick={() => void submit(true)}
@@ -408,7 +461,7 @@ export function Composer({
               disabled={
                 disabled ||
                 readOnly ||
-                !prompt.trim() ||
+                !sendable ||
                 session.status === "stopping"
               }
             >

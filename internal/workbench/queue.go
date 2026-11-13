@@ -2,7 +2,6 @@ package workbench
 
 import (
 	"errors"
-	"strings"
 	"time"
 )
 
@@ -11,6 +10,8 @@ import (
 type queued struct {
 	ID   string `json:"id"`
 	Text string `json:"text"`
+	// Images added in the page, by upload id; read when it is sent.
+	Images []string `json:"images,omitempty"`
 }
 
 const queueLimit = 20
@@ -23,22 +24,30 @@ func (m *Manager) emitQueue(r *runtime) {
 // Enqueue sends immediately when the session can take a turn; otherwise the
 // message waits and is sent when the current turn completes. It reports
 // whether the message was queued.
-func (m *Manager) Enqueue(id, text string) (bool, error) {
-	if strings.TrimSpace(text) == "" || len(text) > 1024*1024 {
-		return false, errors.New("message must contain 1 to 1048576 bytes")
+func (m *Manager) Enqueue(id, text string) (bool, error) { return m.EnqueueWith(id, text, nil) }
+
+// EnqueueWith is Enqueue for a message with images.
+func (m *Manager) EnqueueWith(id, text string, images []string) (bool, error) {
+	if err := checkMessage(text, images); err != nil {
+		return false, err
 	}
 	m.mu.Lock()
 	r := m.find(id)
 	busy := r != nil && r.proc != nil && (r.turn || r.configuring || len(r.pending) > 0 || (len(r.queue) > 0 && !r.queuePaused))
 	if !busy {
 		m.mu.Unlock()
-		return false, m.Send(id, text)
+		return false, m.SendWith(id, text, images)
 	}
 	defer m.mu.Unlock()
 	if len(r.queue) >= queueLimit {
 		return false, errors.New("queue is full")
 	}
-	r.queue = append(r.queue, queued{ID: token()[:12], Text: text})
+	for _, image := range images {
+		if _, ok := m.uploads.Path(image); !ok {
+			return false, errors.New("an image is no longer available; add it again")
+		}
+	}
+	r.queue = append(r.queue, queued{ID: token()[:12], Text: text, Images: images})
 	m.emitQueue(r)
 	return true, nil
 }
@@ -72,7 +81,7 @@ func (m *Manager) dispatchQueued(r *runtime) {
 	m.emitQueue(r)
 	id := r.session.ID
 	go func() {
-		if err := m.Send(id, next.Text); err != nil {
+		if err := m.SendWith(id, next.Text, next.Images); err != nil {
 			m.mu.Lock()
 			defer m.mu.Unlock()
 			if rt := m.find(id); rt != nil {

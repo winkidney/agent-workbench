@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { text, type Agent, type WorkbenchEvent } from "./model";
 import { checkAccess } from "../lib/api";
+import type { Queued } from "../composer/QueueList";
 import {
   applyEvents,
   emptyState,
@@ -114,7 +115,7 @@ export function useTranscript(
   );
   const [turnStarted, setTurnStarted] = useState<number | null>(null);
   const [pendingQueue, setQueue] = useState<{
-    items: { id: string; text: string }[];
+    items: Queued[];
     paused: boolean;
   }>({
     items: [],
@@ -183,7 +184,7 @@ export function useTranscript(
       // As the approval events have them (planResume and the like too).
       pending: { id: string; request: unknown; [key: string]: unknown }[];
       turnStartedAt?: string;
-      queue?: { id: string; text: string }[];
+      queue?: Queued[];
       queuePaused?: boolean;
     }>(`sessions/${encodeURIComponent(id)}/live`)
       .then((live) => {
@@ -255,9 +256,7 @@ export function useTranscript(
         approvalsChanged = next.delete(text(e.data.id)) || approvalsChanged;
       } else if (e.kind === "queue") {
         setQueue({
-          items: Array.isArray(e.data.items)
-            ? (e.data.items as { id: string; text: string }[])
-            : [],
+          items: Array.isArray(e.data.items) ? (e.data.items as Queued[]) : [],
           paused: e.data.paused === true,
         });
       } else if (e.kind === "status") {

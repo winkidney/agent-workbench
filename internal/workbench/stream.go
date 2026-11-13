@@ -1,8 +1,10 @@
 package workbench
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 )
@@ -175,11 +177,7 @@ func boundJSON(v any) any {
 		return out
 	case map[string]any:
 		if str(x["type"]) == "image" {
-			source := obj(x["source"])
-			if data := str(source["data"]); len(data) > historyImageLimit {
-				return map[string]any{"type": "image", "omitted": true, "bytes": len(data) * 3 / 4, "media_type": source["media_type"]}
-			}
-			return x
+			return boundImage(x)
 		}
 		out := make(map[string]any, len(x))
 		for k, e := range x {
@@ -188,6 +186,32 @@ func boundJSON(v any) any {
 		return out
 	}
 	return v
+}
+
+// boundImage keeps an inline image (Claude's base64 source, Codex's data
+// URL) up to historyImageLimit. A larger one is left out, named by its
+// content: the page shows the workbench's copy when it was added there
+// (uploads.go), and says it was left out otherwise.
+func boundImage(x map[string]any) any {
+	source := obj(x["source"])
+	mime, data := str(source["media_type"]), str(source["data"])
+	if data == "" {
+		head, body, ok := strings.Cut(str(x["url"]), ",")
+		if !ok || !strings.HasPrefix(head, "data:") || !strings.HasSuffix(head, ";base64") {
+			return x
+		}
+		mime, data = strings.TrimSuffix(strings.TrimPrefix(head, "data:"), ";base64"), body
+	}
+	if len(data) <= historyImageLimit {
+		return x
+	}
+	out := map[string]any{"type": "image", "omitted": true, "bytes": len(data) * 3 / 4, "media_type": mime}
+	if _, kept := uploadExt[mime]; kept {
+		if raw, err := base64.StdEncoding.DecodeString(data); err == nil {
+			out["upload"] = uploadID(raw, mime)
+		}
+	}
+	return out
 }
 
 // dropLiveTurnSummary removes the newest turn summary while that turn is still

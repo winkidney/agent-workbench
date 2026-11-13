@@ -424,8 +424,11 @@ export function buildSidebar(
   // Subsessions (subagents) stay under their parent here too: a session is
   // listed when it is active or one of its subsessions is at work or needs
   // you, with those subsessions under it, ranked by the most urgent of them.
-  // Subagents done and idle stay in the project tree only.
+  // Subagents done and idle stay in the project tree only. A pinned session
+  // is shown in Pinned alone (with its subsessions), not again here.
+  const inPinned = new Set(pinned.map((n) => n.session.id));
   const family = (n: Node, sub = false): Node | null => {
+    if (inPinned.has(n.session.id)) return null;
     const kids = n.children
       .map((c) => family(c, true))
       .filter((x): x is Node => !!x);

@@ -153,6 +153,10 @@ func (m *Manager) Tidy() {
 	if err := m.Reconcile(); err != nil {
 		fmt.Fprintln(os.Stderr, "reconcile sessions:", err)
 	}
+	// Images added for messages: a week after last use, 1 GB at most.
+	if n := m.uploads.Tidy(eventRetention, uploadsKeepBytes); n > 0 {
+		fmt.Fprintln(os.Stderr, "removed", n, "images added for messages")
+	}
 }
 
 // Reconcile records which sessions exist (listed, or loaded here) and drops

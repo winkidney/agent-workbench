@@ -257,19 +257,22 @@ function Thumb({
   title,
   onOpen,
   quiet,
+  missing,
 }: {
   src: string;
   title: string;
   onOpen: () => void;
   // Guessed from plain text: hide instead of showing a broken image.
   quiet?: boolean;
+  // What a missing image says instead of its title.
+  missing?: string;
 }) {
   const [failed, setFailed] = useState(false);
   if (failed && quiet) return null;
   if (failed)
     return (
       <span className="media-missing">
-        <ImageOff size={13} /> {title}
+        <ImageOff size={13} /> {missing ?? title}
       </span>
     );
   return (
@@ -289,6 +292,11 @@ function Thumb({
   );
 }
 
+// Images added in the page, kept by the workbench (composer/attachments.ts).
+const UPLOAD = /^\/api\/uploads\/[0-9a-f]{64}\.(png|jpg|webp)$/;
+const omittedText = (bytes?: number) =>
+  "Image omitted" + (bytes ? ` (${Math.round(bytes / 1024)} KB)` : "");
+
 export function MediaList({
   media,
   quiet,
@@ -304,8 +312,19 @@ export function MediaList({
   const slot = media.map((m) => {
     let item: ViewItem | null = null;
     if (m.kind === "data") item = { kind: "image", src: m.src, title: "Image" };
+    else if (m.kind === "url" && UPLOAD.test(m.url))
+      item = { kind: "image", src: m.url, title: "Image" };
     else if (m.kind === "url" && /^(https?:|data:image\/)/i.test(m.url))
-      item = { kind: "image", src: m.url, title: m.url };
+      // An inline image is named "Image", not by its data.
+      item = {
+        kind: "image",
+        src: m.url,
+        title: /^data:/i.test(m.url) ? "Image" : m.url,
+      };
+    else if (m.kind === "omitted" && UPLOAD.test("/api/uploads/" + m.upload))
+      // Too large for the record sent here: the copy kept when it was added
+      // in the page, if it is still kept.
+      item = { kind: "image", src: "/api/uploads/" + m.upload, title: "Image" };
     else if (m.kind === "path") {
       const rel = workspacePath(m.path, env.cwd);
       item = rel ? pathItem(env, rel, base) : null;
@@ -338,6 +357,7 @@ export function MediaList({
               src={items[at].src}
               title={items[at].title}
               quiet={quiet && m.kind === "path"}
+              missing={m.kind === "omitted" ? omittedText(m.bytes) : undefined}
               onOpen={open}
             />
           );
@@ -347,8 +367,7 @@ export function MediaList({
           case "omitted":
             return (
               <span key={i} className="media-missing">
-                <ImageOff size={13} /> Image omitted
-                {m.bytes ? ` (${Math.round(m.bytes / 1024)} KB)` : ""}
+                <ImageOff size={13} /> {omittedText(m.bytes)}
               </span>
             );
         }

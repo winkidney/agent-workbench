@@ -6,6 +6,7 @@ import {
   text,
   type Agent,
   type Block,
+  type Media,
   type Tool,
   type WorkbenchEvent,
 } from "./model";
@@ -245,6 +246,7 @@ export function applyEvent(d: Draft, e: WorkbenchEvent, ctx: Context) {
         key: "local:" + e.seq,
         kind: "user",
         text: text(data.text),
+        media: shownImages(data.images),
         local: true,
         steered: data.steered === true || undefined,
         // Claude holds a steer until its next step.
@@ -386,10 +388,28 @@ export function prepend(s: State, older: State): State {
 
 // Show a message as sent right away, before the engine has started and the
 // server echoes it.
-export function withSending(s: State, text: string, key: string): State {
+export function withSending(
+  s: State,
+  text: string,
+  key: string,
+  images: string[] = [],
+): State {
   const blocks = new Map(s.blocks);
-  blocks.set(key, { key, kind: "user", text, local: true, sending: true });
+  blocks.set(key, {
+    key,
+    kind: "user",
+    text,
+    media: shownImages(images),
+    local: true,
+    sending: true,
+  });
   return { ...s, keys: [...s.keys, key], blocks };
+}
+
+// The images of a message sent from the page, by their address.
+function shownImages(v: unknown): Media[] | undefined {
+  const urls = list(v).map(text).filter(Boolean);
+  return urls.length ? urls.map((url) => ({ kind: "url", url })) : undefined;
 }
 
 // Apply records another client wrote since the last update onto the current

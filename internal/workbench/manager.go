@@ -135,10 +135,12 @@ type Manager struct {
 	loginsMu sync.Mutex
 	logins   map[string]*loginFlow
 	signIns  signInCache
+	// Images added in the page for messages (uploads.go).
+	uploads *Uploads
 }
 
 func NewManager(store *Store, launch Launch, idle time.Duration) (*Manager, error) {
-	m := &Manager{store: store, launch: launch, idle: idle, sessions: map[string]*runtime{}, changes: newNotifier(), activity: NewActivityIndex(store)}
+	m := &Manager{store: store, launch: launch, idle: idle, sessions: map[string]*runtime{}, changes: newNotifier(), activity: NewActivityIndex(store), uploads: &Uploads{dir: filepath.Join(store.dir, "uploads")}}
 	m.renameCodex, m.codexThread = m.codexRename, m.codexThreadRequest
 	m.catalog = NewNativeCatalog()
 	m.catalog.startCodex = m.startCodexClient
@@ -271,9 +273,23 @@ func (m *Manager) Start(id string) error {
 	}
 	return proc.Input(map[string]any{"type": "control_request", "request_id": "init", "request": map[string]any{"subtype": "initialize"}})
 }
-func (m *Manager) Send(id, text string) error {
-	if strings.TrimSpace(text) == "" || len(text) > 1024*1024 {
-		return errors.New("message must contain 1 to 1048576 bytes")
+func (m *Manager) Send(id, text string) error { return m.SendWith(id, text, nil) }
+
+// checkMessage: text, images (their upload ids), or both.
+func checkMessage(text string, images []string) error {
+	if len(text) > 1024*1024 || (strings.TrimSpace(text) == "" && len(images) == 0) {
+		return errors.New("a message needs text (at most 1048576 bytes) or an image")
+	}
+	if len(images) > uploadsPerMessage {
+		return fmt.Errorf("a message can have at most %d images", uploadsPerMessage)
+	}
+	return nil
+}
+
+// SendWith sends a message with the images added in the page.
+func (m *Manager) SendWith(id, text string, images []string) error {
+	if err := checkMessage(text, images); err != nil {
+		return err
 	}
 	// "$" skills and "/" rules (see prepareText).
 	if m.findUnlocked(id) == nil {
@@ -285,6 +301,10 @@ func (m *Manager) Send(id, text string) error {
 	agent, cwd := m.find(id).session.Agent, m.find(id).session.Cwd
 	m.mu.Unlock()
 	text, attach, err := m.prepareFor(agent, cwd, text)
+	if err != nil {
+		return err
+	}
+	pics, err := m.uploads.Read(images)
 	if err != nil {
 		return err
 	}
@@ -359,16 +379,10 @@ func (m *Manager) Send(id, text string) error {
 			}
 			userActed(r)
 			m.beginTurn(r)
-			m.emit(r.session.ID, "user", map[string]any{"text": text})
+			m.emit(r.session.ID, "user", userShown(text, pics, nil))
 			var v any
 			if r.session.Agent == "codex" {
-				// Skill mentions go first, as the Codex TUI sends them.
-				input := []any{}
-				for _, s := range attach {
-					input = append(input, map[string]any{"type": "skill", "name": s.Name, "path": s.Path})
-				}
-				input = append(input, map[string]any{"type": "text", "text": text})
-				params := map[string]any{"threadId": r.session.NativeID, "input": input}
+				params := map[string]any{"threadId": r.session.NativeID, "input": codexInput(attach, text, pics)}
 				chosen := m.options(r.session.ID)
 				if chosen.Mode != "" && chosen.Model == "" {
 					chosen.Model = r.effective.Model
@@ -378,7 +392,7 @@ func (m *Manager) Send(id, text string) error {
 				r.turnRequest = request
 				v = request
 			} else {
-				v = map[string]any{"type": "user", "message": map[string]any{"role": "user", "content": text}, "parent_tool_use_id": nil, "session_id": r.session.NativeID}
+				v = map[string]any{"type": "user", "message": map[string]any{"role": "user", "content": claudeContent(text, pics)}, "parent_tool_use_id": nil, "session_id": r.session.NativeID}
 			}
 			err = r.proc.Input(v)
 			m.mu.Unlock()
@@ -390,6 +404,57 @@ func (m *Manager) Send(id, text string) error {
 		}
 		time.Sleep(25 * time.Millisecond)
 	}
+}
+
+// userShown is a sent message as the page shows it at once: the images by
+// their address, never their bytes (events are kept).
+func userShown(text string, pics []pasted, more map[string]any) map[string]any {
+	v := map[string]any{"text": text}
+	if len(pics) > 0 {
+		urls := make([]string, len(pics))
+		for i, p := range pics {
+			urls[i] = uploadURL(p.ID)
+		}
+		v["images"] = urls
+	}
+	for k, x := range more {
+		v[k] = x
+	}
+	return v
+}
+
+// claudeContent is a user message for Claude: the text alone, or the
+// images and then the text, as Anthropic advises (base64 blocks, as the
+// Agent SDK's streaming input takes them).
+func claudeContent(text string, pics []pasted) any {
+	if len(pics) == 0 {
+		return text
+	}
+	content := []any{}
+	for _, p := range pics {
+		content = append(content, map[string]any{"type": "image", "source": map[string]any{"type": "base64", "media_type": p.Mime, "data": p.Base64}})
+	}
+	if strings.TrimSpace(text) != "" {
+		content = append(content, map[string]any{"type": "text", "text": text})
+	}
+	return content
+}
+
+// codexInput is a user message for Codex: skill mentions first, as the
+// Codex TUI sends them, then the images and the text. Images go as data
+// URLs, so the thread's own record holds them.
+func codexInput(attach []Skill, text string, pics []pasted) []any {
+	input := []any{}
+	for _, s := range attach {
+		input = append(input, map[string]any{"type": "skill", "name": s.Name, "path": s.Path})
+	}
+	for _, p := range pics {
+		input = append(input, map[string]any{"type": "image", "url": "data:" + p.Mime + ";base64," + p.Base64})
+	}
+	if strings.TrimSpace(text) != "" || len(pics) == 0 {
+		input = append(input, map[string]any{"type": "text", "text": text})
+	}
+	return input
 }
 
 // beginTurn marks a turn as running (m.mu held): one the page sent, or one

@@ -1,5 +1,6 @@
 // Codex app-server adapter. Works on ThreadItem.type + id; unknown item
 // types become generic tool rows, so new Codex tools render without changes.
+import { imageMedia } from "./claude";
 import {
   list,
   record,
@@ -102,12 +103,14 @@ function outputMedia(v: unknown): Media[] {
     .map(record)
     .filter((c) => c.type === "image" || c.type === "inputImage")
     .map((c): Media =>
-      c.data
-        ? {
-            kind: "data",
-            src: `data:${text(c.mimeType) || "image/png"};base64,${text(c.data)}`,
-          }
-        : { kind: "url", url: text(c.url ?? c.imageUrl) },
+      c.omitted === true
+        ? imageMedia(c)
+        : c.data
+          ? {
+              kind: "data",
+              src: `data:${text(c.mimeType) || "image/png"};base64,${text(c.data)}`,
+            }
+          : { kind: "url", url: text(c.url ?? c.imageUrl) },
     );
 }
 
@@ -257,7 +260,11 @@ function item(
         .join("\n");
       const media = parts.flatMap((c): Media[] =>
         c.type === "image"
-          ? [{ kind: "url", url: text(c.url) }]
+          ? [
+              c.omitted === true
+                ? imageMedia(c)
+                : { kind: "url", url: text(c.url) },
+            ]
           : c.type === "localImage"
             ? [{ kind: "path", path: text(c.path) }]
             : [],

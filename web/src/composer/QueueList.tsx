@@ -1,6 +1,9 @@
 import { CornerDownRight, Play, Send, X, Zap } from "lucide-react";
+import { uploadUrl } from "./attachments";
+import type { ViewItem } from "../transcript/media";
 
-export type Queued = { id: string; text: string };
+// images: upload ids of the images added to it.
+export type Queued = { id: string; text: string; images?: string[] };
 
 // Messages waiting for the running turn to end, above the composer. Each can
 // be steered into that turn now, or sent now once no turn runs.
@@ -12,6 +15,7 @@ export function QueueList({
   onRemove,
   onResume,
   onSteer,
+  onView,
 }: {
   items: Queued[];
   paused: boolean;
@@ -21,6 +25,7 @@ export function QueueList({
   onRemove: (id: string) => void;
   onResume: () => void;
   onSteer: (id: string) => void;
+  onView?: (items: ViewItem[], index: number) => void;
 }) {
   if (!items.length) return null;
   const steer = running && !paused;
@@ -42,6 +47,30 @@ export function QueueList({
       {items.map((q) => (
         <div key={q.id} className="queue-item">
           <CornerDownRight size={12} />
+          {!!q.images?.length && (
+            <span className="queue-images">
+              {q.images.map((image, i, all) => (
+                <button
+                  key={image + i}
+                  type="button"
+                  className="queue-image"
+                  aria-label="View image"
+                  onClick={() =>
+                    onView?.(
+                      all.map((id) => ({
+                        kind: "image",
+                        src: uploadUrl(id),
+                        title: "Image",
+                      })),
+                      i,
+                    )
+                  }
+                >
+                  <img src={uploadUrl(image)} alt="" />
+                </button>
+              ))}
+            </span>
+          )}
           <span className="queue-text">{q.text}</span>
           <button
             type="button"

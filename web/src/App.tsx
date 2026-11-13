@@ -8,7 +8,7 @@ import {
   type Side,
   type Widths,
 } from "./layout/widths";
-import { Composer } from "./composer/Composer";
+import { Composer, type Attached } from "./composer/Composer";
 
 // What became of a message sent to steer (see Manager.Steer).
 type SteerResult = {
@@ -46,6 +46,7 @@ import {
 } from "./transcript/media";
 import { MediaViewer } from "./media/MediaViewer";
 import { withSending } from "./transcript/reducer";
+import { splitFiles } from "./transcript/files";
 import { ApprovalCard, type Decision } from "./approval/ApprovalCard";
 import { StatusLine, activity, turnClock } from "./composer/StatusLine";
 import { GoalBar } from "./composer/GoalBar";
@@ -101,6 +102,7 @@ export default function App() {
   const [sending, setSending] = useState<{
     session: string;
     text: string;
+    images: string[];
     at: number;
     from: number;
   } | null>(null);
@@ -501,8 +503,14 @@ export default function App() {
   const approvals = transcript.approvals;
   // Sends from the composer, or answers an agent's questions: into the
   // running turn (steer), as the next message, or queued for after the turn.
-  const sendMessage = async (text: string, how: "send" | "steer" | "queue") => {
+  const sendMessage = async (
+    text: string,
+    how: "send" | "steer" | "queue",
+    attached: Attached = { images: [], files: [] },
+  ) => {
     if (!current) return;
+    const images = attached.images.map((i) => i.id);
+    const files = attached.files;
     if (how === "steer") {
       // Into the running turn; the server shows it as steered,
       // or queues it (and says why) when the turn cannot take it.
@@ -511,7 +519,7 @@ export default function App() {
         const res = await api<SteerResult>(
           "sessions/" + current.id + "/send",
           "POST",
-          { text, steer: true },
+          { text, steer: true, images, files },
         );
         setSteerNote(res.queued ? (res.reason ?? "") : "");
       } catch (e) {
@@ -527,11 +535,12 @@ export default function App() {
       setSending({
         session: current.id,
         text,
+        images: attached.images.map((i) => i.url),
         at: Date.now(),
         from: transcript.state.keys.length,
       });
     try {
-      await act("send", { text, queue });
+      await act("send", { text, queue, images, files });
     } finally {
       // Delivered (the server echoed it) or failed.
       setSending(null);
@@ -606,6 +615,9 @@ export default function App() {
         .join("\n"),
     [sessions, current?.id],
   );
+  // Opens images and videos in the viewer.
+  const view = (items: ViewItem[], index: number) =>
+    void (items.length && setViewer({ items, index }));
   const env = useMemo<Env>(
     () => ({
       cwd: current?.cwd ?? "",
@@ -686,7 +698,11 @@ export default function App() {
     if (!sending) return;
     const echoed = transcript.state.keys.slice(sending.from).some((k) => {
       const b = transcript.state.blocks.get(k)!;
-      return b.kind === "user" && (b.text ?? "").trim() === sending.text.trim();
+      return (
+        b.kind === "user" &&
+        splitFiles(b.text ?? "").text.trim() === sending.text.trim() &&
+        (b.media?.length ?? 0) === sending.images.length
+      );
     });
     if (echoed || sending.session !== active) setSending(null);
   }, [transcript.state, sending, active]);
@@ -697,6 +713,7 @@ export default function App() {
             transcript.state,
             pendingSend.text,
             "sending:" + pendingSend.at,
+            pendingSend.images,
           )
         : transcript.state,
     [transcript.state, pendingSend],
@@ -1097,6 +1114,7 @@ export default function App() {
                 />
                 <TodoPanel steps={plan} busy={running} />
                 <QueueList
+                  onView={view}
                   items={transcript.queue.items}
                   paused={transcript.queue.paused}
                   running={running}
@@ -1190,6 +1208,7 @@ export default function App() {
                 }}
                 onInterrupt={() => void act("interrupt").catch(() => {})}
                 onBackground={moveToBackground}
+                onView={view}
               />
             </>
           ) : (
@@ -1199,6 +1218,7 @@ export default function App() {
               workspaces={workspaces}
               prefs={sidebarPrefs.prefs}
               initialCwd={composing?.cwd}
+              onView={view}
               onCreated={(s) => {
                 setSessions((old) => [s, ...old.filter((x) => x.id !== s.id)]);
                 setComposing(null);
