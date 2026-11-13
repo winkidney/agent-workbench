@@ -628,3 +628,44 @@ These are maintainer notes on how each feature of Agent Workbench was verified, 
   - **Through the tunnel:** "Connected remotely", hover "Another device, signed in with a password; plain HTTP across the network".
   - **Workbench stopped:** "Reconnecting…" after 0.1 s. Once it started again, "Connected remotely" after 2.6 s, without a reload.
   - **Stream answered with a 503:** "Disconnected" with **Retry**. Retry reconnected in 0.1 s.
+
+## The sidebar's status column, corners and Alt+Enter
+
+- **Why:**
+  - **Background-work ring:** a solid gray ball. Its class name was also a Tailwind utility ("bg-" and the theme's ring color), so the ring was filled with that gray, in the sidebar and in the composer's tray.
+  - **Bell badge:** sat at the top of its row. It carried the request kind as a class, and `.question` and `.approval` (the cards' styles) gave it their margins.
+  - **Icons:** of three kinds. Three were pixel art; the bell, the hand and the triangle were line icons; the background ring and the loaded dot were drawn in CSS. Sizes were 18, 16, 11 and 7 px. With a count, the ring moved left, out of the column.
+  - **Colors:** amber meant both work in progress and "needs you".
+  - **Numbers:** written six ways.
+  - **Motion:** the bell pulsed for as long as the request was open, and an idle session in another client kept blinking.
+  - **Rows:** the row of a session that needed you was tinted.
+  - **Corners:** ranged from 4 to 16 px, plus pills.
+  - **Alt+Enter:** sent the message.
+- **Change:**
+  - **Icons:** every status icon is pixel art to the sidebar's 16×16 spec:
+    - a bell on a filled amber badge, also for "Awaiting approval", whose hand is gone;
+    - a warning sign;
+    - a heartbeat for background work, with the count before it;
+    - one of the chase's dots for a loaded engine.
+  - **Colors:** the text's own for work in progress, amber only for what waits for you, blue for elsewhere and background work, red for an error, green for a loaded engine.
+  - **Numbers:** counts, times, "N sub" and the background count share one style.
+  - **Header:** "N need you" is amber text without a fill.
+  - **Motion:** the bell swings three times when a request arrives, then rests. Only work in progress keeps moving.
+  - **Rows:** a session that needs you is no longer tinted.
+  - **Corners:** three radii (3, 4 and 6 px).
+  - **Alt+Enter:** adds a line, as Shift+Enter does, in the composer, the first message and the approval feedback.
+- **New Vitest tests:**
+  - The new icons keep to the spec (16×16, ink 14 wide and centered).
+  - The badge and the warning sign are symmetric, and the bell stays on its badge as it swings.
+  - The loaded dot is 4×4 and centered.
+  - No status uses a line icon, and "waiting" is the bell.
+  - A background count comes before its pulse, which lights in turn only in the tray.
+  - No class in `style.css` is named like a Tailwind color utility.
+  - Every corner uses one of the three radii.
+  - Alt+Enter adds a line, Shift+Enter is left to the browser, and Enter sends.
+- **Browser** (scratch instance with every write blocked; ten sessions given every state, light and dark, with and without reduced motion):
+  - Every status icon is 16×16, with its right edge at the same x (273 px) and its center on the title line's (within 0.01 px).
+  - No icon has a background; the background count sits before the pulse.
+  - The header label has no fill.
+  - The bell's animation runs 3 times, and has ended at 2.8 s. With reduced motion it never starts.
+  - Alt+Enter and Shift+Enter added lines in a real session's composer without sending; Enter sent.

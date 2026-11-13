@@ -362,7 +362,9 @@ const SessionRow = memo(function SessionRow({
                   <Highlight text={node.title} query={actions.query} />
                 </span>
                 {node.children.length > 0 && !open && (
-                  <span className="session-kids">{node.children.length}</span>
+                  <span className="session-kids">
+                    {node.children.length} sub
+                  </span>
                 )}
                 {statusLabel[s.status] || s.attention || s.background ? (
                   <StatusIcon

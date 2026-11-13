@@ -1,6 +1,16 @@
-import { AlertTriangle, BellRing, Hand } from "lucide-react";
 import { ATTENTION_LABEL } from "../attention";
-import { PixelChase, PixelDots, PixelMonitor, Pixels, PixelSvg } from "./pixel";
+import {
+  ALERT,
+  DOT,
+  PixelBell,
+  PixelChase,
+  PixelDots,
+  PixelIcon,
+  PixelMonitor,
+  PixelPulse,
+  Pixels,
+  PixelSvg,
+} from "./pixel";
 
 // Agent marks in pixels, to the sidebar icons' spec (pixel.tsx): 16×16,
 // ink 14 wide within the middle 14×14, centred. Claude is the figure Claude
@@ -86,29 +96,36 @@ export const statusLabel: Record<string, string> = {
 };
 
 // What a session is doing right now; null when it is asleep or stopped. A
-// session that waits for the user (attention) says so instead, loudly.
+// session that waits for the user (attention) says so instead, loudly. All
+// are pixel icons to the sidebar's spec (pixel.tsx); only work in progress
+// keeps moving.
 export function StatusIcon({
   status,
   attention,
   background,
-  size = 13,
 }: {
   status: string;
   attention?: string;
   // Tasks or processes running outside the turns.
   background?: number;
-  size?: number;
 }) {
-  const wants = attention ? ATTENTION_LABEL[attention] : undefined;
+  // A pending request always comes with its kind; "waiting" alone is the
+  // moment before the kind arrives.
+  const wants = attention
+    ? ATTENTION_LABEL[attention]
+    : status === "waiting"
+      ? statusLabel.waiting
+      : undefined;
   if (wants)
     return (
       // Not the kind as a class: .approval and .question style the cards.
       <span className="status-icon needs-you" title={wants}>
-        <BellRing size={size} role="img" aria-label={wants} />
+        <PixelBell label={wants} />
       </span>
     );
-  // Between turns, work in the background: a ring with how much.
-  if (background && !["running", "starting", "waiting"].includes(status)) {
+  // Between turns, work in the background: how much, then a pulse, which
+  // stays at the column's edge like every other icon.
+  if (background && !["running", "starting"].includes(status)) {
     const label =
       background === 1 ? "1 background task" : `${background} background tasks`;
     return (
@@ -118,15 +135,13 @@ export function StatusIcon({
         role="img"
         aria-label={label}
       >
-        <span className="bg-ring" aria-hidden />
         {background > 1 && <span className="bg-count">{background}</span>}
+        <PixelPulse />
       </span>
     );
   }
   const label = statusLabel[status];
   if (!label) return null;
-  const common = { size, role: "img", "aria-label": label } as const;
-  // Pixel animations for work in progress, here or in another client.
   const icon =
     status === "running" ? (
       <PixelChase label={label} />
@@ -134,12 +149,10 @@ export function StatusIcon({
       <PixelDots label={label} />
     ) : status === "external" || status === "external_running" ? (
       <PixelMonitor label={label} busy={status === "external_running"} />
-    ) : status === "waiting" ? (
-      <Hand {...common} />
     ) : status === "error" ? (
-      <AlertTriangle {...common} />
+      <PixelIcon grid={ALERT} label={label} />
     ) : (
-      <span className="status-idle-dot" role="img" aria-label={label} />
+      <PixelIcon grid={DOT} label={label} />
     );
   return (
     <span className={"status-icon " + status} title={label}>

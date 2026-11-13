@@ -1,13 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
+  ALERT,
+  BELL,
+  BELL_BADGE,
   CHASE,
   CHASE_SMALL,
+  DOT,
   DOTS,
   inkBounds,
   MONITOR,
   PixelChase,
+  PixelPulse,
   pixelRects,
+  PULSE,
 } from "./pixel";
 import { AgentIcon, CLAUDE_ICON, CODEX_ICON, StatusIcon } from "./AgentIcon";
 import {
@@ -60,7 +66,16 @@ describe("pixel art", () => {
   });
 
   it("draws the sidebar's icons to one spec", () => {
-    const icons = { CLAUDE_ICON, CODEX_ICON, MONITOR, CHASE, DOTS };
+    const icons = {
+      CLAUDE_ICON,
+      CODEX_ICON,
+      MONITOR,
+      CHASE,
+      DOTS,
+      BELL_BADGE,
+      ALERT,
+      PULSE,
+    };
     for (const [name, grid] of Object.entries(icons)) {
       // 16×16 at one CSS pixel each.
       expect(square(grid, 16), name).toBe(true);
@@ -81,6 +96,20 @@ describe("pixel art", () => {
     expect(renderToStaticMarkup(<PixelChase size={8} />)).toContain(
       'width="8"',
     );
+    // The badge and the warning sign face you; the bell stays on its badge
+    // while it swings a pixel either way.
+    for (const g of [BELL_BADGE, BELL, ALERT]) expect(leftRight(g)).toBe(true);
+    expect(square(BELL, 16)).toBe(true);
+    BELL.forEach((row, y) =>
+      [...row].forEach((ch, x) => {
+        if (ch !== "o") return;
+        for (const dx of [-1, 1])
+          expect(BELL_BADGE[y][x + dx], `${x + dx},${y}`).toBe("#");
+      }),
+    );
+    // The loaded engine is one of the chase's dots, centred.
+    expect(square(DOT, 16)).toBe(true);
+    expect(inkBounds(DOT)).toEqual({ top: 6, left: 6, w: 4, h: 4 });
   });
 
   it("names the agents unless decorative, at sizes of whole pixels", () => {
@@ -103,15 +132,39 @@ describe("pixel art", () => {
     expect(html("running")).toContain('aria-label="Running"');
     expect(html("starting")).toContain("px-step");
     expect(html("starting")).toContain('aria-label="Connecting"');
-    expect(html("external")).toContain("px-blink");
+    // Idle in another client: the cursor rests.
+    expect(html("external")).not.toMatch(/px-(blink|type|chase|step|scan)/);
     expect(html("external")).toContain('aria-label="Active elsewhere"');
     expect(html("external_running")).toContain("px-type");
     expect(html("external_running")).toContain(
       'aria-label="Running in another client"',
     );
-    // The other states keep their icons.
-    expect(html("waiting")).toContain("lucide");
-    expect(html("idle")).toContain("status-idle-dot");
+    // The rest hold still, in pixels too.
+    for (const status of ["waiting", "error", "idle"]) {
+      expect(html(status), status).toContain('shape-rendering="crispEdges"');
+      expect(html(status), status).not.toContain("lucide");
+    }
+    expect(html("error")).toContain('aria-label="Error"');
+    expect(html("idle")).toContain('aria-label="Engine loaded"');
+    // Awaiting approval is a request for you: the bell, until its kind is
+    // known.
+    expect(html("waiting")).toContain('class="status-icon needs-you"');
+    expect(html("waiting")).toContain('aria-label="Awaiting approval"');
+    // The bell swings when it arrives (three times, in style.css).
+    expect(
+      renderToStaticMarkup(<StatusIcon status="idle" attention="plan" />),
+    ).toContain("px-swing");
+  });
+
+  it("puts the count of background work before its pulse", () => {
+    const html = renderToStaticMarkup(
+      <StatusIcon status="idle" background={3} />,
+    );
+    expect(html.indexOf("bg-count")).toBeGreaterThan(-1);
+    expect(html.indexOf("bg-count")).toBeLessThan(html.indexOf("<svg"));
+    // Still in the sidebar; lit in turn in the composer's tray while live.
+    expect(html).not.toContain("px-scan");
+    expect(renderToStaticMarkup(<PixelPulse live />)).toContain("px-scan");
   });
 
   it("names the logo", () => {

@@ -10,6 +10,7 @@ import {
   SquareTerminal,
   Workflow,
 } from "lucide-react";
+import { PixelPulse } from "../components/pixel";
 import { api } from "../lib/api";
 import { AnsiText } from "../transcript/Timeline";
 import {
@@ -131,7 +132,7 @@ export function BackgroundTray({
           aria-expanded={open}
           onClick={() => setOpen(!open)}
         >
-          <span className="bg-ring" aria-hidden />
+          <PixelPulse live={live.length > 0} />
           <span className="bg-summary">{summary(tasks, now)}</span>
           <ChevronRight
             size={12}

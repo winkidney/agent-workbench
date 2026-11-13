@@ -172,6 +172,25 @@ describe("themes", () => {
     for (const cls of hljs(styleCss)) expect(themed.has(cls), cls).toBe(true);
   });
 
+  // Tailwind makes a utility of any class named after a theme color (bg-, then
+  // the color: the ring color, say), and that utility styles our element too:
+  // it once filled the background-work ring. Our classes keep clear of those
+  // names. (Tailwind reads every source file, so not even a comment spells
+  // one out.)
+  it("names no class like a Tailwind color utility", () => {
+    const theme = styleCss.match(/@theme inline \{([^}]*)\}/)![1];
+    const colors = [...theme.matchAll(/--color-([\w-]+):/g)].map((m) => m[1]);
+    expect(colors).toContain("ring");
+    const prefixes =
+      "bg|text|border|ring|outline|fill|stroke|accent|caret|decoration|divide|shadow|from|via|to|placeholder";
+    const own = new Set(
+      [...styleCss.matchAll(/\.([a-z][\w-]*)/g)].map((m) => m[1]),
+    );
+    for (const c of colors)
+      for (const p of prefixes.split("|"))
+        expect(own.has(`${p}-${c}`), `.${p}-${c}`).toBe(false);
+  });
+
   it("rounds corners only by the three radii, or fully for dots", () => {
     for (const css of [styleCss, themesCss])
       for (const [, v] of css.matchAll(/border-radius:\s*([^;]+);/g))

@@ -289,8 +289,8 @@ export const MONITOR = [
 // Where the cursor (2×2) and a line of text (8×2) sit on the screen.
 export const CURSOR_AT = [4, 6];
 
-// Another client has the session: its cursor blinks; with a turn running
-// there, text types out across the screen.
+// Another client has the session: its cursor rests on the screen; with a
+// turn running there, text types out across it.
 export function PixelMonitor({
   size = 16,
   label,
@@ -313,14 +313,159 @@ export function PixelMonitor({
           className="px-type"
         />
       ) : (
-        <Pixels
-          grid={["##", "##"]}
-          palette={fill}
-          x={x}
-          y={y}
-          className="px-blink"
-        />
+        <Pixels grid={["##", "##"]} palette={fill} x={x} y={y} />
       )}
+    </PixelSvg>
+  );
+}
+
+// Waiting for you: a round badge (#) with a bell on it in the page's color,
+// like Codex's tile with its prompt. The bell is drawn apart, so it can
+// swing a pixel either way over the badge when the request arrives.
+export const BELL_BADGE = [
+  "................",
+  ".....######.....",
+  "...##########...",
+  "..############..",
+  "..############..",
+  ".##############.",
+  ".##############.",
+  ".##############.",
+  ".##############.",
+  ".##############.",
+  ".##############.",
+  "..############..",
+  "..############..",
+  "...##########...",
+  ".....######.....",
+  "................",
+];
+export const BELL = [
+  "................",
+  "................",
+  "................",
+  "................",
+  ".......oo.......",
+  "......oooo......",
+  ".....oooooo.....",
+  ".....oooooo.....",
+  ".....oooooo.....",
+  "....oooooooo....",
+  "...oooooooooo...",
+  "................",
+  ".......oo.......",
+  "................",
+  "................",
+  "................",
+];
+export function PixelBell({ label }: { label?: string }) {
+  return (
+    <PixelSvg w={16} h={16} scale={1} label={label}>
+      <Pixels grid={BELL_BADGE} palette={fill} />
+      <Pixels
+        grid={BELL}
+        palette={{ o: "var(--background)" }}
+        className="px-swing"
+      />
+    </PixelSvg>
+  );
+}
+
+// Error: a warning sign, its outline two pixels thick, with "!" inside.
+export const ALERT = [
+  "................",
+  ".......##.......",
+  ".......##.......",
+  "......####......",
+  "......####......",
+  ".....######.....",
+  ".....######.....",
+  "....##.##.##....",
+  "....##.##.##....",
+  "...##..##..##...",
+  "...##......##...",
+  "..##...##...##..",
+  "..##...##...##..",
+  ".##############.",
+  ".##############.",
+  "................",
+];
+
+// Work running between turns: a heartbeat, flat, up, down and flat again.
+// Its parts (a to d) light in turn where the work is listed (the composer's
+// tray).
+export const PULSE = [
+  "................",
+  "................",
+  ".....bb.........",
+  ".....bb.........",
+  "....bbbb........",
+  "....bbbb........",
+  "....b..b........",
+  ".aaaa..c....ddd.",
+  ".aaaa..c....ddd.",
+  ".......c...d....",
+  ".......cc..d....",
+  "........c.dd....",
+  "........ccdd....",
+  ".........cc.....",
+  "................",
+  "................",
+];
+export function PixelPulse({
+  label,
+  live,
+}: {
+  label?: string;
+  // Lights its parts in turn.
+  live?: boolean;
+}) {
+  return (
+    <PixelSvg w={16} h={16} scale={1} label={label} className="px-anim">
+      {[..."abcd"].map((part, i) => (
+        <Part
+          key={part}
+          grid={PULSE}
+          part={part}
+          className={live ? "px-scan" : ""}
+          style={
+            live
+              ? ({
+                  animationDelay: `${(i * 0.3 - 1.2).toFixed(1)}s`,
+                } as CSSProperties)
+              : {}
+          }
+        />
+      ))}
+    </PixelSvg>
+  );
+}
+
+// The engine is loaded: one of the chase's dots, alone.
+export const DOT = [
+  "................",
+  "................",
+  "................",
+  "................",
+  "................",
+  "................",
+  ".......##.......",
+  "......####......",
+  "......####......",
+  ".......##.......",
+  "................",
+  "................",
+  "................",
+  "................",
+  "................",
+  "................",
+];
+
+// A still icon of one color (currentColor).
+export function PixelIcon({ grid, label }: { grid: string[]; label?: string }) {
+  return (
+    <PixelSvg w={16} h={16} scale={1} label={label}>
+      <Pixels grid={grid} palette={fill} />
     </PixelSvg>
   );
 }

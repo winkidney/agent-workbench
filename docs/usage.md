@@ -70,7 +70,7 @@ While a goal is set, a bar above the composer shows its status in the CLI's word
 Work that runs outside a turn shows where you look, and can be stopped there.
 
 - **What counts:** Claude's background tasks (shells started with `run_in_background`, monitors, background subagents, MCP tasks), Codex's background terminals (a dev server it left running), and, when the workbench runs as its systemd service, processes an agent left behind that outlived the command that started them (`nohup server &`).
-- **Where it shows:** the session's row in the sidebar gets a turning ring with the count instead of the idle dot, and the header reads "Idle · 2 in background". Above the composer, a tray sums it up in one line ("2 background tasks · npm run dev 12m"); click it for one row per task with its kind, command or description, running time and progress (a subagent's tool uses, a terminal's CPU and memory). **Output** shows the end of a Claude task's output, updated while it runs; **Stop** stops one, **Stop all** all of them. Ended tasks stay with how they ended until your next message.
+- **Where it shows:** the session's row in the sidebar shows a blue heartbeat, with the count before it when there is more than one, and the header reads "Idle · 2 in background". Above the composer, a tray sums it up in one line ("2 background tasks · npm run dev 12m"); click it for one row per task with its kind, command or description, running time and progress (a subagent's tool uses, a terminal's CPU and memory). **Output** shows the end of a Claude task's output, updated while it runs; **Stop** stops one, **Stop all** all of them. Ended tasks stay with how they ended until your next message.
 - **When it ends:** Claude starts a turn by itself to read the result; that turn shows as running like any other. A Codex terminal or another process that ends adds a line to the conversation.
 - **Move to the background:** while Claude waits on a long command or subagent in the foreground, press **Ctrl+B** in the composer (or **⌃B background** in the status line) to move it to the background, as in Claude Code; the turn goes on.
 - **Sleep:** background work keeps the engine awake. **Sleep** asks first ("Stop the background work?") and stops it with the engine; **End session** always stops everything.
@@ -121,17 +121,19 @@ HTML and dev-server previews use `p-*.agent.localhost` addresses in a browser on
 ## The sidebar
 
 - **Agent icons:** Claude is the orange pixel figure Claude Code shows on its own welcome screen, and Codex is the slate `>_` tile.
-- **Status icons:** the icon at the right end of each row shows what the session is doing:
+- **Status icons:** the icon at the right end of each row shows what the session is doing. Its color says what kind of state it is: the text's own color for work in progress here, amber only for what waits for you, blue for work in another client or in the background, red for an error, green for a loaded engine.
+  - Needs you: a bell on a filled amber badge, the only filled icon.
   - Running: a bright dot running round a ring of eight.
   - Connecting: three dots lighting in turn.
-  - Waiting for approval: a hand.
-  - Open in another client: a pixel monitor with a blinking cursor; when a turn is running there, text types across its screen.
-  - Error: a triangle.
-  - Engine loaded: a dot.
+  - Open in another client: a pixel monitor with its cursor; when a turn is running there, text types across its screen.
+  - Background work: a heartbeat, with the count before it.
+  - Error: a warning sign.
+  - Engine loaded: a small dot.
   - Otherwise, the time of the last activity.
-- **One size:** the agent icons and the pixel status icons share one spec, so they look the same size: 14 pixels wide, centered in a 16-pixel square, with the same pixel size and 2-pixel strokes.
-- **Reduced motion:** with the system's reduce-motion setting on, the animations stop and hold a frame that still shows the state.
-- **Sessions that need you** (an approval, a question, a plan to decide on, including Codex's async questions and "Implement this plan?") get a filled bell badge, come first under **Active** even while their engine sleeps, and the Active header counts them ("2 need you"). The tab title shows the count, as in "(2) Agent Workbench"; on narrow screens a dot on the sessions button points to them while the sidebar is closed.
+- **One size:** the agent icons and the status icons are all pixel art to one spec, so they look the same size and line up in one column: 14 pixels wide, centered in a 16-pixel square, with the same pixel size and 2-pixel strokes.
+- **One kind of number:** counts, times and "N sub" in the sidebar are all in the same small gray figures; only the icons carry color.
+- **Motion:** only work in progress keeps moving (running, connecting, a turn running in another client). A new request for you swings its bell three times, then holds still. With the system's reduce-motion setting on, nothing moves, and each icon holds a frame that still shows the state.
+- **Sessions that need you** (an approval, a question, a plan to decide on, including Codex's async questions and "Implement this plan?") get the bell badge, come first under **Active** even while their engine sleeps, and the Active header counts them in amber ("2 need you"). The tab title shows the count, as in "(2) Agent Workbench"; on narrow screens a dot on the sessions button points to them while the sidebar is closed.
 - **Desktop notifications** announce a session that starts needing you while the page is in the background. Turn them on or off per browser in the "⋯" menu (Desktop notifications); turning them on asks the browser for permission. They need https or localhost.
 - **Active** lists sessions that are running, waiting, loaded or in use elsewhere. **Pinned** keeps the sessions you pin, in pin order.
 - **Subagents in Active and Pinned.** As in the project tree, subagents (Claude's Agent calls, Codex's spawned threads) appear under their parent session, not as separate rows:

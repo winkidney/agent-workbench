@@ -1165,17 +1165,8 @@ p {
   white-space: nowrap;
   font-size: 11.5px;
 }
-/* Work running outside the turns, above the composer. */
-.bg-ring {
-  display: inline-block;
-  flex-shrink: 0;
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  border: 2px solid color-mix(in oklch, var(--info) 30%, transparent);
-  border-top-color: var(--info);
-  animation: spin 2.4s linear infinite;
-}
+/* Work running outside the turns, above the composer: the sidebar's pulse,
+   in color and lit in turn while something runs. */
 .bg-tray {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -1183,9 +1174,8 @@ p {
   margin-top: 6px;
   font-size: 12px;
 }
-.bg-tray:not(.live) .bg-ring {
-  animation: none;
-  border-color: var(--border);
+.bg-tray.live .bg-head .pixel {
+  color: var(--info);
 }
 .bg-head-row {
   display: flex;
@@ -1313,15 +1303,14 @@ p {
 .bg-error {
   color: var(--destructive);
 }
+/* How many, then the pulse at the column's edge. The count is styled with
+   the sidebar's other numbers. */
 .status-icon.background {
-  position: relative;
   width: auto;
   min-width: 16px;
-  gap: 3px;
-}
-.bg-count {
+  gap: 4px;
+  justify-content: flex-end;
   color: var(--info);
-  font: 600 10px var(--mono);
 }
 .status-background {
   flex-shrink: 0;
@@ -3095,19 +3084,23 @@ textarea {
   color: var(--muted-foreground);
   font-size: 11px;
 }
-.session-kids {
+.session-kids,
+.session-time,
+.bg-count {
   flex-shrink: 0;
-  padding: 0 5px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--muted-foreground);
-  font-size: 10.5px;
-  line-height: 15px;
+  white-space: nowrap;
 }
-.session-time {
-  flex-shrink: 0;
+/* Every number in the sidebar's right column, and the section counts, read
+   the same: only the icons carry color. */
+.section-count,
+.project-count,
+.session-kids,
+.session-time,
+.bg-count {
   color: var(--muted-foreground);
   font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
   font-variant-numeric: tabular-nums;
 }
 
@@ -4163,6 +4156,34 @@ textarea {
     opacity: 0.25;
   }
 }
+/* The pulse's four parts, lit in turn. */
+.px-scan {
+  animation: px-scan 1.2s steps(1, end) infinite;
+}
+@keyframes px-scan {
+  0% {
+    opacity: 1;
+  }
+  25%,
+  100% {
+    opacity: 0.35;
+  }
+}
+/* A request for you: the bell swings a pixel either way three times, then
+   rests. Only work in progress keeps moving. */
+.px-swing {
+  transform-box: fill-box;
+  animation: px-swing 0.6s steps(1, end) 3;
+}
+@keyframes px-swing {
+  0% {
+    transform: translateX(-1px);
+  }
+  50%,
+  100% {
+    transform: translateX(1px);
+  }
+}
 .px-step {
   animation: px-step 0.9s steps(1, end) infinite;
 }
@@ -4174,9 +4195,6 @@ textarea {
   100% {
     opacity: 0.3;
   }
-}
-.px-blink {
-  animation: px-blink 1.2s steps(1, end) infinite;
 }
 @keyframes px-blink {
   0% {
@@ -4247,8 +4265,9 @@ textarea {
     animation: none;
     opacity: var(--px-rest, 1);
   }
-  .px-blink,
   .px-type,
+  .px-scan,
+  .px-swing,
   .logo .px-hop,
   .logo .px-cursor {
     animation: none !important;
@@ -4276,13 +4295,12 @@ textarea {
   width: 16px;
   height: 16px;
 }
+/* What each color says: the text's own for work in progress here, amber
+   only for what waits for you, blue for work elsewhere or in the
+   background, red for an error, green for a loaded engine. */
 .status-icon.running,
-.status-icon.starting,
-.status-icon.waiting {
-  color: var(--warning);
-}
-.status-icon.waiting svg {
-  animation: pulse 1.4s ease-in-out infinite;
+.status-icon.starting {
+  color: var(--foreground);
 }
 .status-icon.external,
 .status-icon.external_running {
@@ -4291,34 +4309,17 @@ textarea {
 .status-icon.error {
   color: var(--destructive);
 }
-/* Waiting for the user: a filled badge, unlike any working state. */
+.status-icon.idle {
+  color: var(--success);
+}
+/* Waiting for the user: the one filled icon, unlike any working state. */
 .status-icon.needs-you {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--warning);
-  color: var(--background);
-  animation: needs-you 1.8s ease-out infinite;
+  color: var(--warning);
 }
-.status-icon.needs-you svg {
-  width: 11px;
-  height: 11px;
-}
-@keyframes needs-you {
-  0% {
-    box-shadow: 0 0 0 0 color-mix(in oklch, var(--warning) 55%, transparent);
-  }
-  70%,
-  100% {
-    box-shadow: 0 0 0 6px transparent;
-  }
-}
+/* "2 need you": amber words; the row's badge is the filled one. */
 .section-badge {
-  padding: 0 6px;
-  border-radius: var(--radius-sm);
-  background: var(--warning);
-  color: var(--background);
-  font-size: 10px;
+  color: var(--warning);
+  font-size: 11px;
   font-weight: 650;
   letter-spacing: 0;
   text-transform: none;
@@ -4374,12 +4375,6 @@ textarea {
 }
 .notify-toggle[aria-checked="true"] .notify-state {
   color: var(--success);
-}
-.status-idle-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--success);
 }
 .session-line {
   display: flex;
@@ -4444,9 +4439,6 @@ body.resizing iframe {
 }
 @media (prefers-reduced-motion: reduce) {
   .spin,
-  .status-icon.waiting svg,
-  .status-icon.needs-you,
-  .bg-ring,
   .status-glyph {
     animation: none;
   }
