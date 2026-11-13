@@ -28,7 +28,7 @@ The title comes from the first message until the CLI names the session; rename i
 | Key | While idle | While a turn runs |
 | --- | --- | --- |
 | Enter | send | **steer**: send into the running turn |
-| Shift+Enter | new line | new line |
+| Shift+Enter, Alt+Enter | new line | new line |
 | Queue button | | keep the message for after this turn |
 | Esc | | interrupt the turn |
 | Tab | fill in the suggested next message (empty prompt) | |
@@ -131,7 +131,7 @@ HTML and dev-server previews use `p-*.agent.localhost` addresses in a browser on
   - Otherwise, the time of the last activity.
 - **One size:** the agent icons and the pixel status icons share one spec, so they look the same size: 14 pixels wide, centered in a 16-pixel square, with the same pixel size and 2-pixel strokes.
 - **Reduced motion:** with the system's reduce-motion setting on, the animations stop and hold a frame that still shows the state.
-- **Sessions that need you** (an approval, a question, a plan to decide on, including Codex's async questions and "Implement this plan?") get a filled bell badge and a highlighted row, come first under **Active** even while their engine sleeps, and the Active header counts them ("2 need you"). The tab title shows the count, as in "(2) Agent Workbench"; on narrow screens a dot on the sessions button points to them while the sidebar is closed.
+- **Sessions that need you** (an approval, a question, a plan to decide on, including Codex's async questions and "Implement this plan?") get a filled bell badge, come first under **Active** even while their engine sleeps, and the Active header counts them ("2 need you"). The tab title shows the count, as in "(2) Agent Workbench"; on narrow screens a dot on the sessions button points to them while the sidebar is closed.
 - **Desktop notifications** announce a session that starts needing you while the page is in the background. Turn them on or off per browser in the "⋯" menu (Desktop notifications); turning them on asks the browser for permission. They need https or localhost.
 - **Active** lists sessions that are running, waiting, loaded or in use elsewhere. **Pinned** keeps the sessions you pin, in pin order.
 - **Subagents in Active and Pinned.** As in the project tree, subagents (Claude's Agent calls, Codex's spawned threads) appear under their parent session, not as separate rows:

@@ -3,6 +3,7 @@ import { ArrowUp, Loader2 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { NewSessionOptions, type Options } from "../AgentControls";
 import { api } from "../lib/api";
+import { newlineKey } from "../lib/newline";
 import type { Prefs, Session } from "../sidebar/tree";
 import { ProjectPicker } from "./ProjectPicker";
 import { AgentIcon } from "../components/AgentIcon";
@@ -110,11 +111,8 @@ export function NewSession({
           disabled={busy}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
-            if (
-              e.key === "Enter" &&
-              !e.shiftKey &&
-              !e.nativeEvent.isComposing
-            ) {
+            if (newlineKey(e)) return;
+            if (e.key === "Enter" && !e.nativeEvent.isComposing) {
               e.preventDefault();
               void submit();
             }
@@ -175,7 +173,7 @@ export function NewSession({
           }}
         />
         <span className="new-hint">
-          {busy ? `Starting ${agentName}…` : "↵ start · ⇧↵ new line"}
+          {busy ? `Starting ${agentName}…` : "↵ start · ⇧↵ / Alt↵ new line"}
         </span>
       </div>
       {error && (

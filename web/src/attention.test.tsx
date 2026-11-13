@@ -57,7 +57,8 @@ describe("sessions that need you", () => {
     const html = renderToStaticMarkup(
       <StatusIcon status="running" attention="question" />,
     );
-    expect(html).toContain("needs-you");
+    // The kind is not a class: .question and .approval style the cards.
+    expect(html).toContain('class="status-icon needs-you"');
     expect(html).toContain('aria-label="Has a question for you"');
     expect(renderToStaticMarkup(<StatusIcon status="running" />)).toContain(
       "px-chase",

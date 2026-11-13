@@ -102,7 +102,8 @@ export function StatusIcon({
   const wants = attention ? ATTENTION_LABEL[attention] : undefined;
   if (wants)
     return (
-      <span className={"status-icon needs-you " + attention} title={wants}>
+      // Not the kind as a class: .approval and .question style the cards.
+      <span className="status-icon needs-you" title={wants}>
         <BellRing size={size} role="img" aria-label={wants} />
       </span>
     );

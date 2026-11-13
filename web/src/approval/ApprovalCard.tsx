@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Textarea } from "../components/ui/textarea";
+import { newlineKey } from "../lib/newline";
 import {
   list,
   record,
@@ -440,7 +441,8 @@ export function ApprovalCard({
       e.preventDefault();
       void send("deny", feedback.trim() || undefined);
     } else if (inFeedback) {
-      if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+      if (newlineKey(e)) return;
+      if (e.key === "Enter" && !e.nativeEvent.isComposing) {
         e.preventDefault();
         void send("deny", feedback.trim() || undefined);
       }

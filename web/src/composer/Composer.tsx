@@ -8,6 +8,7 @@ import {
   useAgentControls,
 } from "../AgentControls";
 import { CommandMenu } from "./CommandMenu";
+import { newlineKey } from "../lib/newline";
 import {
   complete,
   items as menuItems,
@@ -331,11 +332,8 @@ export function Composer({
               onBackground();
               return;
             }
-            if (
-              e.key === "Enter" &&
-              !e.shiftKey &&
-              !e.nativeEvent.isComposing
-            ) {
+            if (newlineKey(e)) return;
+            if (e.key === "Enter" && !e.nativeEvent.isComposing) {
               e.preventDefault();
               void submit();
             }
@@ -427,8 +425,8 @@ export function Composer({
             running
               ? "↵ steer · queue button sends after this turn · esc interrupt"
               : suggestion
-                ? "tab use suggestion · ↵ send · ⇧↵ new line"
-                : "↵ send · ⇧↵ new line"
+                ? "tab use suggestion · ↵ send · ⇧↵ / Alt↵ new line"
+                : "↵ send · ⇧↵ / Alt↵ new line"
           }
         />
       </div>

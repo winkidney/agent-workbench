@@ -172,6 +172,14 @@ describe("themes", () => {
     for (const cls of hljs(styleCss)) expect(themed.has(cls), cls).toBe(true);
   });
 
+  it("rounds corners only by the three radii, or fully for dots", () => {
+    for (const css of [styleCss, themesCss])
+      for (const [, v] of css.matchAll(/border-radius:\s*([^;]+);/g))
+        expect(v, v).toMatch(
+          /^(var\(--radius-(sm|md|lg)\)( |$))+(0 0)?$|^50%$|^2px$/,
+        );
+  });
+
   it("applies the same themes before the first paint", () => {
     const list = initJs.match(/\[([^\]]*)\]\.includes\(p\)/)![1];
     const ids = [...list.matchAll(/'([\w-]+)'/g)].map((m) => m[1]);

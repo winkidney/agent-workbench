@@ -278,7 +278,6 @@ const SessionRow = memo(function SessionRow({
           (selected ? " selected" : "") +
           (node.hidden ? " is-hidden" : "") +
           (node.archived ? " is-archived" : "") +
-          (s.attention ? " needs-you" : "") +
           (actions.menu === menuKey ? " menu-open" : "")
         }
         style={{ paddingLeft: 6 + depth * 12 }}
