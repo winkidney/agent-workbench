@@ -248,7 +248,7 @@ func TestHistoryReportsRunStateAndStreamAnnouncesBuild(t *testing.T) {
 	r.AddCookie(cookie)
 	w := httptest.NewRecorder()
 	s.ServeHTTP(w, r)
-	want := "event: hello\ndata: {\"build\":\"" + assetBuild(assets) + "\"}"
+	want := "event: hello\ndata: {\"after\":0,\"build\":\"" + assetBuild(assets) + "\"}"
 	if assetBuild(assets) == "" || !strings.Contains(w.Body.String(), want) {
 		t.Fatalf("hello: %q", w.Body.String())
 	}

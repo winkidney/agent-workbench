@@ -140,7 +140,7 @@ HTML and dev-server previews use `p-*.agent.localhost` addresses in a browser on
   - Running: a bright dot running round a ring of eight.
   - Connecting: three dots lighting in turn.
   - Open in another client: a pixel monitor with its cursor; when a turn is running there, text types across its screen.
-  - Background work: a heartbeat, with the count before it.
+  - Background work: a heartbeat, with the count before it. While a turn runs too, both show: the heartbeat, then the turn's icon at the end.
   - Error: a warning sign.
   - Engine loaded: a small dot.
   - Otherwise, the time of the last activity.
@@ -163,8 +163,9 @@ HTML and dev-server previews use `p-*.agent.localhost` addresses in a browser on
 
 - **The connection line** at the bottom says where this page is and whether its live updates arrive:
   - **Connected locally** on the workbench computer, **Connected remotely** on another device or through a tunnel. Hover it for how the page signed in and whether the connection is encrypted.
-  - **Reconnecting…** while live updates are interrupted, for example while the workbench restarts. It reconnects by itself.
-  - **Disconnected**, with **Retry**, when the workbench refused them.
+  - **Reconnecting…**, with **Retry**, while live updates are interrupted, for example while the workbench restarts. The page never stops trying: it reconnects by itself, waiting a little longer each time (1, 2, 5, 10, 20, then every 30 seconds), even when the workbench or a proxy refused it. Retry reconnects at once.
+  - When the interruption lasts more than 5 seconds, a line at the top of the conversation says so too (the footer is out of sight on a phone).
+  - A connection that went quiet without failing (the computer slept, the network changed) is noticed: the workbench sends something at least every 15 seconds, and the page reconnects after 45 seconds of silence, or as soon as it is shown again after 20. Whatever happened meanwhile comes after the reconnect, without reloading the page.
 
 Pins, hidden sessions and display names are stored by the workbench and sync live between browsers.
 

@@ -21,7 +21,13 @@ import { Sidebar, statusLabels as labels } from "./sidebar/Sidebar";
 import { usePrefs } from "./sidebar/usePrefs";
 import { displayTitle, type Session } from "./sidebar/tree";
 import { api, download } from "./lib/api";
-import { afterError, footerConnection, type Live } from "./lib/connection";
+import {
+  afterError,
+  footerConnection,
+  reconnectDelay,
+  shouldRenew,
+  type Live,
+} from "./lib/connection";
 import { Appearance } from "./components/Appearance";
 import { NotifyToggle } from "./components/NotifyToggle";
 import { SuggestToggle } from "./components/SuggestToggle";
@@ -129,6 +135,17 @@ export default function App() {
   });
   const [live, setLive] = useState<Live>("connecting");
   const [retry, setRetry] = useState(0);
+  // When the stream last said anything (ADR 0001: a stalled one is made
+  // again), and how many times in a row the browser gave up on it.
+  const lastHeard = useRef(Date.now());
+  const gaveUp = useRef(0);
+  const liveRef = useRef(live);
+  liveRef.current = live;
+  // A new stream now, from where this page is.
+  const renewStream = () => {
+    setLive((was) => (was === "open" ? "reconnecting" : was));
+    setRetry((n) => n + 1);
+  };
   const [paired, setPaired] = useState(false),
     [code, setCode] = useState(""),
     [error, setError] = useState(""),
@@ -306,6 +323,13 @@ export default function App() {
         "&session=" +
         encodeURIComponent(active),
     );
+    // Anything from the workbench shows the stream is alive.
+    const heard = () => {
+      lastHeard.current = Date.now();
+    };
+    heard();
+    for (const name of ["message", "telemetry", "cursor", "hello", "external"])
+      source.addEventListener(name, heard);
     source.addEventListener("telemetry", (e) =>
       window.dispatchEvent(
         new CustomEvent("workbench:telemetry", {
@@ -324,8 +348,13 @@ export default function App() {
     // Each connection announces the server's web build; a restart onto a new
     // build shows up as a different one.
     source.addEventListener("hello", (e) => {
-      const build = (JSON.parse((e as MessageEvent).data) as { build?: string })
-        .build;
+      const { build, after } = JSON.parse((e as MessageEvent).data) as {
+        build?: string;
+        after?: number;
+      };
+      // Where the stream starts: a renewed one resumes there, even if no
+      // event came before it (ADR 0001).
+      if (after && after > streamCursor.current) streamCursor.current = after;
       if (!build) return;
       if (pageBuild.current === undefined) pageBuild.current = build;
       else if (pageBuild.current !== build) setOutdated(true);
@@ -362,17 +391,72 @@ export default function App() {
       if (v.kind === "prefs") receivePrefs.current(v.data);
       else if (v.session === selected.current) pushEvent.current(v);
     };
-    source.onopen = () => setLive("open");
+    source.addEventListener("ping", heard);
+    source.onopen = () => {
+      heard();
+      gaveUp.current = 0;
+      setLive("open");
+    };
+    let again = 0;
     source.onerror = () => {
-      setLive((was) =>
-        afterError(was, source.readyState === EventSource.CLOSED),
-      );
+      setLive(afterError);
       // EventSource hides HTTP status; probe authentication on connection
       // failure (a small poll of the list).
       void loadSessions().catch(() => {});
+      // The browser gave up (an HTTP error, say while the workbench
+      // restarts behind a proxy): never leave it so. Again, later each time.
+      if (source.readyState === EventSource.CLOSED && !again)
+        again = window.setTimeout(
+          () => setRetry((n) => n + 1),
+          reconnectDelay(gaveUp.current++),
+        );
     };
-    return () => source.close();
+    return () => {
+      source.close();
+      clearTimeout(again);
+    };
   }, [paired, active, retry]);
+  // A stream that went quiet (a dead connection the browser does not
+  // notice) is made again; so is one found quiet or down when the page
+  // wakes: shown again, back online, or restored from the back-forward cache.
+  useEffect(() => {
+    if (!paired) return;
+    const check = (waking: boolean) => {
+      if (
+        shouldRenew({
+          now: Date.now(),
+          last: lastHeard.current,
+          live: liveRef.current,
+          waking,
+        })
+      )
+        renewStream();
+    };
+    const timer = window.setInterval(() => check(false), 5000);
+    const wake = () => {
+      if (document.visibilityState === "visible") check(true);
+    };
+    document.addEventListener("visibilitychange", wake);
+    window.addEventListener("online", wake);
+    window.addEventListener("pageshow", wake);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", wake);
+      window.removeEventListener("online", wake);
+      window.removeEventListener("pageshow", wake);
+    };
+  }, [paired]);
+  // Live updates down for a while: said at the top of the conversation too
+  // (a phone does not show the sidebar's footer).
+  const [liveDown, setLiveDown] = useState(false);
+  useEffect(() => {
+    if (live === "open") {
+      setLiveDown(false);
+      return;
+    }
+    const t = window.setTimeout(() => setLiveDown(true), 5000);
+    return () => clearTimeout(t);
+  }, [live]);
   useEffect(() => {
     if (!paired || !active) return;
     setPath("");
@@ -577,10 +661,12 @@ export default function App() {
       });
     try {
       await act("send", { text, queue, images, files });
-    } finally {
-      // Delivered (the server echoed it) or failed.
+    } catch (e) {
+      // Not sent: its text goes back to the composer.
       setSending(null);
+      throw e;
     }
+    // Sent: it stays on screen until its echo arrives (ADR 0001).
   };
   // Questions answered in the transcript go out as the composer would send.
   const answerRef = useRef<(text: string) => Promise<void>>(async () => {});
@@ -933,10 +1019,7 @@ export default function App() {
               protocol: location.protocol,
               live,
             })}
-            onReconnect={() => {
-              setLive("connecting");
-              setRetry((n) => n + 1);
-            }}
+            onReconnect={renewStream}
           />
         )}
         {/* Replies are styled like the agent's own terminal UI. */}
@@ -1061,6 +1144,14 @@ export default function App() {
               <PanelRightClose size={17} />
             </Button>
           </header>
+          {paired && liveDown && (
+            <div className="update-banner" role="status">
+              Live updates interrupted — reconnecting…
+              <Button size="sm" onClick={renewStream}>
+                Retry
+              </Button>
+            </div>
+          )}
           {outdated && (
             <div className="update-banner" role="status">
               Workbench was updated. Reload to use the new version.

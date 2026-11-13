@@ -1132,8 +1132,10 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 }
 
 // heartbeatEvery keeps a quiet stream open through proxies (Cloudflare
-// closes one idle for 100 seconds) without waking a phone every second.
-const heartbeatEvery = 15 * time.Second
+// closes one idle for 100 seconds) without waking a phone every second. It
+// is a ping event, not a comment: the page sees it, and makes the stream
+// again when even pings stop (ADR 0001). A variable for tests.
+var heartbeatEvery = 15 * time.Second
 
 // forPage: what a page viewing session uses of the event log. The list's
 // events (status, deleted, prefs) go to every page.
@@ -1175,8 +1177,11 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 		_, err := fmt.Fprintf(w, format, args...)
 		return err == nil
 	}
-	hello, _ := json.Marshal(map[string]string{"build": s.build})
-	send("event: hello\ndata: %s\n\n", hello)
+	// Where this stream starts, also as its id: a page that renews it, or a
+	// browser reconnecting on its own, resumes there even before any event
+	// came (ADR 0001).
+	hello, _ := json.Marshal(map[string]any{"build": s.build, "after": after})
+	send("id: %d\nevent: hello\ndata: %s\n\n", after, hello)
 	// A session another client runs is followed through its native record
 	// for as long as this page views it.
 	var follow *externalTail
@@ -1239,7 +1244,7 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 		case <-changed:
 		case <-ticker.C:
 			if time.Since(lastWrite) >= heartbeatEvery {
-				if !send(": heartbeat\n\n") {
+				if !send("event: ping\ndata: {}\n\n") {
 					return
 				}
 			}

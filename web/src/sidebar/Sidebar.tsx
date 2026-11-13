@@ -1005,7 +1005,7 @@ export function Sidebar({
         >
           <span className={`status-dot ${connection.tone}`} />
           {connection.label}
-          {connection.tone === "down" && (
+          {connection.tone !== "ok" && (
             <button
               type="button"
               className="hidden-toggle"

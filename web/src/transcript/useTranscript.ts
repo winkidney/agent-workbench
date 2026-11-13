@@ -1,3 +1,4 @@
+import { frameBatch } from "./frameBatch";
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { text, type Agent, type WorkbenchEvent } from "./model";
 import { checkAccess } from "../lib/api";
@@ -124,12 +125,14 @@ export function useTranscript(
   const before = useRef<string | undefined>(undefined);
   const stateRef = useRef(state);
   stateRef.current = state;
-  const queue = useRef<WorkbenchEvent[]>([]);
-  const frame = useRef(0);
   const busy = useRef(false);
   // The last status seen, to tell a new turn from an approval resuming one.
   const lastStatus = useRef("");
   const timers = useRef<number[]>([]);
+  // Live events, applied once per frame.
+  const [batch] = useState(() =>
+    frameBatch<WorkbenchEvent>((events) => applyRef.current(events)),
+  );
   const id = session?.id;
   const agent = session?.agent;
   const errorRef = useRef(onError);
@@ -209,8 +212,9 @@ export function useTranscript(
       .catch(() => {});
     return () => {
       cancelled = true;
-      cancelAnimationFrame(frame.current);
-      queue.current = [];
+      // Nothing of this session's may wait, and nothing may stay scheduled
+      // (a frame left behind held every later event back; ADR 0001).
+      batch.reset();
       timers.current.forEach(clearTimeout);
       timers.current = [];
     };
@@ -237,58 +241,64 @@ export function useTranscript(
     timers.current.push(window.setTimeout(() => attempt(0), 700));
   }, [agent, page]);
 
-  const flush = useCallback(() => {
-    frame.current = 0;
-    const events = queue.current;
-    queue.current = [];
-    if (!events.length || !agent) return;
-    dispatch({ type: "live", events, agent });
-    let approvalsChanged = false;
-    const next = new Map(approvals);
-    for (const e of events) {
-      if (e.kind === "approval") {
-        next.set(text(e.data.id), e);
-        approvalsChanged = true;
-      } else if (
-        e.kind === "approval_resolved" ||
-        e.kind === "approval_cancelled"
-      ) {
-        approvalsChanged = next.delete(text(e.data.id)) || approvalsChanged;
-      } else if (e.kind === "queue") {
-        setQueue({
-          items: Array.isArray(e.data.items) ? (e.data.items as Queued[]) : [],
-          paused: e.data.paused === true,
-        });
-      } else if (e.kind === "status") {
-        const status = text(e.data.status);
-        // A turn starts when running begins, including after the engine
-        // (and Codex's MCP servers) finished starting.
-        if (status === "running" && lastStatus.current !== "running")
-          setTurnStarted(Date.parse(e.time) || Date.now());
-        if (status !== "waiting") lastStatus.current = status;
-        if (["idle", "sleeping", "stopped", "error"].includes(status)) {
-          if (next.size) approvalsChanged = true;
-          next.clear();
-          setTurnStarted(null);
-          if (busy.current) scheduleReconcile();
+  const apply = useCallback(
+    (events: WorkbenchEvent[]) => {
+      if (!events.length || !agent) return;
+      dispatch({ type: "live", events, agent });
+      let approvalsChanged = false;
+      const next = new Map(approvals);
+      for (const e of events) {
+        if (e.kind === "approval") {
+          next.set(text(e.data.id), e);
+          approvalsChanged = true;
+        } else if (
+          e.kind === "approval_resolved" ||
+          e.kind === "approval_cancelled"
+        ) {
+          approvalsChanged = next.delete(text(e.data.id)) || approvalsChanged;
+        } else if (e.kind === "queue") {
+          setQueue({
+            items: Array.isArray(e.data.items)
+              ? (e.data.items as Queued[])
+              : [],
+            paused: e.data.paused === true,
+          });
+        } else if (e.kind === "status") {
+          const status = text(e.data.status);
+          // A turn starts when running begins, including after the engine
+          // (and Codex's MCP servers) finished starting.
+          if (status === "running" && lastStatus.current !== "running")
+            setTurnStarted(Date.parse(e.time) || Date.now());
+          if (status !== "waiting") lastStatus.current = status;
+          if (["idle", "sleeping", "stopped", "error"].includes(status)) {
+            if (next.size) approvalsChanged = true;
+            next.clear();
+            setTurnStarted(null);
+            if (busy.current) scheduleReconcile();
+          }
+          // The engine is gone: nothing it ran is still running, and a
+          // question it was waiting on becomes answerable later.
+          if (["sleeping", "stopped", "error"].includes(status))
+            dispatch({ type: "settle" });
+          busy.current = BUSY.includes(status);
         }
-        // The engine is gone: nothing it ran is still running, and a
-        // question it was waiting on becomes answerable later.
-        if (["sleeping", "stopped", "error"].includes(status))
-          dispatch({ type: "settle" });
-        busy.current = BUSY.includes(status);
       }
-    }
-    if (approvalsChanged) setApprovals(next);
-  }, [agent, approvals, scheduleReconcile]);
-  const flushRef = useRef(flush);
-  flushRef.current = flush;
+      if (approvalsChanged) setApprovals(next);
+    },
+    [agent, approvals, scheduleReconcile],
+  );
+  const applyRef = useRef(apply);
+  applyRef.current = apply;
 
-  const push = useCallback((e: WorkbenchEvent) => {
-    queue.current.push(e);
-    if (!frame.current)
-      frame.current = requestAnimationFrame(() => flushRef.current());
-  }, []);
+  const push = useCallback((e: WorkbenchEvent) => batch.push(e), [batch]);
+  // A hidden page runs no frames: what waited is applied once it shows.
+  useEffect(() => {
+    const shown = () => {
+      if (document.visibilityState === "visible") batch.flush();
+    };
+    document.addEventListener("visibilitychange", shown);
+    return () => document.removeEventListener("visibilitychange", shown);
+  }, [batch]);
 
   // Records another client wrote, read from its native record by the server.
   const external = useCallback(

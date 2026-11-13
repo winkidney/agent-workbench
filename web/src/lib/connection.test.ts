@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { afterError, footerConnection } from "./connection";
+import {
+  STALL_MS,
+  WAKE_MS,
+  afterError,
+  footerConnection,
+  reconnectDelay,
+  shouldRenew,
+} from "./connection";
 
 const at = (o: Partial<Parameters<typeof footerConnection>[0]>) =>
   footerConnection({
@@ -44,15 +51,36 @@ describe("the sidebar's connection line", () => {
     expect(
       at({ here: false, open: false, live: "reconnecting" }),
     ).toMatchObject({ label: "Reconnecting…", tone: "wait" });
-    expect(at({ live: "closed" })).toMatchObject({
-      label: "Disconnected",
-      tone: "down",
-    });
   });
-  it("follows the stream", () => {
-    expect(afterError("open", false)).toBe("reconnecting");
-    expect(afterError("connecting", false)).toBe("connecting");
-    expect(afterError("reconnecting", false)).toBe("reconnecting");
-    expect(afterError("open", true)).toBe("closed");
+  it("follows the stream, never giving up", () => {
+    expect(afterError("open")).toBe("reconnecting");
+    expect(afterError("connecting")).toBe("connecting");
+    expect(afterError("reconnecting")).toBe("reconnecting");
+  });
+  it("waits longer each time, up to every 30 seconds", () => {
+    expect([0, 1, 2, 3, 4, 5, 6, 50].map(reconnectDelay)).toEqual([
+      1000, 2000, 5000, 10000, 20000, 30000, 30000, 30000,
+    ]);
+    expect(reconnectDelay(-1)).toBe(1000);
+  });
+  it("renews a stream that went quiet, or that is not open on waking", () => {
+    const now = 100_000;
+    const open = { now, live: "open" as const, waking: false };
+    expect(shouldRenew({ ...open, last: now - 1000 })).toBe(false);
+    expect(shouldRenew({ ...open, last: now - STALL_MS - 1 })).toBe(true);
+    // Shown again: a shorter quiet is enough.
+    expect(
+      shouldRenew({ ...open, waking: true, last: now - WAKE_MS + 1 }),
+    ).toBe(false);
+    expect(
+      shouldRenew({ ...open, waking: true, last: now - WAKE_MS - 1 }),
+    ).toBe(true);
+    // Not open: the retry timer handles it, unless the page just woke.
+    expect(
+      shouldRenew({ now, last: 0, live: "reconnecting", waking: false }),
+    ).toBe(false);
+    expect(
+      shouldRenew({ now, last: 0, live: "reconnecting", waking: true }),
+    ).toBe(true);
   });
 });

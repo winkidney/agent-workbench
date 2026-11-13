@@ -211,7 +211,47 @@ func TestEventStreamSendsWhatThePageUses(t *testing.T) {
 	if n := strings.Count(body, "event: telemetry"); n != 1 {
 		t.Fatalf("telemetry sent %d times", n)
 	}
-	if strings.Contains(body, "heartbeat") {
-		t.Fatal("a heartbeat while there was traffic")
+	if strings.Contains(body, "event: ping") {
+		t.Fatal("a ping while there was traffic")
+	}
+}
+
+func TestQuietStreamsPing(t *testing.T) {
+	s, _ := authServer(t)
+	was := heartbeatEvery
+	heartbeatEvery = 300 * time.Millisecond
+	t.Cleanup(func() { heartbeatEvery = was })
+	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
+	defer cancel()
+	// No session: nothing to send but pings.
+	r := httptest.NewRequest("GET", "http://"+s.Host+"/api/events", nil).WithContext(ctx)
+	r.Host, r.RemoteAddr = s.Host, "127.0.0.1:1234"
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, r)
+	body := w.Body.String()
+	if n := strings.Count(body, "event: ping\ndata: {}\n\n"); n < 1 {
+		t.Fatalf("no ping on a quiet stream: %q", body)
+	}
+	// A ping only after a quiet spell, not every second.
+	if n := strings.Count(body, "event: ping"); n > 2 {
+		t.Fatalf("%d pings in 1.5 s", n)
+	}
+	if strings.Contains(body, ": heartbeat") {
+		t.Fatal("a comment heartbeat, which the page cannot see")
+	}
+}
+
+func TestStreamsSayWhereTheyStart(t *testing.T) {
+	s, m := authServer(t)
+	last, _ := m.store.Append("claude:A", "native", map[string]any{"text": "before"})
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	r := httptest.NewRequest("GET", "http://"+s.Host+"/api/events?session=claude:A", nil).WithContext(ctx)
+	r.Host, r.RemoteAddr = s.Host, "127.0.0.1:1234"
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, r)
+	want := fmt.Sprintf("id: %d\nevent: hello\ndata: {\"after\":%d,", last.Seq, last.Seq)
+	if !strings.HasPrefix(w.Body.String(), want) {
+		t.Fatalf("hello: %q, want prefix %q", w.Body.String(), want)
 	}
 }

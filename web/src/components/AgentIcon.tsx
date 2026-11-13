@@ -123,23 +123,24 @@ export function StatusIcon({
         <PixelBell label={wants} />
       </span>
     );
-  // Between turns, work in the background: how much, then a pulse, which
-  // stays at the column's edge like every other icon.
-  if (background && !["running", "starting"].includes(status)) {
-    const label =
-      background === 1 ? "1 background task" : `${background} background tasks`;
-    return (
-      <span
-        className="status-icon background"
-        title={label}
-        role="img"
-        aria-label={label}
-      >
-        {background > 1 && <span className="bg-count">{background}</span>}
-        <PixelPulse />
-      </span>
-    );
-  }
+  // Work in the background: how much, then a pulse. Alone (between turns)
+  // it names itself; next to a turn's mark the pair does.
+  const bgLabel =
+    background === 1 ? "1 background task" : `${background} background tasks`;
+  const bgMark = (alone: boolean) => (
+    <span
+      className="status-icon background"
+      title={bgLabel}
+      {...(alone ? { role: "img", "aria-label": bgLabel } : {})}
+    >
+      {background! > 1 && <span className="bg-count">{background}</span>}
+      <PixelPulse />
+    </span>
+  );
+  // Between turns it stands alone, at the column's edge like every other
+  // icon (it implies a loaded engine).
+  if (background && !["running", "starting"].includes(status))
+    return bgMark(true);
   const label = statusLabel[status];
   if (!label) return null;
   const icon =
@@ -154,9 +155,24 @@ export function StatusIcon({
     ) : (
       <PixelIcon grid={DOT} label={label} />
     );
-  return (
+  const mark = (
     <span className={"status-icon " + status} title={label}>
       {icon}
     </span>
   );
+  // Working on a turn while work runs in the background: both, the turn's
+  // icon at the column's edge.
+  if (background)
+    return (
+      <span
+        className="status-pair"
+        role="img"
+        aria-label={`${label} · ${bgLabel}`}
+        title={`${label} · ${bgLabel}`}
+      >
+        {bgMark(false)}
+        {mark}
+      </span>
+    );
+  return mark;
 }

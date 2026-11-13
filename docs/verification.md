@@ -876,3 +876,37 @@ These are maintainer notes on how each feature of Agent Workbench was verified, 
   - **A session started in a terminal** (`claude -p`) appeared in the open page's list after 5 s; its record deleted, it left after 10 s. (Both test transcripts were removed afterwards.)
   - **No drift:** a page kept open on deltas while a new session appeared showed the same headers and counts as a page loaded afresh (`OTHER 116` on both).
 
+## A conversation that stopped updating, a connection that never gives up, both status icons
+
+- **Why:**
+  - **The freeze:** a conversation stopped showing the agent's replies, and even the message just sent, while the footer said "Connected locally". A reload showed everything. The workbench had stored every record, and the stream was delivering them.
+  - **Cause, in the page:** live events wait for an animation frame. Switching sessions, or reloading the history, cancelled a pending frame but kept its id, so no frame was ever requested again. A frame is pending at a switch whenever another session streams; in a background tab it always is. The sent message disappeared because the page dropped it when the request returned and waited for the echo, which was stuck too. See [ADR 0001](adr/0001-live-view-never-stalls.md).
+  - **Asked for too:** the page should never stop connecting, at most retrying less often; and a session running a turn with background work should show both icons.
+- **Change:**
+  - **The freeze:** live events go through `frameBatch`, whose reset also forgets the frame. A page shown again applies what waited at once.
+  - **Sent message:** it stays until its echo arrives; only a failed send or a session switch removes it earlier.
+  - **Reconnecting:**
+    - A stream the browser closed for good (an HTTP error on reconnect) is made again: 1, 2, 5, 10, 20, then every 30 seconds, forever.
+    - The workbench sends a `ping` event after 15 quiet seconds (it was a comment the page could not see). The page renews a stream silent for 45 seconds, and on waking (shown again, online, back-forward cache) one quiet for 20 or not open.
+    - The `hello` event carries where the stream starts, as data and as its id, so a renewed stream, or the browser's own reconnect, resumes there even before any event came.
+    - When updates are down for more than 5 seconds, a line at the top of the conversation says so, with Retry. "Disconnected" is gone.
+  - **Status icons:** running or connecting with background work shows the heartbeat (and count), then the turn's icon at the column's edge.
+- **New tests:**
+  - **Vitest:**
+    - the frame batch keeps applying events after a reset while a frame was pending (where the old code froze), and flushes on request;
+    - the backoff sequence and its 30-second cap;
+    - when a stream is renewed;
+    - the connection states without "closed";
+    - both icons for a running session with background work.
+  - **Go:**
+    - a quiet stream pings, and does not ping while there is traffic, with no comment heartbeat;
+    - `hello` carries the start as id and data.
+- **Browser** (scratch instances, Codex sessions in a scratch project, deleted afterwards):
+  - **The freeze, reproduced:** session A streams while frames are held as in a hidden tab; the page switches to B, then a message is sent to B.
+    - **v0.3.25:** the message never showed and no reply in 90 s; after a reload both were there.
+    - **New build:** the message showed at once, and the reply arrived live in 2.5 s.
+  - **Through a proxy that misbehaves:**
+    - Answering 502 (the browser closes the stream): the line at the top showed; the page was back 1.5 s after the proxy recovered.
+    - A stream frozen without closing: renewed after 46 s. A sidebar change made while frozen reached the page through the new stream.
+  - **Icons:** the heartbeat and the running dots side by side, aligned with the other rows, in light and dark themes and at 390 px.
+

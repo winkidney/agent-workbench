@@ -114,10 +114,18 @@ describe("background work", () => {
     );
     expect(html).toContain('aria-label="2 background tasks"');
     expect(html).toContain("bg-count");
-    // A running turn still shows as running; a request for the user wins.
-    expect(
-      renderToStaticMarkup(<StatusIcon status="running" background={2} />),
-    ).toContain("px-chase");
+    // A running turn with work in the background shows both, the turn's
+    // mark last (at the column's edge); a request for the user wins.
+    const both = renderToStaticMarkup(
+      <StatusIcon status="running" background={2} />,
+    );
+    expect(both).toContain("px-chase");
+    expect(both).toContain("status-icon background");
+    expect(both).toContain('aria-label="Running · 2 background tasks"');
+    expect(both.indexOf("bg-count")).toBeLessThan(both.indexOf("px-chase"));
+    expect(renderToStaticMarkup(<StatusIcon status="running" />)).not.toContain(
+      "background",
+    );
     expect(
       renderToStaticMarkup(
         <StatusIcon status="idle" background={2} attention="approval" />,
