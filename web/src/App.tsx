@@ -30,6 +30,11 @@ import { SettingsDialog } from "./components/settings/SettingsDialog";
 import { LogoMark } from "./components/Logo";
 import { PreviewPanel } from "./preview/PreviewPanel";
 import { mayLeave } from "./preview/unsaved";
+import {
+  drifted,
+  mergeSessions,
+  type SessionsDelta,
+} from "./lib/sessionsDelta";
 import { tabFromPreview, type Preview } from "./preview/tabs";
 import { usePreviewTabs } from "./preview/usePreviewTabs";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -156,13 +161,16 @@ export default function App() {
     if (!paired) return;
     const timer = setInterval(() => {
       if (document.visibilityState === "visible")
-        void refresh().catch(catchError);
+        void refresh(false).catch(catchError);
     }, 10000);
     return () => clearInterval(timer);
   }, [paired]);
   const selected = useRef(active);
   selected.current = active;
   const streamCursor = useRef(0);
+  // The session list this page has, as the workbench names it: polls get
+  // only what changed since (sessionlist.go).
+  const listToken = useRef("");
   const current = sessions.find((s) => s.id === active);
   const [verbose, setVerbose] = useState(false);
   // Side panel widths: dragged by the handles, saved per browser.
@@ -218,8 +226,26 @@ export default function App() {
   const sidebarPrefs = usePrefs(paired, catchError);
   const receivePrefs = useRef(sidebarPrefs.receive);
   receivePrefs.current = sidebarPrefs.receive;
-  const refresh = async () => {
-    setSessions(await api<Session[]>("sessions"));
+  // What changed in the session list since this page's copy; all of it the
+  // first time, or when the copy drifted.
+  const loadSessions = async () => {
+    const d = await api<SessionsDelta>(
+      "sessions?since=" + encodeURIComponent(listToken.current),
+    );
+    listToken.current = d.token;
+    setSessions((old) => {
+      const merged = mergeSessions(old, d);
+      if (drifted(merged, d)) listToken.current = "";
+      return merged;
+    });
+    return d;
+  };
+  // Everything the page lists. The 10-second poll (all false) reads the
+  // folders and previews only when the session list changed; after an
+  // action, all of it.
+  const refresh = async (all = true) => {
+    const d = await loadSessions();
+    if (!all && !d.full && !d.changed?.length && !d.removed?.length) return;
     setWorkspaces(await api<string[]>("workspaces"));
     setPreviews(await api<Preview[]>("previews"));
   };
@@ -229,6 +255,7 @@ export default function App() {
       setSettingsOpen(false);
       setPaired(false);
       setSessions([]);
+      listToken.current = "";
       setActive("");
       setEntries([]);
       setPreviews([]);
@@ -255,8 +282,8 @@ export default function App() {
       setHere(status.thisComputer !== false);
       setSignin({ open: !!status.local, method: status.method });
       if (status.authenticated) {
-        const list = await api<Session[]>("sessions");
-        setSessions(list);
+        listToken.current = "";
+        const list = (await loadSessions()).changed ?? [];
         setPaired(true);
         if (list.length) setActive(list[0].id);
         void api<string[]>("workspaces").then(setWorkspaces).catch(catchError);
@@ -289,6 +316,11 @@ export default function App() {
         }),
       ),
     );
+    // The stream passed over other sessions' events: where to start again.
+    source.addEventListener("cursor", (e) => {
+      const seq = Number((e as MessageEvent).data);
+      if (seq > streamCursor.current) streamCursor.current = seq;
+    });
     // Each connection announces the server's web build; a restart onto a new
     // build shows up as a different one.
     source.addEventListener("hello", (e) => {
@@ -335,8 +367,9 @@ export default function App() {
       setLive((was) =>
         afterError(was, source.readyState === EventSource.CLOSED),
       );
-      // EventSource hides HTTP status; probe authentication on connection failure.
-      void api<Session[]>("sessions").catch(() => {});
+      // EventSource hides HTTP status; probe authentication on connection
+      // failure (a small poll of the list).
+      void loadSessions().catch(() => {});
     };
     return () => source.close();
   }, [paired, active, retry]);
@@ -461,7 +494,7 @@ export default function App() {
   // Native Codex thread operations, for any session in the sidebar.
   const archiveSession = (s: Session, archived: boolean) =>
     void api(`sessions/${s.id}/${archived ? "archive" : "unarchive"}`, "POST")
-      .then(refresh)
+      .then(() => refresh())
       .catch(catchError);
   const deleteSession = async (s: Session) => {
     setDeleteBusy(true);
@@ -1357,7 +1390,7 @@ export default function App() {
                             onClick={() =>
                               void busyWhile("stop:" + p.id, () =>
                                 api("previews/" + p.id, "DELETE")
-                                  .then(refresh)
+                                  .then(() => refresh())
                                   .catch(catchError),
                               )
                             }

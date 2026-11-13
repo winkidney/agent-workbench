@@ -832,3 +832,47 @@ These are maintainer notes on how each feature of Agent Workbench was verified, 
     - **While editing:** 11.6 MB.
     - **After Done:** 10.8 MB, with no copy of the text left.
   - **Size:** main JS chunk 791 kB (was 784 kB).
+
+## Phone data use: the session list by deltas, compression, a quieter stream
+
+- **Why:** on a phone, every 10 seconds brought a burst of download.
+  - **Cause:** the page polled `GET /api/sessions` every 10 seconds (and after every action), and each answer was the whole list: 1,187 KB for 1,408 sessions, uncompressed.
+  - **Measured** (390×844 page, sitting on a quiet session for 2 minutes): 412.6 MB an hour, 1.17 MB every 10 seconds, almost all of it the list.
+  - **Smaller sources:**
+    - `workspaces` (3.4 KB every 10 seconds);
+    - the stream's usage figures (0.4 KB every second, unchanged);
+    - a heartbeat every second;
+    - every other session's events on the stream;
+    - the agent's capabilities every minute (32 KB);
+    - static scripts sent uncompressed.
+- **Change:**
+  - **The list by deltas:** `GET /api/sessions?since=<token>` answers with the rows that changed since the list the page had, the ids gone, the list's token and its count. An unknown token (first load, a restart, a token too old) gets the whole list. Without `since` the endpoint is as before.
+    - **Server memory:** the server remembers the last 8 lists as row hashes only. The same list has the same token for every page.
+    - **Page:** the page merges the delta newest first. A copy whose length no longer matches the count asks for the whole list next time.
+  - **Compression:** JSON, scripts, styles, pages and SVG over 1 KB are gzipped (klauspost/compress `gzhttp`, already a dependency). Media, downloads, file previews and the event stream are not.
+  - **Unchanged, not sent again:** `workspaces`, `previews` and agent capabilities carry an ETag and `private, no-cache`; the browser revalidates and gets 304. A weak `W/` tag from a proxy that compresses (Cloudflare) still matches. Background-task output stays `no-store` (command output can hold anything), compressed only.
+  - **Fewer polls:** the 10-second poll reads the folders and previews only when the list changed; after an action, everything.
+  - **Stream:**
+    - usage figures are sent only when they change;
+    - a heartbeat only after 15 quiet seconds (Cloudflare closes a stream idle for 100);
+    - only the viewed session's events, plus every session's `status`, `deleted` and `prefs`. When other sessions' events are passed over, a `cursor` event moves the page's place on.
+    - A failed stream probes sign-in with the small list poll, not the whole list.
+- **New tests:**
+  - **Go:**
+    - deltas carry only changed, new and removed rows;
+    - the same list gives the same token everywhere;
+    - unknown and evicted tokens get the whole list;
+    - the API keeps the plain list without `since`;
+    - ETag 304, weak tags included;
+    - scripts and large JSON are gzipped and unpack to themselves;
+    - small answers, downloads and the stream are not compressed;
+    - the stream sends the viewed session's records and other sessions' status, not their records, with a `cursor` after skipped events;
+    - unchanged telemetry is sent once in 2.5 s, with no heartbeat while there is traffic.
+  - **Vitest:** whole lists, unchanged lists (same array), replace, add and remove newest first with ties kept in order, and drift.
+- **Browser** (scratch instance on the same native sessions, Chrome via Playwright, CDP byte counts):
+  - **Same 2 minutes, new build:** 0.6 MB an hour.
+    - **Session list:** about 0.5 KB per poll, mostly headers.
+    - **Capabilities:** one 12 KB answer when the page opened.
+  - **A session started in a terminal** (`claude -p`) appeared in the open page's list after 5 s; its record deleted, it left after 10 s. (Both test transcripts were removed afterwards.)
+  - **No drift:** a page kept open on deltas while a new session appeared showed the same headers and counts as a page loaded afresh (`OTHER 116` on both).
+

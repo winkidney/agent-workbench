@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -57,6 +58,10 @@ type Server struct {
 	// Where and how this workbench runs, for the About tab (about.go).
 	listen, mode string
 	started      time.Time
+	// The session lists pages last had, and the compression of what is
+	// sent (sessionlist.go).
+	lists    sessionLists
+	compress func(http.Handler) http.HandlerFunc
 }
 
 // assetBuild hashes the embedded index page; Vite renames the bundles it
@@ -74,7 +79,7 @@ func assetBuild(assets fs.FS) string {
 }
 
 func NewServer(m *Manager, assets fs.FS, host, pairing string) *Server {
-	s := &Server{Manager: m, Assets: assets, Host: host, Pairing: pairing, auth: map[string]time.Time{}, grants: map[string]grant{}, attempts: map[string][]time.Time{}, fileGrants: map[string]fileGrant{}, build: assetBuild(assets)}
+	s := &Server{Manager: m, Assets: assets, Host: host, Pairing: pairing, auth: map[string]time.Time{}, grants: map[string]grant{}, attempts: map[string][]time.Time{}, fileGrants: map[string]fileGrant{}, build: assetBuild(assets), compress: compressor()}
 	if _, port, err := net.SplitHostPort(host); err == nil {
 		m.mu.Lock()
 		m.previewPort = port
@@ -270,9 +275,19 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "pair this browser first", 401)
 			return
 		}
-		s.api(w, r)
+		if r.URL.Path == "/api/events" {
+			// A stream: sent as it comes.
+			s.api(w, r)
+			return
+		}
+		s.compress(http.HandlerFunc(s.api)).ServeHTTP(w, r)
 		return
 	}
+	s.compress(http.HandlerFunc(s.static)).ServeHTTP(w, r)
+}
+
+// static serves the web app's files.
+func (s *Server) static(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	path := strings.TrimPrefix(r.URL.Path, "/")
 	if path == "" {
@@ -435,7 +450,8 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 			cwd = os.TempDir()
 		}
 		v := m.Metadata(agent, cwd)
-		writeJSON(w, v)
+		// Polled every minute: unchanged, not sent again.
+		writeJSONCached(w, r, v)
 	case strings.HasPrefix(path, "sessions/") && strings.HasSuffix(path, "/preview-tabs") && strings.Count(path, "/") == 2:
 		// What the session's preview panel had open (preview_tabs.go).
 		id := strings.TrimSuffix(strings.TrimPrefix(path, "sessions/"), "/preview-tabs")
@@ -479,6 +495,8 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 				bad(w, err)
 				return
 			}
+			// Not kept by the browser (command output can hold anything);
+			// compressed on the way.
 			writeJSON(w, map[string]any{"text": text})
 			return
 		}
@@ -682,11 +700,21 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 			bad(w, err)
 			return
 		}
-		writeJSON(w, v)
+		writeJSONCached(w, r, v)
 	case path == "sessions" && r.Method == "GET":
 		v, err := m.NativeList()
 		if err != nil {
 			bad(w, err)
+			return
+		}
+		if q := r.URL.Query(); q.Has("since") {
+			// What changed since the list the page has (sessionlist.go).
+			d, err := s.lists.delta(v, q.Get("since"))
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			writeJSON(w, d)
 			return
 		}
 		if size, _ := strconv.Atoi(r.URL.Query().Get("limit")); size > 0 {
@@ -888,7 +916,7 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		m.mu.Unlock()
-		writeJSON(w, list)
+		writeJSONCached(w, r, list)
 	case strings.HasPrefix(path, "previews/") && strings.HasSuffix(path, "/authorize") && r.Method == "POST":
 		parts := strings.Split(path, "/")
 		if len(parts) != 3 {
@@ -1102,6 +1130,21 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 	}
 }
+
+// heartbeatEvery keeps a quiet stream open through proxies (Cloudflare
+// closes one idle for 100 seconds) without waking a phone every second.
+const heartbeatEvery = 15 * time.Second
+
+// forPage: what a page viewing session uses of the event log. The list's
+// events (status, deleted, prefs) go to every page.
+func forPage(e Event, session string) bool {
+	switch e.Kind {
+	case "status", "deleted", "prefs":
+		return true
+	}
+	return e.Session == "" || e.Session == session
+}
+
 func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -1121,9 +1164,19 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	session := r.URL.Query().Get("session")
-	var telemetrySent time.Time
+	// Only what the page uses goes out (a phone pays for every byte): its
+	// session's events and the list's, telemetry when it changes, and a
+	// heartbeat only when nothing else was sent for a while.
+	var telemetryRead time.Time
+	var telemetry []byte
+	lastWrite := time.Now()
+	send := func(format string, args ...any) bool {
+		lastWrite = time.Now()
+		_, err := fmt.Fprintf(w, format, args...)
+		return err == nil
+	}
 	hello, _ := json.Marshal(map[string]string{"build": s.build})
-	fmt.Fprintf(w, "event: hello\ndata: %s\n\n", hello)
+	send("event: hello\ndata: %s\n\n", hello)
 	// A session another client runs is followed through its native record
 	// for as long as this page views it.
 	var follow *externalTail
@@ -1131,6 +1184,8 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 		follow = s.Manager.followExternal(session)
 		defer follow.close()
 	}
+	// The last event the page was given.
+	given := after
 	for {
 		if !s.authorized(r) {
 			return
@@ -1141,25 +1196,40 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		for _, e := range events {
+			after = e.Seq
+			if !forPage(e, session) {
+				continue
+			}
 			b, _ := json.Marshal(e)
-			if _, err := fmt.Fprintf(w, "id: %d\ndata: %s\n\n", e.Seq, b); err != nil {
+			if !send("id: %d\ndata: %s\n\n", e.Seq, b) {
 				return
 			}
-			after = e.Seq
+			given = e.Seq
+		}
+		if after > given {
+			// Passed over other sessions' events: the page's place moves on,
+			// for when it connects again.
+			if !send("id: %d\nevent: cursor\ndata: %d\n\n", after, after) {
+				return
+			}
+			given = after
 		}
 		if len(events) == 100 {
 			flusher.Flush()
 			continue
 		}
-		if session != "" && time.Since(telemetrySent) >= time.Second {
+		if session != "" && time.Since(telemetryRead) >= time.Second {
 			data, _ := json.Marshal(s.Manager.Telemetry(session))
-			fmt.Fprintf(w, "event: telemetry\ndata: %s\n\n", data)
-			telemetrySent = time.Now()
+			telemetryRead = time.Now()
+			if !bytes.Equal(data, telemetry) {
+				telemetry = data
+				send("event: telemetry\ndata: %s\n\n", data)
+			}
 		}
 		if follow != nil {
 			if u := follow.poll(); u != nil {
 				data, _ := json.Marshal(u)
-				fmt.Fprintf(w, "event: external\ndata: %s\n\n", data)
+				send("event: external\ndata: %s\n\n", data)
 			}
 		}
 		flusher.Flush()
@@ -1168,8 +1238,10 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 			return
 		case <-changed:
 		case <-ticker.C:
-			if _, err := fmt.Fprint(w, ": heartbeat\n\n"); err != nil {
-				return
+			if time.Since(lastWrite) >= heartbeatEvery {
+				if !send(": heartbeat\n\n") {
+					return
+				}
 			}
 		}
 	}
