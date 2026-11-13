@@ -279,6 +279,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		path = "index.html"
 	}
 	data, err := fs.ReadFile(s.Assets, path)
+	if err == nil && strings.HasPrefix(path, "assets/") {
+		// Named by their content (Vite): a new build has new names, which
+		// index.html (always checked) points to. Kept by the browser alone.
+		w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
+	}
 	if err != nil {
 		data, err = fs.ReadFile(s.Assets, "index.html")
 	}

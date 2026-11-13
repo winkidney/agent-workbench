@@ -1,7 +1,9 @@
-import { memo, useMemo, useState } from "react";
+import { memo, useMemo } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Check, Copy } from "lucide-react";
+import { CopyButton } from "./CopyButton";
+import { MermaidBlock } from "./MermaidBlock";
+import { isMermaid, StreamingContext } from "./mermaid";
 import {
   PATHLIKE,
   PREVIEWABLE,
@@ -17,31 +19,7 @@ import {
 import { useHighlighter } from "./highlight";
 import { rehypeBlockWhitespace } from "./whitespace";
 
-export function CopyButton({
-  text,
-  label = "Copy",
-}: {
-  text: string;
-  label?: string;
-}) {
-  const [done, setDone] = useState(false);
-  return (
-    <button
-      type="button"
-      className="copy-button"
-      aria-label={label}
-      title={label}
-      onClick={() =>
-        void navigator.clipboard?.writeText(text).then(() => {
-          setDone(true);
-          setTimeout(() => setDone(false), 1200);
-        })
-      }
-    >
-      {done ? <Check size={12} /> : <Copy size={12} />}
-    </button>
-  );
-}
+export { CopyButton };
 
 const nodeText = (children: React.ReactNode): string =>
   Array.isArray(children)
@@ -102,6 +80,8 @@ const components: Components = {
         ? (code.properties.className as string[])
         : [];
     const lang = names.find((c) => c.startsWith("language-"))?.slice(9);
+    if (isMermaid(lang))
+      return <MermaidBlock code={nodeText(children).replace(/\n$/, "")} />;
     return (
       <div
         className={"md-code" + (lang ? "" : " unlabeled")}
@@ -132,7 +112,14 @@ const components: Components = {
   ),
 };
 
-export const Markdown = memo(function Markdown({ text }: { text: string }) {
+export const Markdown = memo(function Markdown({
+  text,
+  streaming = false,
+}: {
+  text: string;
+  // Still being written: diagrams are drawn once it is complete.
+  streaming?: boolean;
+}) {
   const highlight = useHighlighter(text);
   const rehypePlugins = useMemo(
     () => [rehypeBlockWhitespace, ...(highlight ?? [])],
@@ -140,14 +127,16 @@ export const Markdown = memo(function Markdown({ text }: { text: string }) {
   );
   return (
     <div className="markdown">
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        rehypePlugins={rehypePlugins}
-        components={components}
-        skipHtml
-      >
-        {text}
-      </ReactMarkdown>
+      <StreamingContext.Provider value={streaming}>
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          rehypePlugins={rehypePlugins}
+          components={components}
+          skipHtml
+        >
+          {text}
+        </ReactMarkdown>
+      </StreamingContext.Provider>
     </div>
   );
 });

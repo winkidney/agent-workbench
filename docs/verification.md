@@ -669,3 +669,47 @@ These are maintainer notes on how each feature of Agent Workbench was verified, 
   - The header label has no fill.
   - The bell's animation runs 3 times, and has ended at 2.8 s. With reduced motion it never starts.
   - Alt+Enter and Shift+Enter added lines in a real session's composer without sending; Enter sent.
+
+## Mermaid diagrams, and built assets kept by the browser
+
+- **Why:**
+  - **Diagrams:** a ` ```mermaid ` block showed as plain code.
+  - **Caching:** every built asset was served with `no-cache` and no validator, so the browser downloaded the whole app again on every visit.
+- **Change:**
+  - **Where:** ` ```mermaid ` blocks in replies, plan rows and the plan approval card are drawn with Mermaid 12.2.0.
+  - **Loading:** the library loads with the first diagram, in its own chunks. The first page load stays the same size (main chunk 774 kB, was 767 kB).
+  - **Theme:** the diagram uses the page's tokens, read through a canvas as hex. Mermaid's shading library does not read oklch. Diagrams are flat (no shadows) and are redrawn when the theme or palette changes.
+  - **Safety:** strict security level, and labels are SVG text, not HTML.
+  - **Errors:** a block that does not parse keeps its source, with the reason below.
+  - **Size:** blocks over 20,000 characters stay as code.
+  - **While written:** the source shows until the reply is complete.
+  - **On hover:** the source, a copy button, and a larger view in the image viewer.
+  - **Memory:** nothing is kept per diagram outside the view that shows it.
+    - The diagrams a session's transcript drew are cached in that transcript (32 at most), so rows scrolling back show at once. The cache is emptied when the theme changes and dropped with the transcript.
+    - A diagram whose block left before its turn is skipped.
+    - The render queue does not hold the last result.
+    - One theme observer serves the whole page, and disconnects with the last diagram.
+  - **Caching:** `/assets/` files (named by their content) are served `private, max-age=31536000, immutable`. `index.html`, and the page served for a missing asset, stay `no-cache`, so a new build is picked up at once.
+- **New tests:**
+  - **Vitest:**
+    - a mermaid block shows its source before it is drawn and while written;
+    - other fences are unchanged;
+    - the view cache is bounded, least recently used first, and emptied for another theme;
+    - the queue runs one task at a time, skips owners that left, and survives a failure;
+    - theme tokens map to hex variables, and shadows are off;
+    - large sources stay code;
+    - the viewer image gets the diagram's own size and the page background.
+  - **Go:** assets under `/assets/` are immutable; `/`, `index.html` and a missing asset are `no-cache`. The test fails without the change.
+- **Browser** (scratch instance with every write blocked; a reply with 20 mermaid blocks added to a session's history: a flowchart, a sequence diagram, a 31-node chain, a block that does not parse, `click … call alert(1)` and a `javascript:` link, a node labeled `<img src=x onerror=…>` and `<script>`, and 14 small flowcharts):
+  - **Drawing:** 19 drawn and 1 shown as source with "Parse error on line 3". No dialog opened. No SVG had an `on…` attribute, a script, a `javascript:` link or a `foreignObject`, and no temporary nodes were left on the page.
+  - **Loading:** a session without diagrams requested no Mermaid chunk. The first diagrams drew in 1.2 s.
+  - **Width:** the 31-node chain fit the column (532 px in 558 px).
+  - **Themes:** node fills followed light, dark and Darcula.
+  - **Tools:** the source toggle worked. The larger view showed the diagram as an image (360×413). Rows scrolled out and back showed their diagrams at once. At 390 px, the page had no horizontal scroll.
+  - **Memory** (JS heap after forced GC, after leaving the session each time):
+    - **Back and forth 25 times:** the diagrams' session added 0.73 MB from the 10th to the 25th visit, and less each time; the same loop without diagrams added 0.29 MB.
+    - **Snapshot diff:** the growth was mostly V8's compiled code warming up, plus the session list and the browser's own records.
+    - **Left in memory:** no drawn SVG (`<svg id="mmd-`). One copy of the reply's text stayed, held by the test tool's DevTools handles (the path to it starts at the DevTools console's global handle).
+    - **First run:** a drawn SVG was held by the render queue's last promise (`catch()` passes results on). Fixed.
+  - **Caching:** on a second visit, the app's JS and CSS came from the browser's cache; only `index.html` was fetched.
+  - **ELK:** Mermaid 12 lays diagrams out with ELK (1.4 MB) by default, so it loads with the first flowchart and is then cached like the rest.

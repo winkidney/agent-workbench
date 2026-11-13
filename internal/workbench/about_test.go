@@ -168,3 +168,26 @@ func TestTheTabIconIsServedAsAnImage(t *testing.T) {
 		t.Fatalf("favicon: %d %q", w.Code, w.Header().Get("Content-Type"))
 	}
 }
+
+// Built assets are named by their content, so the browser keeps them; the
+// page that names them is checked every time, and so is what stands in for a
+// missing asset.
+func TestBuiltAssetsAreKeptByTheBrowser(t *testing.T) {
+	m, _ := fixture(t)
+	s := NewServer(m, fstest.MapFS{
+		"index.html":             {Data: []byte("app")},
+		"assets/elk-AbC123.js":   {Data: []byte("export{}")},
+		"assets/index-XyZ789.js": {Data: []byte("export{}")},
+	}, "agent.localhost:17880", "")
+	for path, want := range map[string]string{
+		"/assets/elk-AbC123.js":  "private, max-age=31536000, immutable",
+		"/":                      "no-cache",
+		"/index.html":            "no-cache",
+		"/assets/gone-000000.js": "no-cache",
+	} {
+		w := request(t, s, s.Host, "GET", path, "", nil)
+		if w.Code != 200 || w.Header().Get("Cache-Control") != want {
+			t.Fatalf("%s: %d %q, want %q", path, w.Code, w.Header().Get("Cache-Control"), want)
+		}
+	}
+}

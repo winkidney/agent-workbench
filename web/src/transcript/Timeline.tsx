@@ -18,6 +18,7 @@ import {
 } from "./model";
 import type { State } from "./reducer";
 import { CopyButton, Markdown } from "./Markdown";
+import { DiagramCache, DiagramCacheContext } from "./mermaid";
 import { BaseContext, MediaList, Mentions, useEnv } from "./media";
 import { toolDiff, toolSummary, toolTitle, unwrapShell } from "./summarize";
 import { withContext, type DiffLine } from "./diff";
@@ -480,7 +481,7 @@ function AssistantRow({ block, ask }: RowProps) {
     <div className={"row assistant" + (block.streaming ? " streaming" : "")}>
       <span className="mark">●</span>
       <div className="body">
-        <Markdown text={block.text ?? ""} />
+        <Markdown text={block.text ?? ""} streaming={block.streaming} />
         {block.streaming && <span className="caret" aria-hidden />}
         {!block.streaming && <Mentions text={block.text} />}
         {!block.streaming && block.text && (
@@ -648,6 +649,10 @@ export function Timeline({
   onLoadEarlier: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  // Diagrams this session's view drew; dropped with it (Timeline is keyed
+  // by session).
+  const diagrams = useRef<DiagramCache | null>(null);
+  diagrams.current ??= new DiagramCache();
   const { rows, kids } = useMemo(() => layout(state), [state]);
   const asks = useMemo(
     () => askStates(state.keys.map((k) => state.blocks.get(k)!)),
@@ -716,59 +721,63 @@ export function Timeline({
   };
 
   return (
-    <div className="timeline-wrap">
-      <div ref={ref} className="timeline" onScroll={onScroll}>
-        {((hasMore && nearTop) || loadingEarlier) && (
-          <div className="load-earlier">
-            <button
-              type="button"
-              disabled={loadingEarlier}
-              onClick={onLoadEarlier}
-            >
-              {loadingEarlier
-                ? "Loading earlier messages…"
-                : "Load earlier messages"}
-            </button>
-          </div>
-        )}
-        <div className="timeline-inner" style={{ height: total }}>
-          {virtual.getVirtualItems().map((v) => {
-            const b = rows[v.index];
-            return (
-              <div
-                key={v.key}
-                data-index={v.index}
-                ref={virtual.measureElement}
-                className={"vrow after-" + (rows[v.index - 1]?.kind ?? "none")}
-                style={{ transform: `translateY(${v.start}px)` }}
+    <DiagramCacheContext.Provider value={diagrams.current}>
+      <div className="timeline-wrap">
+        <div ref={ref} className="timeline" onScroll={onScroll}>
+          {((hasMore && nearTop) || loadingEarlier) && (
+            <div className="load-earlier">
+              <button
+                type="button"
+                disabled={loadingEarlier}
+                onClick={onLoadEarlier}
               >
-                <Row
-                  block={b}
-                  kids={kids.get(b.key)}
-                  open={verbose || open.has(b.key)}
-                  onToggle={toggle}
-                  ask={asks.get(b.key)}
-                  planPrompt={b.key === planKey}
-                />
-              </div>
-            );
-          })}
+                {loadingEarlier
+                  ? "Loading earlier messages…"
+                  : "Load earlier messages"}
+              </button>
+            </div>
+          )}
+          <div className="timeline-inner" style={{ height: total }}>
+            {virtual.getVirtualItems().map((v) => {
+              const b = rows[v.index];
+              return (
+                <div
+                  key={v.key}
+                  data-index={v.index}
+                  ref={virtual.measureElement}
+                  className={
+                    "vrow after-" + (rows[v.index - 1]?.kind ?? "none")
+                  }
+                  style={{ transform: `translateY(${v.start}px)` }}
+                >
+                  <Row
+                    block={b}
+                    kids={kids.get(b.key)}
+                    open={verbose || open.has(b.key)}
+                    onToggle={toggle}
+                    ask={asks.get(b.key)}
+                    planPrompt={b.key === planKey}
+                  />
+                </div>
+              );
+            })}
+          </div>
         </div>
+        {behind && (
+          <button
+            type="button"
+            className="new-output"
+            onClick={() => {
+              stick.current = true;
+              setBehind(false);
+              const el = ref.current;
+              if (el) el.scrollTop = el.scrollHeight;
+            }}
+          >
+            <ArrowDown size={13} /> New output
+          </button>
+        )}
       </div>
-      {behind && (
-        <button
-          type="button"
-          className="new-output"
-          onClick={() => {
-            stick.current = true;
-            setBehind(false);
-            const el = ref.current;
-            if (el) el.scrollTop = el.scrollHeight;
-          }}
-        >
-          <ArrowDown size={13} /> New output
-        </button>
-      )}
-    </div>
+    </DiagramCacheContext.Provider>
   );
 }
