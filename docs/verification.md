@@ -910,3 +910,27 @@ These are maintainer notes on how each feature of Agent Workbench was verified, 
     - A stream frozen without closing: renewed after 46 s. A sidebar change made while frozen reached the page through the new stream.
   - **Icons:** the heartbeat and the running dots side by side, aligned with the other rows, in light and dark themes and at 390 px.
 
+## An approved Claude plan returns to the auto mode it left
+
+- **Why:** a Claude session in auto mode was planned with `/plan`. Its plan card offered only "auto-accept edits", "manually approve edits" and "keep planning"; the user chose auto-accept edits, and every command after the plan asked. The session had no permission set in the workbench (it ran in auto because Claude Code resumed the mode its record held), and the card offered auto mode only for a session whose workbench setting said auto. The plan request carries no hint of the previous mode. See [ADR 0002](adr/0002-plan-continues-in-the-mode-it-left.md).
+- **Change:**
+  - **The mode before the plan** is the first of:
+    - the permission chosen in the workbench;
+    - the last non-plan `permission-mode` Claude Code recorded in the session's record (read from its last 256 KB);
+    - the default for new Claude sessions.
+
+    When it is auto, the card offers auto mode first.
+  - **Each plan choice says what it means:** auto mode lets Claude decide what is safe to run; auto-accepting edits still asks before commands; approving edits asks for each.
+- **New tests:**
+  - **Go:**
+    - auto is offered from the record when nothing was chosen here, and not when the record says acceptEdits;
+    - a permission chosen here wins over the record;
+    - with neither, the default for new sessions decides;
+    - a plan line in the record is passed over;
+    - reading the record looks only at its end and skips lines that do not parse.
+  - **Vitest:** the choices, their order and their hints, with and without auto mode.
+- **Real Claude** (scratch instance and project, the transcript removed afterwards):
+  - **Setup:** a session in auto mode had its workbench permission cleared, then got `/plan`.
+  - **The card:** offered "Yes, and use auto mode" first, with the hints.
+  - **After choosing auto:** Claude ran `ls` with no approval asked, and the session's setting became auto.
+

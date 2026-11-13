@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { content, fields, parseElicitation } from "./elicitation";
-import { parseRequest, permissionItems } from "./ApprovalCard";
+import { parseRequest, permissionItems, planChoices } from "./ApprovalCard";
 import { ElicitationForm } from "./ElicitationForm";
 import { applyEvents, emptyState } from "../transcript/reducer";
 import { changedFiles } from "../transcript/codex";
@@ -415,5 +415,26 @@ describe("Codex records", () => {
     expect(notices(s)).toEqual([
       ["The preToolUse hook blocked this step: no deploys on Friday", "warn"],
     ]);
+  });
+});
+
+describe("an approved Claude plan", () => {
+  it("offers auto mode first to a session that ran in it, and says what each choice means", () => {
+    const back = planChoices(true);
+    expect(back.modes).toEqual(["auto", "acceptEdits", "default"]);
+    expect(back.options.map((o) => o.label)).toEqual([
+      "Yes, and use auto mode",
+      "Yes, auto-accept edits",
+      "Yes, manually approve edits",
+      "No, keep planning",
+    ]);
+    expect(back.options.every((o) => o.hint)).toBe(true);
+    expect(back.options[1].hint).toContain("commands still ask");
+    const plain = planChoices(false);
+    expect(plain.modes).toEqual(["acceptEdits", "default"]);
+    expect(plain.options[0].label).toBe("Yes, auto-accept edits");
+    // The last choice keeps planning; the modes line up with the Yes ones.
+    expect(plain.options).toHaveLength(plain.modes.length + 1);
+    expect(back.options).toHaveLength(back.modes.length + 1);
   });
 });

@@ -29,6 +29,37 @@ import { parseElicitation, type Elicitation } from "./elicitation";
 export type Decision = "allow" | "allowAlways" | "deny" | "cancel";
 // The permission mode an approved Claude plan continues in.
 export type PlanMode = "auto" | "acceptEdits" | "default";
+
+// Claude Code's own plan choices: each "Yes" also sets how approvals go from
+// then on, and says so (auto-accepting edits still asks before commands). A
+// session that ran in auto mode before planning is offered auto mode again,
+// first, as Claude Code does (ADR 0002).
+export function planChoices(resumeAuto: boolean): {
+  modes: PlanMode[];
+  options: { label: string; hint?: string }[];
+} {
+  return {
+    modes: resumeAuto
+      ? ["auto", "acceptEdits", "default"]
+      : ["acceptEdits", "default"],
+    options: [
+      ...(resumeAuto
+        ? [
+            {
+              label: "Yes, and use auto mode",
+              hint: "Claude decides what is safe to run",
+            },
+          ]
+        : []),
+      {
+        label: "Yes, auto-accept edits",
+        hint: "edits apply; commands still ask",
+      },
+      { label: "Yes, manually approve edits", hint: "every edit asks" },
+      { label: "No, keep planning", hint: "tell Claude what to change" },
+    ],
+  };
+}
 export type Reply = (
   id: string,
   decision: Decision,
@@ -385,21 +416,11 @@ export function ApprovalCard({
     }
   };
 
-  // Claude Code's own plan choices: each "Yes" also sets how edits are
-  // approved from then on. A session that was in auto mode before planning
-  // is offered auto mode again first, as Claude Code does.
-  const resumeAuto = event.data.planResume === "auto";
-  const planModes: PlanMode[] = resumeAuto
-    ? ["auto", "acceptEdits", "default"]
-    : ["acceptEdits", "default"];
+  const plan = planChoices(event.data.planResume === "auto");
+  const planModes = plan.modes;
   const toolOptions =
     parsed.kind === "plan"
-      ? [
-          ...(resumeAuto ? [{ label: "Yes, and use auto mode" }] : []),
-          { label: "Yes, auto-accept edits" },
-          { label: "Yes, manually approve edits" },
-          { label: "No, keep planning", hint: "tell Claude what to change" },
-        ]
+      ? plan.options
       : parsed.kind === "permissions"
         ? [
             { label: "Yes, for this turn" },

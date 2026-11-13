@@ -1,7 +1,10 @@
 package workbench
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 )
@@ -173,6 +176,49 @@ func claudePermissionOptions(mode string) (string, string) {
 		return "default", "manual"
 	}
 	return "default", mode
+}
+
+// claudeRecordedMode is the last permission mode, other than plan, that
+// Claude Code recorded in a session's record (its "permission-mode" lines),
+// read from the record's end; empty when it has none there.
+func claudeRecordedMode(path string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	const tail = 256 << 10
+	info, err := f.Stat()
+	if err != nil {
+		return ""
+	}
+	start := info.Size() - tail
+	if start < 0 {
+		start = 0
+	}
+	b := make([]byte, info.Size()-start)
+	if _, err := f.ReadAt(b, start); err != nil && !errors.Is(err, io.EOF) {
+		return ""
+	}
+	lines := bytes.Split(b, []byte("\n"))
+	for i := len(lines) - 1; i >= 0; i-- {
+		if !bytes.Contains(lines[i], []byte(`"permission-mode"`)) {
+			continue
+		}
+		var v struct {
+			Type           string `json:"type"`
+			PermissionMode string `json:"permissionMode"`
+		}
+		// The first line read may be cut; a line that does not parse is
+		// passed over.
+		if json.Unmarshal(lines[i], &v) != nil || v.Type != "permission-mode" {
+			continue
+		}
+		if v.PermissionMode != "" && v.PermissionMode != "plan" {
+			return v.PermissionMode
+		}
+	}
+	return ""
 }
 
 // claudePermissionMode is the permission mode applyOptions sends for the

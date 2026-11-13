@@ -986,10 +986,27 @@ func (m *Manager) approvalData(r *runtime, key string, v any) map[string]any {
 		data["subagent"] = sub
 	}
 	req := obj(obj(v)["request"])
-	if r.session.Agent == "claude" && str(req["tool_name"]) == "ExitPlanMode" && m.options(r.session.ID).Permissions == "auto" {
+	if r.session.Agent == "claude" && str(req["tool_name"]) == "ExitPlanMode" && m.planModeBefore(r) == "auto" {
 		data["planResume"] = "auto"
 	}
 	return data
+}
+
+// planModeBefore is the permission mode a Claude session ran in before it
+// planned (ADR 0002): the one chosen here; else the last one Claude Code
+// recorded other than plan, which it resumes in when the workbench names
+// none; else the default for new sessions (m.mu held).
+func (m *Manager) planModeBefore(r *runtime) string {
+	if p := m.options(r.session.ID).Permissions; p != "" {
+		return p
+	}
+	if file, ok := m.catalog.record(r.session.ID); ok {
+		if mode := claudeRecordedMode(file.Path); mode != "" {
+			_, permissions := claudePermissionOptions(mode)
+			return permissions
+		}
+	}
+	return m.newSessionDefaults("claude").Permissions
 }
 
 // leavePlan records that an approved plan took a Claude session out of plan

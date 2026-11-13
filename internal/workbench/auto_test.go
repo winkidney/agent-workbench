@@ -1,6 +1,9 @@
 package workbench
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -223,5 +226,74 @@ func TestClaudePlanReturnsToAutoMode(t *testing.T) {
 	}
 	if o := m.options(id); o.Mode != "default" || o.Permissions != "auto" {
 		t.Fatalf("after the plan: %+v", o)
+	}
+}
+
+// A plan offers auto mode when the session ran in it before planning, even
+// with no permission chosen here: Claude Code then resumed the mode its
+// record holds (ADR 0002).
+func TestClaudePlanOffersTheAutoModeItRanIn(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		stored Options
+		record []string
+		want   bool
+	}{
+		{"auto in the record", Options{Mode: "plan"}, []string{"auto"}, true},
+		{"edits in the record", Options{Mode: "plan"}, []string{"acceptEdits"}, false},
+		{"a choice made here wins", Options{Mode: "plan", Permissions: "manual"}, []string{"auto"}, false},
+		{"no choice, no record: the default", Options{Mode: "plan"}, nil, true},
+		{"plan in the record is passed over", Options{Mode: "plan"}, []string{"auto", "plan"}, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			m, _, r := claudeReady(t)
+			id := r.session.ID
+			_ = m.store.setting("options:"+id, c.stored)
+			if c.record != nil {
+				var b strings.Builder
+				for _, mode := range c.record {
+					b.WriteString(`{"type":"user","message":{"role":"user","content":"x"}}` + "\n")
+					fmt.Fprintf(&b, `{"type":"permission-mode","permissionMode":%q}`+"\n", mode)
+				}
+				path := filepath.Join(t.TempDir(), "s.jsonl")
+				if err := os.WriteFile(path, []byte(b.String()), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				m.catalog.mu.Lock()
+				m.catalog.paths[id] = path
+				m.catalog.mu.Unlock()
+			}
+			m.receive(id, r.generation, map[string]any{"type": "control_request", "request_id": "plan-1", "request": map[string]any{"subtype": "can_use_tool", "tool_name": "ExitPlanMode", "input": map[string]any{"plan": "1. Do it"}}})
+			approvals := eventsOf(m, id, "approval")
+			if got := len(approvals) == 1 && approvals[0]["planResume"] == "auto"; got != c.want {
+				t.Fatalf("auto offered %v, want %v (%v)", got, c.want, approvals)
+			}
+		})
+	}
+}
+
+func TestClaudeRecordedMode(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, body string) string {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	if got := claudeRecordedMode(write("a.jsonl", `{"type":"permission-mode","permissionMode":"auto"}`+"\n"+`not json "permission-mode"`+"\n")); got != "auto" {
+		t.Fatalf("plain: %q", got)
+	}
+	// Only the end of a large record is read: a mode written long before
+	// is not found.
+	old := `{"type":"permission-mode","permissionMode":"auto"}` + "\n" + strings.Repeat(`{"type":"user"}`+"\n", 300<<10/16)
+	if got := claudeRecordedMode(write("b.jsonl", old)); got != "" {
+		t.Fatalf("beyond the tail: %q", got)
+	}
+	if got := claudeRecordedMode(write("c.jsonl", old+`{"type":"permission-mode","permissionMode":"acceptEdits"}`+"\n")); got != "acceptEdits" {
+		t.Fatalf("in the tail: %q", got)
+	}
+	if got := claudeRecordedMode(filepath.Join(dir, "missing.jsonl")); got != "" {
+		t.Fatalf("missing: %q", got)
 	}
 }
