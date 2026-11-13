@@ -871,6 +871,8 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.media(w, r)
+	case path == "text" && (r.Method == "GET" || r.Method == "PUT"):
+		s.textFile(w, r)
 	case path == "files" && r.Method == "GET":
 		if err := m.Attach(r.URL.Query().Get("session")); err != nil {
 			bad(w, err)

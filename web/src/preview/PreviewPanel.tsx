@@ -14,6 +14,7 @@ import {
   Maximize2,
   Minimize2,
   RefreshCw,
+  SquarePen,
   X,
 } from "lucide-react";
 import { api } from "../lib/api";
@@ -34,6 +35,7 @@ import {
   type ViewportId,
 } from "./tabs";
 import type { PreviewTabsApi } from "./usePreviewTabs";
+import { TextEditor } from "./TextEditor";
 
 const VIEWPORT_KEY = "workbench-preview-viewport";
 
@@ -123,7 +125,7 @@ export function PreviewPanel({
       )}
       {active ? (
         <TabView
-          key={`${session}:${state.active}:${tabLabel(active)}`}
+          key={`${session}:${active.kind}:${tabLabel(active)}`}
           session={session}
           tab={active}
           onUpdate={(patch) => tabs.update(state.active, patch)}
@@ -190,6 +192,8 @@ function TabView({
   // bar), and a stopped service is being started.
   const [frameBusy, setFrameBusy] = useState(true);
   const [starting, setStarting] = useState(false);
+  // The file is open in the text editor (in place of its page).
+  const [editing, setEditing] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -282,7 +286,12 @@ function TabView({
   useEffect(() => {
     if (!expanded) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !document.fullscreenElement) onExpand(false);
+      if (
+        e.key === "Escape" &&
+        !e.defaultPrevented &&
+        !document.fullscreenElement
+      )
+        onExpand(false);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -334,6 +343,62 @@ function TabView({
     !!page &&
     (!!page.preview.fileUrl || page.mode === "origin") &&
     page.mode !== "unavailable";
+  const canEdit =
+    tab.kind === "file" && !!tab.path && !tab.missing && !!page?.preview.text;
+  const expandButton = (
+    <Button
+      variant="ghost"
+      size="icon"
+      aria-label={expanded ? "Back to the conversation" : "Expand"}
+      title={
+        expanded
+          ? "Back to the conversation (Esc)"
+          : "Expand over the conversation"
+      }
+      onClick={() => onExpand(!expanded)}
+    >
+      {expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+    </Button>
+  );
+  const closeButton = (
+    <Button
+      variant="ghost"
+      size="icon"
+      aria-label="Close tab"
+      title="Close tab"
+      onClick={onClose}
+    >
+      <X size={14} />
+    </Button>
+  );
+
+  // Editing: the editor takes the page's place (the page is unloaded), and
+  // closing it loads the page again, as saved.
+  if (editing && tab.path)
+    return (
+      <div className="preview-view" ref={root}>
+        <TextEditor
+          session={session}
+          path={tab.path}
+          controls={
+            <>
+              {expandButton}
+              {closeButton}
+            </>
+          }
+          onDone={() => {
+            setEditing(false);
+            setLoad((n) => n + 1);
+          }}
+          onSaved={(stamp) => {
+            // Not "Updated" for its own save.
+            setShownStamp(stamp);
+            onUpdate({ stamp });
+          }}
+          onError={onError}
+        />
+      </div>
+    );
 
   return (
     <div className="preview-view" ref={root}>
@@ -346,6 +411,19 @@ function TabView({
           >
             Updated · Reload
           </button>
+        )}
+        {canEdit && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="preview-edit"
+            aria-label="Edit"
+            title="Edit this file"
+            onClick={() => setEditing(true)}
+          >
+            <SquarePen size={14} />
+            <span>Edit</span>
+          </Button>
         )}
         <select
           aria-label="Page width"
@@ -370,19 +448,7 @@ function TabView({
         >
           <RefreshCw size={14} className={busy ? "spin" : undefined} />
         </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label={expanded ? "Back to the conversation" : "Expand"}
-          title={
-            expanded
-              ? "Back to the conversation (Esc)"
-              : "Expand over the conversation"
-          }
-          onClick={() => onExpand(!expanded)}
-        >
-          {expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-        </Button>
+        {expandButton}
         {document.fullscreenEnabled && (
           <Button
             variant="ghost"
@@ -407,15 +473,7 @@ function TabView({
             <ExternalLink size={14} />
           </Button>
         )}
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Close tab"
-          title="Close tab"
-          onClick={onClose}
-        >
-          <X size={14} />
-        </Button>
+        {closeButton}
       </div>
       <div className="preview-stage" ref={stage} aria-busy={busy}>
         {busy && <div className="preview-progress" aria-hidden />}

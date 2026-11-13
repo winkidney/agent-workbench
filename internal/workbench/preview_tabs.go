@@ -2,7 +2,6 @@ package workbench
 
 import (
 	"errors"
-	"fmt"
 	"net"
 	"net/url"
 	"os"
@@ -79,7 +78,7 @@ func (m *Manager) PreviewTabsOf(id string) PreviewTabs {
 				t.Missing = true
 				continue
 			}
-			t.Stamp = fmt.Sprintf("%d:%d", info.Size(), info.ModTime().UnixNano())
+			t.Stamp = fileStamp(info)
 		case "service":
 			if t.Preview != "" {
 				if p := m.FindPreview(t.Preview); p != nil && p.Session == id {

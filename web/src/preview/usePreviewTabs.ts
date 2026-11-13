@@ -4,11 +4,13 @@ import {
   NO_TABS,
   closeTab,
   openTab,
+  sameTarget,
   stored,
   updateTab,
   type PreviewTab,
   type PreviewTabs,
 } from "./tabs";
+import { mayLeave } from "./unsaved";
 
 // A session's preview tabs, kept on the workbench.
 export function usePreviewTabs(
@@ -48,12 +50,26 @@ export function usePreviewTabs(
     [onError],
   );
 
+  // What would close the tab shown asks first while it edits a file with
+  // changes not saved.
+  const shown = () => latest.current.tabs[latest.current.active];
   return {
     state,
     refresh,
-    open: (tab: PreviewTab) => save(openTab(latest.current, tab)),
-    close: (i: number) => save(closeTab(latest.current, i)),
-    show: (i: number) => save({ ...latest.current, active: i }),
+    open: (tab: PreviewTab) => {
+      const now = shown();
+      if (!(now && sameTarget(now, tab)) && !mayLeave()) return;
+      save(openTab(latest.current, tab));
+    },
+    close: (i: number) => {
+      if (i === latest.current.active && !mayLeave()) return;
+      save(closeTab(latest.current, i));
+    },
+    show: (i: number) => {
+      if (i === latest.current.active) return;
+      if (!mayLeave()) return;
+      save({ ...latest.current, active: i });
+    },
     update: (i: number, patch: Partial<PreviewTab>) =>
       save(updateTab(latest.current, i, patch)),
   };

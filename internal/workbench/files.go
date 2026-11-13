@@ -43,6 +43,9 @@ func (s *Server) previewResponse(w http.ResponseWriter, r *http.Request, p *Prev
 	access := s.hostAccess(r)
 	key := token()
 	out := *p
+	if p.target == nil {
+		out.Text = editableText(p.root, p.Entry)
+	}
 	s.mu.Lock()
 	for k, g := range s.grants {
 		if now.After(g.expires) {

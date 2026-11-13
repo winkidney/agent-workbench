@@ -777,3 +777,58 @@ These are maintainer notes on how each feature of Agent Workbench was verified, 
     - **Left in memory:** two small inline images from the session just left, held through one element Chrome's document keeps (the last interacted element of that view), not accumulating.
   - **Sidebar:** pinning an active session listed it under Pinned only; unpinning returned it to Active.
   - **Size:** main JS chunk 784 kB (was 774 kB).
+
+## Editing text files in the preview
+
+- **Why:** a file the agent wrote could be previewed but not touched up; a small change meant asking the agent or leaving the workbench.
+- **Change:**
+  - **Edit**, in the preview toolbar, for a UTF-8 text file up to 1 MB (HTML and SVG included; binary files, PDFs and images get none). The server says which files qualify when it opens the preview, from the first 8 KB.
+  - **Editor:** the browser's own text box, with no library added:
+    - Tab and Shift+Tab indent and outdent by the file's own unit;
+    - Enter keeps the indentation;
+    - Ctrl/⌘+S saves;
+    - Esc leaves the box, and no longer reaches the turn's Esc or the expanded view's;
+    - the line and column, line ends, size and a Wrap switch are shown;
+    - edits go through the browser's undo.
+  - **API** (`/api/text`, behind the same sign-in and origin checks as the rest of the API):
+    - **GET** returns the text and a stamp (size and time).
+    - **PUT** takes the raw text and writes it in place (permissions, owner and hard links stay), only over an existing regular file inside the session's directory. A stale stamp gets 409 and leaves the file alone; a read-only file gets 403. Bodies over 1 MB, or that aren't UTF-8 text, are refused.
+  - **Line ends and BOM:** the text box holds `\n` only, so a CRLF file gets its CRLF back on save, and a byte order mark stays.
+  - **Unsaved changes:** a confirm before switching or closing the tab, switching sessions, hiding the panel, or Done, and the browser's prompt before leaving the page. Only the file's name is kept outside the editor.
+  - **Memory:** the text lives in the editor alone, which is unmounted when it closes; while editing, the preview's page is unloaded.
+  - **Esc:** the expanded view's handler now ignores an Esc something else has handled.
+- **New tests:**
+  - **Go:**
+    - read and save in place: mode 0640 and a hard link kept, the stamp moving on;
+    - a stale stamp refused, then overwritten on purpose;
+    - CRLF and a BOM kept byte for byte;
+    - NUL, Latin-1, a PNG and over 1 MB refused;
+    - `../`, absolute paths, folders and links out of the directory refused;
+    - no file created, and a read-only file refused;
+    - sign-in and origin needed;
+    - previews flag text files, not a PNG, a text-looking PDF, a binary or a large file;
+    - a character cut at the 8 KB edge.
+  - **Vitest:** line ends and BOM round trips, the indent unit per language, indenting and outdenting a selection, and the line and column.
+- **Browser** (scratch instance on a separate data folder, a Codex session in a scratch project, Chrome via Playwright):
+  - **Which files:** Edit was offered for `.md` and `.txt`, and not for a PDF.
+  - **Editing:**
+    - the text box took focus;
+    - typing then Ctrl+S saved, and the mode stayed 0640;
+    - an edit undone counted as unsaved no more;
+    - a CRLF file kept CRLF, and showed it.
+  - **Keys:**
+    - Python: Enter kept four spaces, Tab added four, and Shift+Tab took them away.
+    - A selection of two lines was indented as a block, and Ctrl+Z undid every step.
+    - Go: Tab inserted a tab.
+  - **Esc:** in the text box it was handled, released the box, kept the expanded view, and didn't reach the turn's Esc.
+  - **Changed on disk:** Save showed the bar; **Load the disk version** loaded it; **Overwrite** wrote ours.
+  - **Unsaved changes:**
+    - the Files tab, hiding the panel, another session and Done each asked, and cancelling kept the edits (and the session);
+    - accepting moved on and closed the editor.
+  - **HTML:** the source opened with the page unloaded; after saving and Done, the page showed the new heading, without an "Updated" notice for our own save.
+  - **Layout:** 390 px had no horizontal scroll, and the conflict bar was amber in light and dark themes.
+  - **Memory** (JS heap after forced GC, 0.95 MB file):
+    - **Before:** 10.7 MB, with no copy of the text.
+    - **While editing:** 11.6 MB.
+    - **After Done:** 10.8 MB, with no copy of the text left.
+  - **Size:** main JS chunk 791 kB (was 784 kB).

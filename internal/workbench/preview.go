@@ -27,6 +27,9 @@ type Preview struct {
 	// pages that cannot reach the preview origin (another device, a tunnel).
 	// Set per response: it carries a grant for the page that asked (files.go).
 	FileURL string `json:"fileUrl,omitempty"`
+	// Text: a file preview's file is text the page may edit (textfile.go).
+	// Set per response.
+	Text bool `json:"text,omitempty"`
 	// What a service preview shows, so a tab can open it again: the server
 	// it attaches to, or the command the workbench runs and its port.
 	Target  string `json:"target,omitempty"`

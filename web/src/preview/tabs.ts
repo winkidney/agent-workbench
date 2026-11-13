@@ -10,6 +10,8 @@ export type Preview = {
   owned: boolean;
   // A file preview on the workbench's own address, for this page only.
   fileUrl?: string;
+  // A file preview's file is text the page may edit.
+  text?: boolean;
   // What a service preview shows.
   target?: string;
   command?: string;

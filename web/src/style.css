@@ -1922,6 +1922,116 @@ p {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.preview-edit {
+  flex: none;
+  gap: 5px;
+  height: 28px;
+}
+@media (max-width: 480px) {
+  .preview-edit span {
+    display: none;
+  }
+}
+/* A text file in the editor, in place of its page: a plain text box. */
+.text-editor {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  /* Behind the text box's corners too. */
+  background: var(--background);
+}
+.text-editor .preview-toolbar,
+.text-editor-status {
+  background: var(--sidebar);
+}
+.text-editor .preview-toolbar {
+  gap: 4px;
+}
+.text-editor-action {
+  flex: none;
+  height: 28px;
+}
+.text-editor-dot {
+  font-weight: normal;
+  color: var(--foreground);
+}
+.text-editor textarea {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 12px 14px;
+  border: 0;
+  resize: none;
+  background: var(--background);
+  color: var(--foreground);
+  font: 12.5px/1.6 var(--mono);
+  tab-size: 4;
+  white-space: pre;
+  overflow: auto;
+  overflow-wrap: normal;
+}
+.text-editor textarea.wrap {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.text-editor textarea:focus-visible {
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--ring) 45%, transparent);
+}
+/* Phones zoom into smaller text when it takes focus. */
+@media (pointer: coarse) {
+  .text-editor textarea {
+    font-size: 16px;
+  }
+}
+.text-editor-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in oklab, var(--warning) 14%, var(--background));
+  color: var(--foreground);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.text-editor-bar > span {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+.text-editor-bar > button {
+  height: 28px;
+}
+.text-editor-status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 3px 12px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  line-height: 20px;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+.text-editor-meta {
+  margin-left: auto;
+}
+.text-editor-status label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  font-size: inherit;
+  cursor: pointer;
+}
+.text-editor-status input {
+  /* Not the full-width text-field look every input gets. */
+  width: auto;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--primary);
+}
 .preview-newtab {
   display: grid;
   place-items: center;

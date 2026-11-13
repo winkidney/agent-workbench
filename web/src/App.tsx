@@ -29,6 +29,7 @@ import { useAttention } from "./attention";
 import { SettingsDialog } from "./components/settings/SettingsDialog";
 import { LogoMark } from "./components/Logo";
 import { PreviewPanel } from "./preview/PreviewPanel";
+import { mayLeave } from "./preview/unsaved";
 import { tabFromPreview, type Preview } from "./preview/tabs";
 import { usePreviewTabs } from "./preview/usePreviewTabs";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -388,6 +389,8 @@ export default function App() {
     }
   };
   const selectSession = (id: string) => {
+    // A file being edited in the preview panel goes with the session.
+    if (id !== selected.current && !mayLeave()) return;
     setComposing(null);
     setActive(id);
     // On narrow screens the sidebar overlays the conversation.
@@ -1020,7 +1023,7 @@ export default function App() {
               size="icon"
               aria-label="Toggle preview"
               title={panel ? "Hide preview" : "Show preview"}
-              onClick={() => setPanel(!panel)}
+              onClick={() => (!panel || mayLeave()) && setPanel(!panel)}
             >
               <PanelRightClose size={17} />
             </Button>

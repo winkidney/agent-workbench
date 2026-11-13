@@ -115,6 +115,13 @@ Permission requests appear as cards in the conversation: **1** allow, **2** allo
   - **Reload.** When a turn ends and the agent changed the file shown, the toolbar offers **Updated · Reload**; nothing reloads while you read.
   - **Expand** lays the preview over the conversation (Esc or the button returns), and **Full screen** fills the screen.
   - **Open in a new tab**, for files anywhere, and for dev servers in a browser on the workbench computer.
+  - **Edit**, for a text file up to 1 MB (Markdown, JSON, source code, and HTML or SVG, whose source it opens), turns the tab into a plain text editor:
+    - **Save** (Ctrl+S, or ⌘S on a Mac) writes the file in place: its permissions and its line ends (LF or CRLF) stay, and no file is ever created. The editor stays open; **Done** returns to the preview, loaded again as saved.
+    - **Keys:** Tab and Shift+Tab indent and outdent the selected lines (or insert an indent at the caret), using the file's own indentation, a tab or its spaces. Enter keeps the line's indentation, and Ctrl+Z undoes. Esc only leaves the text box (it doesn't stop the agent's turn), so Tab then moves on.
+    - **Changed on disk:** if the file changed after you opened it (the agent may have edited it), Save says so instead of writing, and offers **Overwrite** or **Load the disk version**.
+    - **Unsaved changes:** switching tabs or sessions, hiding the panel, Done, and leaving the page ask first.
+    - **Status line:** the line and column, the line ends, the size, and **Wrap** (remembered per browser).
+    - **Memory:** the text is held only while the editor is open.
 - **Panel width.** The panel keeps one width for the file list and another for previews; a preview first opens at half the window. Drag the edge to change either.
 - **Show in Files** reveals a file or folder in the desktop file manager, in a browser on the computer running the workbench.
 - **Download, on other devices.** Away from the workbench computer (another device, or a tunnel), a window in its file manager would open where nobody sees it. So there the same buttons, and path links that don't preview, **download** instead:
