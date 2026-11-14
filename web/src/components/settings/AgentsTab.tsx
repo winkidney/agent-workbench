@@ -482,7 +482,12 @@ function SignInRow({
           )}
           {active && login.code && (
             <span className="agent-login-code">
-              <code>{login.code}</code>
+              <input
+                id={`${id}-login-code`}
+                readOnly
+                value={login.code}
+                aria-label="Sign-in code"
+              />
               <button
                 type="button"
                 className="about-copy-button"

@@ -27,6 +27,8 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "../components/ui/button";
+import { ManualCopyDialog } from "../components/ManualCopyDialog";
+import { copyText } from "../lib/copy";
 import { AgentIcon, StatusIcon, statusLabel } from "../components/AgentIcon";
 import { LogoLockup } from "../components/Logo";
 import { ATTENTION_LABEL } from "../attention";
@@ -126,6 +128,7 @@ function RowMenu({
   const close = useRef(onClose);
   close.current = onClose;
   const [copied, setCopied] = useState("");
+  const [manual, setManual] = useState<string | null>(null);
   const hidden = actions.prefs.hidden.includes(session.id);
   // Codex archives and deletes threads natively; Claude Code cannot, so its
   // sessions keep the workbench-only hide.
@@ -146,6 +149,7 @@ function RowMenu({
     });
   }, [anchor]);
   useEffect(() => {
+    if (manual !== null) return;
     const down = (e: MouseEvent) => {
       if (!ref.current?.contains(e.target as globalThis.Node)) close.current();
     };
@@ -162,9 +166,10 @@ function RowMenu({
       document.removeEventListener("mousedown", down);
       document.removeEventListener("keydown", key);
     };
-  }, []);
+  }, [manual]);
   const copy = (label: string, value: string) =>
-    void navigator.clipboard?.writeText(value).then(() => {
+    void copyText(value).then((ok) => {
+      if (!ok) return setManual(value);
       setCopied(label);
       setTimeout(onClose, 700);
     });
@@ -175,61 +180,64 @@ function RowMenu({
     </button>
   );
   return createPortal(
-    <div
-      ref={ref}
-      className="row-menu"
-      role="menu"
-      style={{ top: pos.top, left: pos.left }}
-    >
-      {item(<Pencil size={14} />, "Rename", () => {
-        actions.setEditing(editKey);
-        onClose();
-      })}
-      {item(<Terminal size={14} />, "Copy resume command", () =>
-        copy("Copy resume command", resumeCommand(session)),
-      )}
-      {item(<Copy size={14} />, "Copy session ID", () =>
-        copy("Copy session ID", session.nativeId),
-      )}
-      <div className="row-menu-sep" />
-      {native &&
-        item(
-          session.archived ? (
-            <ArchiveRestore size={14} />
-          ) : (
-            <Archive size={14} />
-          ),
-          session.archived ? "Unarchive" : "Archive",
-          () => {
-            actions.onArchive(session, !session.archived);
-            onClose();
-          },
+    <>
+      <div
+        ref={ref}
+        className="row-menu"
+        role="menu"
+        style={{ top: pos.top, left: pos.left }}
+      >
+        {item(<Pencil size={14} />, "Rename", () => {
+          actions.setEditing(editKey);
+          onClose();
+        })}
+        {item(<Terminal size={14} />, "Copy resume command", () =>
+          copy("Copy resume command", resumeCommand(session)),
         )}
-      {/* Codex sessions hidden before Archive existed can still come back. */}
-      {(!native || hidden) &&
-        item(
-          hidden ? <Eye size={14} /> : <EyeOff size={14} />,
-          hidden ? "Show in sidebar" : "Hide from sidebar",
-          () => {
-            actions.onPrefs(hidden ? "unhide" : "hide", session.id);
-            onClose();
-          },
+        {item(<Copy size={14} />, "Copy session ID", () =>
+          copy("Copy session ID", session.nativeId),
         )}
-      {native && (
-        <button
-          type="button"
-          role="menuitem"
-          className="danger"
-          onClick={() => {
-            actions.onDelete(session);
-            onClose();
-          }}
-        >
-          <Trash2 size={14} />
-          <span>Delete…</span>
-        </button>
-      )}
-    </div>,
+        <div className="row-menu-sep" />
+        {native &&
+          item(
+            session.archived ? (
+              <ArchiveRestore size={14} />
+            ) : (
+              <Archive size={14} />
+            ),
+            session.archived ? "Unarchive" : "Archive",
+            () => {
+              actions.onArchive(session, !session.archived);
+              onClose();
+            },
+          )}
+        {/* Codex sessions hidden before Archive existed can still come back. */}
+        {(!native || hidden) &&
+          item(
+            hidden ? <Eye size={14} /> : <EyeOff size={14} />,
+            hidden ? "Show in sidebar" : "Hide from sidebar",
+            () => {
+              actions.onPrefs(hidden ? "unhide" : "hide", session.id);
+              onClose();
+            },
+          )}
+        {native && (
+          <button
+            type="button"
+            role="menuitem"
+            className="danger"
+            onClick={() => {
+              actions.onDelete(session);
+              onClose();
+            }}
+          >
+            <Trash2 size={14} />
+            <span>Delete…</span>
+          </button>
+        )}
+      </div>
+      <ManualCopyDialog text={manual} onClose={onClose} />
+    </>,
     document.body,
   );
 }

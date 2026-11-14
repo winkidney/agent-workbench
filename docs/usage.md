@@ -95,7 +95,7 @@ Permission requests appear as cards in the conversation: **1** allow, **2** allo
 - With the Default theme, colors follow each CLI's default terminal theme: Claude Code's for Claude sessions, Catppuccin (as the Codex TUI uses) for Codex sessions. Other themes color both agents the same way (see [Appearance](#appearance)). Code blocks with a language are highlighted; ANSI colors in tool output are kept.
 - **Mermaid diagrams.** A ` ```mermaid ` block in a reply or a plan is drawn as a diagram, in the theme's colors, once the reply is complete (its source shows while it is written, if it is larger than 20,000 characters, or if it does not parse, with the reason). On hover: the source, a copy, and a larger view to zoom and pan. Diagrams are drawn safely: no scripts, links or HTML in them run. The drawing library loads with the first diagram, and the browser keeps it.
 - The to-do list (Claude's TodoWrite, Codex's plan) stays pinned above the composer.
-- The status line shows what the turn is doing (Thinking, Running a tool, Waiting for the model, …), its elapsed time, output tokens and speed. The ring next to it is context usage; the line below opens usage details and quota windows.
+- The status line shows what the turn is doing (Thinking, Running a tool, Waiting for the model, …), its elapsed time, output tokens and speed. The ring next to it is context usage; the line below opens usage details and quota windows. The bottom summary shows `5h …% left` and `Weekly …% left` when the CLI reports those account-wide limits. Hover each percentage for the local reset time and time remaining; on a phone, open the usage details. Missing or expired windows are hidden until new data arrives, refreshed about once a minute.
 - History loads newest first; scroll to the top for older messages.
 
 ## Files and previews
@@ -251,3 +251,7 @@ The header's **⋯** menu sets the **Mode** (System, Light or Dark) and the **Th
 A theme other than Default colors the whole page, and both agents the same way: the interface, headings, links, inline code, code highlighting and the ANSI colors in tool output. The colors come from each project's published palette. Where an accent was too faint to read on its background (yellows on light backgrounds, Nord's accents in light mode), only its lightness was changed, keeping the hue.
 
 The interface adapts to phones: the sidebar and the right panel slide over the conversation.
+
+## Copying text
+
+Copy buttons try the browser Clipboard API first, then a compatibility copy command for plain HTTP connections. If neither works, message, code and session-menu buttons open a selectable, read-only copy dialog. Settings fields select their text instead. Only a successful automatic copy shows the check mark or “Copied”. Manual copying preserves the original text, including line breaks. Desktop notifications still require HTTPS or localhost; this change does not add mobile system notifications.

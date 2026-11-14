@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
+import { quotaSummary, resetTime } from "./lib/quota";
 import {
   Brain,
   ChevronDown,
@@ -250,15 +251,9 @@ export function useAgentControls({
             })),
           )
       : (meta.usage?.rate_limits?.limits ?? []);
-  const freshQuota = quota.filter(
-    (q) =>
-      !q.resets_at ||
-      new Date(
-        typeof q.resets_at === "number" ? q.resets_at * 1000 : q.resets_at,
-      ).getTime() > Date.now(),
-  );
-  const weekly = freshQuota.find(
-    (q) => q.kind === "Weekly" || q.kind === "weekly_all",
+  const summaries = quotaSummary(
+    session.agent,
+    metaFor === session.id ? meta.usage : undefined,
   );
   const select = (label: string, key: keyof Options, items: OptionItem[]) => {
     const override = options[key] ?? "";
@@ -290,11 +285,6 @@ export function useAgentControls({
       />
     );
   };
-  const resetTime = (value: string | number) => {
-    const d = new Date(typeof value === "number" ? value * 1000 : value);
-    const m = Math.max(0, Math.ceil((d.getTime() - Date.now()) / 60000));
-    return `${d.toLocaleString()} (in ${Math.floor(m / 60)}h ${m % 60}m)`;
-  };
   return {
     meta,
     data,
@@ -309,7 +299,7 @@ export function useAgentControls({
     chosenModel,
     effort,
     quota,
-    weekly,
+    summaries,
     select,
     resetTime,
   };
@@ -459,7 +449,7 @@ export function AgentSelectors({ ctl, session }: Part) {
 
 // One-line usage summary under the composer; opens the full usage panel.
 export function UsageDetails({ ctl, session, hint }: Part & { hint?: string }) {
-  const { meta, data, options, quota, weekly, resetTime, setError, error } =
+  const { meta, data, options, quota, summaries, resetTime, setError, error } =
     ctl;
   return (
     <>
@@ -481,9 +471,11 @@ export function UsageDetails({ ctl, session, hint }: Part & { hint?: string }) {
                 : "unavailable"}
             </>
           )}
-          {weekly
-            ? ` · Weekly ${Math.max(0, 100 - weekly.percent).toFixed(0)}% left`
-            : ""}
+          {summaries.map((q) => (
+            <span key={q.label} title={q.reset}>
+              · {q.label} {q.left.toFixed(0)}% left
+            </span>
+          ))}
         </summary>
         <div className="usage-body">
           <p>Current model: {data?.effective.model || "CLI default"}</p>
@@ -535,7 +527,9 @@ export function UsageDetails({ ctl, session, hint }: Part & { hint?: string }) {
                   ? q.scope
                   : q.scope?.model?.display_name}{" "}
                 · {Math.max(0, 100 - q.percent).toFixed(1)}% left · Resets{" "}
-                {q.resets_at ? resetTime(q.resets_at) : "Unavailable"}
+                {q.resets_at
+                  ? (resetTime(q.resets_at) ?? "Unavailable")
+                  : "Unavailable"}
               </p>
             ))
           ) : (
