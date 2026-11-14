@@ -3,6 +3,7 @@ import { ArrowUp, Loader2 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { NewSessionOptions, type Options } from "../AgentControls";
 import { api } from "../lib/api";
+import { randomUUID } from "../lib/uuid";
 import { newlineKey } from "../lib/newline";
 import type { Prefs, Session } from "../sidebar/tree";
 import { ProjectPicker } from "./ProjectPicker";
@@ -89,7 +90,7 @@ export function NewSession({
         images: images.images.map((a) => a.id),
         files: images.files.map((a) => a.id),
         options,
-        requestID: crypto.randomUUID(),
+        requestID: randomUUID(),
       });
       onCreated(s);
     } catch (e) {

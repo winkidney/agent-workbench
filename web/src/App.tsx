@@ -21,6 +21,7 @@ import { Sidebar, statusLabels as labels } from "./sidebar/Sidebar";
 import { usePrefs } from "./sidebar/usePrefs";
 import { displayTitle, type Session } from "./sidebar/tree";
 import { api, download } from "./lib/api";
+import { randomUUID } from "./lib/uuid";
 import {
   afterError,
   footerConnection,
@@ -715,7 +716,7 @@ export default function App() {
         cwd: current.cwd,
         initialMessage: freshPlanMessage(plan),
         options: { ...options, mode: "default" },
-        requestID: crypto.randomUUID(),
+        requestID: randomUUID(),
       });
       setSessions((old) => [s, ...old.filter((x) => x.id !== s.id)]);
       selectSession(s.id);
