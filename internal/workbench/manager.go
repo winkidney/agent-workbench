@@ -100,6 +100,7 @@ type Manager struct {
 	// closing: the workbench is shutting down (Shutdown); engines it stops
 	// then are asleep, not failed.
 	closing  bool
+	resetMu  sync.Mutex
 	metaMu   sync.Mutex
 	metadata map[string]metadata
 	mu       sync.Mutex

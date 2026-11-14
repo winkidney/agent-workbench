@@ -10,6 +10,7 @@ import {
   type QuotaWindow,
 } from "../../lib/quota";
 import { Button } from "../ui/button";
+import { BankedResets } from "../BankedResets";
 
 type Usage = {
   usage?: Record<string, any>;
@@ -38,7 +39,13 @@ export function UsageWindow({ window: q }: { window: QuotaWindow }) {
   );
 }
 
-function AgentUsage({ agent, active }: { agent: AgentId; active: boolean }) {
+export function AgentUsage({
+  agent,
+  active,
+}: {
+  agent: AgentId;
+  active: boolean;
+}) {
   const [data, setData] = useState<Usage>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -77,10 +84,15 @@ function AgentUsage({ agent, active }: { agent: AgentId; active: boolean }) {
       if (document.visibilityState === "visible") void load();
     };
     document.addEventListener("visibilitychange", visible);
+    const changed = (e: Event) => {
+      if ((e as CustomEvent).detail?.agent === agent) void load(true);
+    };
+    window.addEventListener("workbench:usage", changed);
     return () => {
       live = false;
       clearInterval(timer);
       document.removeEventListener("visibilitychange", visible);
+      window.removeEventListener("workbench:usage", changed);
       refresh.current = () => {};
     };
   }, [active, agent]);
@@ -122,6 +134,11 @@ function AgentUsage({ agent, active }: { agent: AgentId; active: boolean }) {
               : "No quota windows reported. This does not establish unlimited usage."}
         </p>
       )}
+      <BankedResets
+        agent={agent}
+        usage={data?.usage}
+        onRefresh={() => refresh.current(true)}
+      />
       <p className="subtle">
         Last successful update:{" "}
         {data?.updated

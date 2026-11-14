@@ -59,7 +59,7 @@ var workbenchCommands = []workbenchCommand{
 	{agents: "codex", Command: Command{Name: "diff", Description: "Show git diff, including untracked files"}},
 	{agents: "codex", Command: Command{Name: "new", Description: "Start a new chat in this project", Action: "new"}},
 	{agents: "codex", Command: Command{Name: "status", Description: "Show session configuration and token usage", Action: "status"}},
-	{agents: "codex", Command: Command{Name: "usage", Description: "Show account usage and limits", Action: "status"}},
+	{Command: Command{Name: "usage", Description: "Show account usage and limits", Action: "status"}},
 	{agents: "codex", Command: Command{Name: "skills", Description: "Use skills for specific tasks", Action: "skills"}},
 	{agents: "codex", Command: Command{Name: "quit", Aliases: []string{"exit"}, Description: "Put the engine to sleep"}},
 }

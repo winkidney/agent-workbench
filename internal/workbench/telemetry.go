@@ -98,7 +98,7 @@ func (m *Manager) SetOptions(id string, o Options) error {
 	return m.store.setting("options:"+r.session.ID, o)
 }
 
-// Read-only metadata probes do not create threads, send prompts or start MCP servers.
+// Control connections do not create threads, send prompts or start MCP servers.
 func probe(run agentRun, agent, cwd string) (*exec.Cmd, func(string, any) (map[string]any, error), func(), error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	args := []string{"app-server"}

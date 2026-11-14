@@ -1,11 +1,8 @@
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
-import {
-  quotaSummary,
-  quotaWindows,
-  quotaExpired,
-  resetTime,
-} from "./lib/quota";
+import { AgentUsage } from "./components/settings/UsageTab";
+import type { AgentId } from "./lib/agents";
+import { quotaSummary, quotaWindows, resetTime } from "./lib/quota";
 import {
   Brain,
   ChevronDown,
@@ -199,11 +196,16 @@ export function useAgentControls({
       if (v.session === session.id) setOptions(v.options);
     };
     window.addEventListener("workbench:options", changed);
+    const usageChanged = (e: Event) => {
+      if ((e as CustomEvent).detail?.agent === session.agent) load(false);
+    };
+    window.addEventListener("workbench:usage", usageChanged);
     return () => {
       cancel = true;
       clearInterval(timer);
       window.removeEventListener("workbench:telemetry", update);
       window.removeEventListener("workbench:options", changed);
+      window.removeEventListener("workbench:usage", usageChanged);
     };
   }, [session.id, session.agent, session.cwd]);
   useEffect(() => {
@@ -437,11 +439,14 @@ export function AgentSelectors({ ctl, session }: Part) {
 
 // One-line usage summary under the composer; opens the full usage panel.
 export function UsageDetails({ ctl, session, hint }: Part & { hint?: string }) {
-  const { meta, data, options, quota, summaries, resetTime, setError, error } =
-    ctl;
+  const [open, setOpen] = useState(false);
+  const { meta, data, options, summaries, setError, error } = ctl;
   return (
     <>
-      <details className="usage-details">
+      <details
+        className="usage-details"
+        onToggle={(e) => setOpen(e.currentTarget.open)}
+      >
         <summary>
           {hint && <span className="usage-hint">{hint}</span>}
           {session.status === "running" && data?.speed
@@ -507,28 +512,11 @@ export function UsageDetails({ ctl, session, hint }: Part & { hint?: string }) {
             uses reported output tokens and elapsed turn time, including tools
             and approvals. {data?.scope}
           </p>
-          {quota.length ? (
-            quota.map((q, i) => (
-              <p key={i}>
-                {q.label} {q.scope} ·{" "}
-                {q.percent != null && !quotaExpired(q)
-                  ? `${(100 - q.percent).toFixed(1)}% left`
-                  : "Unavailable"}{" "}
-                · Resets {resetTime(q.resetsAt) ?? "Unavailable"}
-              </p>
-            ))
-          ) : (
-            <p>
-              Quota unavailable for this account or no windows have been
-              reported yet.
-            </p>
-          )}
-          <p className="subtle">
-            Last updated:{" "}
-            {meta.updated
-              ? new Date(meta.updated).toLocaleString()
-              : "Unavailable"}
-          </p>
+          <AgentUsage
+            key={session.agent}
+            agent={session.agent as AgentId}
+            active={open}
+          />
           <Button
             type="button"
             variant="outline"

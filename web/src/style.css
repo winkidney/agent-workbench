@@ -5566,3 +5566,26 @@ body.resizing iframe {
 .settings-usage-head button {
   color: var(--foreground);
 }
+
+.banked-resets {
+  margin-top: 14px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.banked-resets h4 {
+  margin: 6px 0;
+  font-weight: 500;
+}
+.banked-resets small,
+.banked-reset-row span {
+  display: block;
+  color: var(--muted-foreground);
+}
+.banked-resets button {
+  color: var(--foreground);
+  margin: 5px 0;
+}
+.banked-reset-row {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}

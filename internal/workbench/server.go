@@ -412,6 +412,27 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 		default:
 			http.NotFound(w, r)
 		}
+	case path == "agents/codex/usage/reset":
+		if r.Method != "POST" {
+			http.Error(w, "method not allowed", 405)
+			return
+		}
+		var v resetRequest
+		if err := decode(w, r, &v); err != nil {
+			bad(w, err)
+			return
+		}
+		result, err := m.consumeReset(v)
+		if err != nil {
+			outcome := "notAttempted"
+			if result.Attempted {
+				outcome = "uncertain"
+			}
+			writeJSON(w, map[string]any{"outcome": outcome, "message": err.Error()})
+			return
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		writeJSON(w, result)
 	case strings.HasPrefix(path, "agents/"):
 		parts := strings.Split(path, "/")
 		if len(parts) != 3 || (parts[1] != "codex" && parts[1] != "claude") {
