@@ -57,6 +57,7 @@ type metadata struct {
 	Permissions []any          `json:"permissions"`
 	Modes       []any          `json:"modes"`
 	Usage       map[string]any `json:"usage"`
+	UsageError  string         `json:"usageError,omitempty"`
 	Defaults    Options        `json:"defaults"` // used where the user set no override
 	// Commands the CLI runs itself (Claude), and skills for "$" (both).
 	Commands []any `json:"commands,omitempty"`
@@ -170,6 +171,10 @@ func probe(run agentRun, agent, cwd string) (*exec.Cmd, func(string, any) (map[s
 	return cmd, call, close, nil
 }
 func (m *Manager) Metadata(agent, cwd string) metadata {
+	return m.readMetadata(agent, cwd, false, false)
+}
+
+func (m *Manager) readMetadata(agent, cwd string, refresh, usageOnly bool) metadata {
 	m.metaMu.Lock()
 	defer m.metaMu.Unlock()
 	key := agent + ":" + cwd
@@ -177,10 +182,13 @@ func (m *Manager) Metadata(agent, cwd string) metadata {
 		// Models, skills and permissions come from the program and home.
 		key = agent + ":" + k + ":" + cwd
 	}
+	if usageOnly {
+		key += ":usage"
+	}
 	if m.metadata == nil {
 		m.metadata = map[string]metadata{}
 	}
-	if v, ok := m.metadata[key]; ok && time.Since(v.at) < time.Minute {
+	if v, ok := m.metadata[key]; ok && !refresh && time.Since(v.at) < time.Minute {
 		return v
 	}
 	result := metadata{Models: []any{}, Permissions: []any{}, Modes: []any{}, at: time.Now(), Updated: time.Now().UTC().Format(time.RFC3339)}
@@ -198,39 +206,53 @@ func (m *Manager) Metadata(agent, cwd string) metadata {
 	if agent == "codex" {
 		_, e = call("initialize", map[string]any{"clientInfo": map[string]any{"name": "workbench_metadata", "version": "0.1.0"}, "capabilities": map[string]any{"experimentalApi": true}})
 		if e == nil {
-			v, err := call("model/list", map[string]any{"limit": 100})
-			if err != nil {
-				e = err
-			} else {
-				result.Models, _ = v["data"].([]any)
+			if !usageOnly {
+				v, err := call("model/list", map[string]any{"limit": 100})
+				if err != nil {
+					e = err
+				} else {
+					result.Models, _ = v["data"].([]any)
+				}
+				v, _ = call("permissionProfile/list", map[string]any{"cwd": cwd, "limit": 100})
+				result.Permissions = withAutoReview(asList(v["data"]))
+				v, _ = call("collaborationMode/list", map[string]any{})
+				result.Modes, _ = v["data"].([]any)
 			}
-			v, _ = call("permissionProfile/list", map[string]any{"cwd": cwd, "limit": 100})
-			result.Permissions = withAutoReview(asList(v["data"]))
-			v, _ = call("collaborationMode/list", map[string]any{})
-			result.Modes, _ = v["data"].([]any)
-			result.Usage, _ = call("account/rateLimits/read", map[string]any{})
-			config, _ := call("config/read", map[string]any{"cwd": cwd})
-			result.Defaults = codexDefaults(obj(config["config"]), result.Models)
-			listed, _ := call("skills/list", map[string]any{"cwds": []any{cwd}})
-			result.Skills = codexSkills(listed)
+			var usageErr error
+			result.Usage, usageErr = call("account/rateLimits/read", map[string]any{})
+			if usageErr != nil {
+				result.UsageError = usageErr.Error()
+			}
+			if !usageOnly {
+				config, _ := call("config/read", map[string]any{"cwd": cwd})
+				result.Defaults = codexDefaults(obj(config["config"]), result.Models)
+				listed, _ := call("skills/list", map[string]any{"cwds": []any{cwd}})
+				result.Skills = codexSkills(listed)
+			}
 		}
 	} else {
 		v, err := call("initialize", map[string]any{})
 		e = err
 		result.Models, _ = v["models"].([]any)
 		result.Commands, _ = v["commands"].([]any)
-		init := m.claudeInit(cwd)
-		for _, name := range init.Skills {
-			result.Skills = append(result.Skills, map[string]any{"name": name})
+		if !usageOnly {
+			init := m.claudeInit(cwd)
+			for _, name := range init.Skills {
+				result.Skills = append(result.Skills, map[string]any{"name": name})
+			}
+			result.TerminalCommands = init.Terminal
 		}
-		result.TerminalCommands = init.Terminal
 		for _, p := range []string{"manual", "acceptEdits", "auto", "dontAsk", "bypassPermissions"} {
 			result.Permissions = append(result.Permissions, map[string]any{"id": p, "name": p})
 		}
 		result.Modes = []any{map[string]any{"mode": "default", "name": "Execute"}, map[string]any{"mode": "plan", "name": "Plan"}}
 		result.Defaults = claudeSettingsDefaults(m.catalog.ClaudeHome, cwd)
 		if e == nil {
-			result.Usage, _ = call("get_usage", map[string]any{})
+			var usageErr error
+			result.Usage, usageErr = call("get_usage", map[string]any{})
+			if usageErr != nil {
+				result.UsageError = usageErr.Error()
+			}
 			m.mu.Lock()
 			liveID := ""
 			for _, r := range m.sessions {
@@ -243,6 +265,7 @@ func (m *Manager) Metadata(agent, cwd string) metadata {
 			if liveID != "" {
 				if usage, err := m.rpc(liveID, "get_usage", map[string]any{}); err == nil {
 					result.Usage = usage
+					result.UsageError = ""
 				}
 			}
 		}

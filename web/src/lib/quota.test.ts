@@ -76,6 +76,15 @@ describe("quota summaries", () => {
     ])
       expect(quotaSummary("claude", claude(used), now)[0].left).toBe(left);
   });
+  it("retains the account fallback when other pools are reported", () => {
+    expect(
+      quotaSummary(
+        "codex",
+        { rateLimitsByLimitId: {}, rateLimits: { primary: window(300) } },
+        now,
+      )[0].left,
+    ).toBe(82);
+  });
   it("does not invent reset times", () => {
     const q = quotaSummary("claude", claude(18, null), now)[0];
     expect(q.left).toBe(82);

@@ -129,3 +129,7 @@ The interface uses a JSON API under `/api/`. Main endpoints:
 ## Limits
 
 Not included: multiple user accounts, a desktop shell, handing context between agents, automatic worktrees, Docker, or remote SSH execution.
+
+### Account usage in Settings
+
+`GET /api/agents/{agent}/usage` uses a separate one-minute metadata cache entry and performs only initialization and account-usage queries. It does not run Claude's skills/context probe or start a conversation. `refresh=1` bypasses this cache. Usage query failures are returned as optional `usageError`; other initialization/CLI errors retain the existing `error` field. The capabilities route and its cache are unchanged. Cache keys include the configured program, home and query directory, and changing agent configuration invalidates them. Shared frontend quota normalization serves Settings, the composer details and its account-only summary.

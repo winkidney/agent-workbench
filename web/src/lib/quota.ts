@@ -18,39 +18,88 @@ export function resetTime(
   return `${new Date(at).toLocaleString()} (in ${days ? `${days}d ` : ""}${Math.floor((minutes % 1440) / 60)}h ${minutes % 60}m)`;
 }
 
+export type QuotaWindow = {
+  kind: string;
+  label: string;
+  scope?: string;
+  percent?: number;
+  resetsAt?: string | number;
+};
+
+// One interpretation of the CLI data for Settings, details and the footer.
+export function quotaWindows(
+  agent: string,
+  usage?: Record<string, any>,
+): QuotaWindow[] {
+  const percent = (value: unknown) =>
+    typeof value === "number" && Number.isFinite(value)
+      ? Math.max(0, Math.min(100, value))
+      : undefined;
+  if (agent === "codex") {
+    const pools = { ...(usage?.rateLimitsByLimitId ?? {}) };
+    if (!pools.codex && usage?.rateLimits) pools.codex = usage.rateLimits;
+    return Object.entries(pools).flatMap(([id, raw]) => {
+      const pool = raw as any;
+      if (!pool) return [];
+      return [pool.primary, pool.secondary].filter(Boolean).map((w) => ({
+        kind:
+          w.windowDurationMins === 300
+            ? "session"
+            : w.windowDurationMins === 10080
+              ? "weekly_all"
+              : String(w.windowDurationMins),
+        label:
+          w.windowDurationMins === 300
+            ? "5h"
+            : w.windowDurationMins === 10080
+              ? "Weekly"
+              : w.windowDurationMins > 0
+                ? `${w.windowDurationMins}m`
+                : "Quota",
+        scope:
+          id === "codex" ? undefined : pool.limitName || pool.limitId || id,
+        percent: percent(w.usedPercent),
+        resetsAt: w.resetsAt,
+      }));
+    });
+  }
+  const limits = usage?.rate_limits?.limits;
+  return (Array.isArray(limits) ? limits : []).filter(Boolean).map((q) => ({
+    kind: q.kind,
+    label:
+      q.kind === "session"
+        ? "5h"
+        : q.kind === "weekly_all" || q.kind === "weekly_scoped"
+          ? "Weekly"
+          : String(q.kind || "Quota"),
+    scope:
+      typeof q.scope === "string"
+        ? q.scope
+        : q.scope?.model?.display_name ||
+          (q.kind === "weekly_scoped" ? "Model-specific" : undefined),
+    percent: percent(q.percent),
+    resetsAt: q.resets_at,
+  }));
+}
+
+export function quotaExpired(q: QuotaWindow, now = Date.now()): boolean {
+  return q.resetsAt != null && !(resetMillis(q.resetsAt) > now);
+}
+
 export function quotaSummary(
   agent: string,
   usage?: Record<string, any>,
   now = Date.now(),
 ): { label: string; left: number; reset?: string }[] {
-  // Account-wide limits only; model-specific windows remain in the details.
-  const pool = usage?.rateLimitsByLimitId?.codex ?? usage?.rateLimits;
-  const limits: any[] =
-    agent === "codex"
-      ? [pool?.primary, pool?.secondary].filter(Boolean).map((w) => ({
-          kind:
-            w.windowDurationMins === 300
-              ? "session"
-              : w.windowDurationMins === 10080
-                ? "weekly_all"
-                : "other",
-          percent: w.usedPercent,
-          resets_at: w.resetsAt,
-        }))
-      : (usage?.rate_limits?.limits ?? []);
-  return [
-    ["session", "5h"],
-    ["weekly_all", "Weekly"],
-  ].flatMap(([kind, label]) => {
-    const q = limits.find((q) => q.kind === kind && !q.scope);
-    if (!q || typeof q.percent !== "number" || !Number.isFinite(q.percent))
-      return [];
-    if (q.resets_at != null && !(resetMillis(q.resets_at) > now)) return [];
+  const windows = quotaWindows(agent, usage);
+  return ["session", "weekly_all"].flatMap((kind) => {
+    const q = windows.find((q) => q.kind === kind && !q.scope);
+    if (!q || q.percent == null || quotaExpired(q, now)) return [];
     return [
       {
-        label,
-        left: Math.max(0, Math.min(100, 100 - q.percent)),
-        reset: resetTime(q.resets_at, now),
+        label: q.label,
+        left: 100 - q.percent,
+        reset: resetTime(q.resetsAt, now),
       },
     ];
   });

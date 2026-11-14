@@ -449,7 +449,7 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 		if cwd == "" {
 			cwd = os.TempDir()
 		}
-		v := m.Metadata(agent, cwd)
+		v := m.readMetadata(agent, cwd, parts[2] == "usage" && r.URL.Query().Get("refresh") == "1", parts[2] == "usage")
 		// Polled every minute: unchanged, not sent again.
 		writeJSONCached(w, r, v)
 	case strings.HasPrefix(path, "sessions/") && strings.HasSuffix(path, "/preview-tabs") && strings.Count(path, "/") == 2:

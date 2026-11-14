@@ -5,11 +5,13 @@ import { AccessTab } from "./AccessTab";
 import { AboutTab } from "./AboutTab";
 import { AgentsTab } from "./AgentsTab";
 import { GeneralTab } from "./GeneralTab";
+import { UsageTab } from "./UsageTab";
 
-export type SettingsTab = "general" | "agents" | "access" | "about";
+export type SettingsTab = "general" | "agents" | "usage" | "access" | "about";
 export const TABS: { id: SettingsTab; label: string }[] = [
   { id: "general", label: "General" },
   { id: "agents", label: "Agents" },
+  { id: "usage", label: "Usage" },
   { id: "access", label: "Access & security" },
   { id: "about", label: "About" },
 ];
@@ -79,8 +81,7 @@ export function SettingsTabs({
   );
 }
 
-// Settings in four tabs: General (applies at once), Agents and Access &
-// security (saved with their buttons), About (read only). Unsaved changes
+// Settings includes read-only Usage and About tabs. Unsaved changes
 // stay across tabs and are confirmed before closing.
 export function SettingsDialog({
   open,
@@ -146,6 +147,9 @@ export function SettingsDialog({
             onDirty={mark(setDirty, "agents")}
             onBusy={mark(setWorking, "agents")}
           />
+        </div>
+        <div {...panel("usage")}>
+          <UsageTab active={open && tab === "usage"} />
         </div>
         <div {...panel("access")}>
           <AccessTab

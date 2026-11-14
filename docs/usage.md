@@ -255,3 +255,9 @@ The interface adapts to phones: the sidebar and the right panel slide over the c
 ## Copying text
 
 Copy buttons try the browser Clipboard API first, then a compatibility copy command for plain HTTP connections. If neither works, message, code and session-menu buttons open a selectable, read-only copy dialog. Settings fields select their text instead. Only a successful automatic copy shows the check mark or “Copied”. Manual copying preserves the original text, including line breaks. Desktop notifications still require HTTPS or localhost; this change does not add mobile system notifications.
+
+## Settings → Usage
+
+Usage shows account limits for the Claude Code and Codex programs and homes configured under Agents, independently of the selected conversation. Each CLI has its own Refresh button, error and last successful update time. Rows show the reported window and model scope, percent used and left, and the local reset time with time remaining. Model-specific and other reported windows are included.
+
+Refresh bypasses the server usage cache and asks that CLI again; it does not reset your allowance. While this tab is visible it checks about once a minute. Switching tabs, closing Settings or hiding the page pauses queries. A failed refresh keeps the last successful reading with an error; reaching the reset time displays “Awaiting updated usage” rather than assuming an allowance has been restored. No reported windows means the CLI has supplied no windows, not proof of unlimited usage. CLI errors can be investigated under Settings → Agents. This page does not aggregate session tokens or change logins.

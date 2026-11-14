@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
-import { quotaSummary, resetTime } from "./lib/quota";
+import {
+  quotaSummary,
+  quotaWindows,
+  quotaExpired,
+  resetTime,
+} from "./lib/quota";
 import {
   Brain,
   ChevronDown,
@@ -233,24 +238,7 @@ export function useAgentControls({
     chosenModel?.supportedEffortLevels ??
     chosenModel?.supportedReasoningEfforts?.map((e) => e.reasoningEffort) ??
     [];
-  const quota: any[] =
-    session.agent === "codex"
-      ? Object.values(
-          meta.usage?.rateLimitsByLimitId ?? { codex: meta.usage?.rateLimits },
-        )
-          .filter(Boolean)
-          .flatMap((v: any) =>
-            [v.primary, v.secondary].filter(Boolean).map((w: any) => ({
-              kind:
-                w.windowDurationMins === 10080
-                  ? "Weekly"
-                  : `${w.windowDurationMins}m`,
-              percent: w.usedPercent,
-              resets_at: w.resetsAt,
-              scope: v.limitName ?? v.limitId,
-            })),
-          )
-      : (meta.usage?.rate_limits?.limits ?? []);
+  const quota = quotaWindows(session.agent, meta.usage);
   const summaries = quotaSummary(
     session.agent,
     metaFor === session.id ? meta.usage : undefined,
@@ -522,14 +510,11 @@ export function UsageDetails({ ctl, session, hint }: Part & { hint?: string }) {
           {quota.length ? (
             quota.map((q, i) => (
               <p key={i}>
-                {q.kind}{" "}
-                {typeof q.scope === "string"
-                  ? q.scope
-                  : q.scope?.model?.display_name}{" "}
-                · {Math.max(0, 100 - q.percent).toFixed(1)}% left · Resets{" "}
-                {q.resets_at
-                  ? (resetTime(q.resets_at) ?? "Unavailable")
-                  : "Unavailable"}
+                {q.label} {q.scope} ·{" "}
+                {q.percent != null && !quotaExpired(q)
+                  ? `${(100 - q.percent).toFixed(1)}% left`
+                  : "Unavailable"}{" "}
+                · Resets {resetTime(q.resetsAt) ?? "Unavailable"}
               </p>
             ))
           ) : (

@@ -5538,3 +5538,31 @@ body.resizing iframe {
   margin: 8px 0;
   font-family: var(--mono);
 }
+
+.settings-usage-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.settings-usage-head h3 {
+  margin: 0;
+}
+.settings-quota-window {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.settings-quota-window strong {
+  font-weight: 500;
+}
+.settings-quota-window small {
+  display: block;
+  color: var(--muted-foreground);
+  margin-top: 3px;
+}
+
+.settings-usage-head button {
+  color: var(--foreground);
+}
