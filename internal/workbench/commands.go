@@ -44,6 +44,8 @@ type workbenchCommand struct {
 }
 
 var workbenchCommands = []workbenchCommand{
+	{agents: "codex", Command: Command{Name: "side", Aliases: []string{"btw"}, ArgumentHint: "[question]", Description: "Open a side chat without interrupting this task"}},
+	{agents: "claude", Command: Command{Name: "btw", ArgumentHint: "[question]", Description: "Ask a side question without interrupting this task"}},
 	{Command: Command{Name: "plan", ArgumentHint: "[task]", Description: "Switch to plan mode, and send the task if given"}},
 	{Command: Command{Name: "default", ArgumentHint: "[task]", Description: "Leave plan mode, and send the task if given"}},
 	{Command: Command{Name: "model", ArgumentHint: "<model>", Description: "Set the model for this session"}},
@@ -176,9 +178,10 @@ func lookupCommand(agent, name string) (Command, bool) {
 
 // CommandResult tells the page what to do after a command.
 type CommandResult struct {
-	Session string   `json:"session,omitempty"` // open this session (fork)
-	Options *Options `json:"options,omitempty"` // settings now in force
-	Sent    bool     `json:"sent,omitempty"`    // the task was sent as a turn
+	SideChat string   `json:"sideChat,omitempty"`
+	Session  string   `json:"session,omitempty"` // open this session (fork)
+	Options  *Options `json:"options,omitempty"` // settings now in force
+	Sent     bool     `json:"sent,omitempty"`    // the task was sent as a turn
 }
 
 // RunCommand runs a workbench command (see workbenchCommands).
@@ -200,6 +203,17 @@ func (m *Manager) RunCommand(id, name, args string) (CommandResult, error) {
 		return res, fmt.Errorf("unknown command /%s", name)
 	}
 	args = strings.TrimSpace(args)
+	if cmd.Name == "side" || cmd.Name == "btw" {
+		sc, err := m.OpenSide(id)
+		if err != nil {
+			return res, err
+		}
+		res.SideChat = sc.ID
+		if args != "" {
+			err = m.SendSide(sc.ID, args, token())
+		}
+		return res, err
+	}
 	setOption := func(change func(*Options)) error {
 		o := m.options(id)
 		change(&o)

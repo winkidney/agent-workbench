@@ -99,6 +99,7 @@ type runtime struct {
 type Manager struct {
 	// closing: the workbench is shutting down (Shutdown); engines it stops
 	// then are asleep, not failed.
+	sides    map[string]*sideRuntime
 	closing  bool
 	resetMu  sync.Mutex
 	metaMu   sync.Mutex
@@ -158,6 +159,10 @@ func (m *Manager) startCodexClient(name string) (*codexClient, error) {
 	return startCodexClientWith(run, name)
 }
 func (m *Manager) emit(id, kind string, data any) {
+	if strings.HasPrefix(id, "side:") {
+		m.sideEmit(id, kind, data)
+		return
+	}
 	if _, err := m.store.Append(id, kind, data); err != nil {
 		fmt.Fprintln(os.Stderr, "persist event:", err)
 	}
@@ -537,6 +542,9 @@ func (m *Manager) receive(id string, generation int, v map[string]any) {
 		if v["error"] == nil {
 			m.setGoal(r, codexGoal(obj(obj(v["result"])["goal"])))
 		}
+		return
+	}
+	if m.sideReceive(r, v) {
 		return
 	}
 	// A Codex subagent's thread speaks on this connection too: its records
@@ -1100,6 +1108,10 @@ func (m *Manager) stop(id string, sleep, background bool) error {
 		m.mu.Unlock()
 		return errors.New("session not found")
 	}
+	if !m.closing && m.hasSideLocked(r.session.ID) {
+		m.mu.Unlock()
+		return errors.New("close the active side chat with confirmation first")
+	}
 	if sleep && (r.turn || len(r.pending) > 0 || hasServicePreviews(r)) {
 		m.mu.Unlock()
 		return errors.New("session has active work or previews")
@@ -1170,6 +1182,7 @@ func (m *Manager) exited(id string, generation int, err error) {
 		r.queuePaused = true
 		m.emitQueue(r)
 	}
+	m.sideExited(r)
 	r.proc = nil
 	r.ready = false
 	r.turn = false
@@ -1226,7 +1239,7 @@ func (m *Manager) Sweep() {
 		// A Codex goal that is still active keeps its engine, as the TUI
 		// would: Codex starts the next turn itself.
 		pursuing := r.session.Agent == "codex" && r.goal != nil && r.goal.Status == "active"
-		if r.proc != nil && r.ready && !r.turn && !pursuing && len(r.pending) == 0 && (len(r.queue) == 0 || r.queuePaused) && !hasServicePreviews(r) && !processBusy(r.proc) && time.Since(r.last) >= m.idle {
+		if !m.hasSideLocked(r.session.ID) && r.proc != nil && r.ready && !r.turn && !pursuing && len(r.pending) == 0 && (len(r.queue) == 0 || r.queuePaused) && !hasServicePreviews(r) && !processBusy(r.proc) && time.Since(r.last) >= m.idle {
 			ids = append(ids, id)
 		}
 	}
@@ -1240,6 +1253,12 @@ func (m *Manager) Sweep() {
 // moveSessionRows moves what is kept under a session's first id (a
 // workbench token) to its native id, and drops the old rows.
 func (m *Manager) moveSessionRows(oldID, newID string) {
+	for _, sc := range m.sides {
+		if sc.Parent == oldID {
+			sc.Parent = newID
+			m.saveSide(sc)
+		}
+	}
 	_ = m.store.setting("options:"+newID, m.options(oldID))
 	_ = m.store.deleteSetting("options:" + oldID)
 	_, _ = m.store.db.Exec(`DELETE FROM sessions WHERE id=?`, oldID)
@@ -1251,6 +1270,14 @@ func (m *Manager) moveSessionRows(oldID, newID string) {
 func (m *Manager) Shutdown() {
 	m.mu.Lock()
 	m.closing = true
+	for _, sc := range m.sides {
+		if sc.cancel != nil {
+			sc.cancel()
+		}
+		m.flushDelta(sc.rt)
+		sc.Status = "interrupted"
+		m.saveSide(sc)
+	}
 	ids := []string{}
 	for id, r := range m.sessions {
 		if r.proc != nil || len(r.previews) > 0 {

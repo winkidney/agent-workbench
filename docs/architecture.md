@@ -137,3 +137,13 @@ Not included: multiple user accounts, a desktop shell, handing context between a
 ### Banked reset redemption
 
 `POST /api/agents/codex/usage/reset` accepts `accountId`, optional `creditId`, and `idempotencyKey`. It initializes a short-lived control connection, re-reads account usage, validates the selected credit, and calls `account/rateLimitResetCredit/consume`. Receipt bindings and resolved outcomes are stored in the existing settings store under a hash of the idempotency key. Unresolved retries reach native idempotency even if the credit is no longer listed. Native outcomes are preserved; `notAttempted` reports a rejected preflight, `uncertain` preserves an unresolved attempt, and `usageError` distinguishes a known outcome from a failed subsequent read. The browser stores the pending request in sessionStorage and only retries with that key. Refresh and both UI surfaces never redeem automatically.
+
+## Side chats
+
+Side chats share their parent engine but own their requests, transcript and lifecycle. Claude uses the cancellable `side_question` control request with the newest 20 completed exchanges. Codex forks an ephemeral thread with `excludeTurns` and zero unload delay. Side-owned threads are routed before generic subagent records; their approvals and deltas never mutate the parent turn. The browser opens a separate paged transcript and SSE stream only while viewing a side chat.
+
+`side_chats` and `side_events` retain read-only records independently of the seven-day delivery cache. New questions carry a request ID for deduplication. Closing requires `confirmed: true`, transitions through `closing`, and runs independently of the HTTP connection. Claude waits for cancellation completion. Codex interrupts its turns, cleans background terminals and unsubscribes owned threads, then verifies they are absent from `thread/loaded/list`. Ephemeral threads do not support goals; only that explicit goal-clear refusal is harmless. Cleanup has a 30-second deadline; failure keeps ownership and exposes a retry instead of claiming success or killing the parent engine.
+
+Open side chats block parent sleep/stop until explicitly closed. Session switching and browser disconnect do not authorize cleanup. Service shutdown reclaims the shared engine process group; interrupted side records become read-only on restart. Closing or navigating away from a historical record only unloads its browser view.
+
+Routes: `GET/POST sessions/{id}/side-chats`, `GET side-chats/{id}`, `GET side-chats/{id}/{history,live,events}`, and `POST side-chats/{id}/{send,reply,close}`. Parent deletion also deletes its side records.

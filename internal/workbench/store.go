@@ -78,6 +78,9 @@ func OpenStore(dir string) (*Store, error) {
 	}
 	db.SetMaxOpenConns(1)
 	_, err = db.Exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;
+ CREATE TABLE IF NOT EXISTS side_chats(id TEXT PRIMARY KEY,parent TEXT NOT NULL,data TEXT NOT NULL);
+ CREATE TABLE IF NOT EXISTS side_events(seq INTEGER PRIMARY KEY AUTOINCREMENT,session TEXT NOT NULL,kind TEXT NOT NULL,data TEXT NOT NULL,time TEXT NOT NULL);
+ CREATE INDEX IF NOT EXISTS side_events_session ON side_events(session,seq);
  CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS native_creations(request_id TEXT PRIMARY KEY,payload_hash TEXT,response TEXT);
  CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY,agent TEXT,cwd TEXT,title TEXT,native_id TEXT,status TEXT,updated TEXT);
@@ -97,6 +100,11 @@ func OpenStore(dir string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
+	_, err = db.Exec(`UPDATE side_chats SET data=json_set(data,'$.status','interrupted') WHERE json_extract(data,'$.status') NOT IN ('closed','interrupted')`)
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
 	return &Store{db: db, dir: dir}, nil
 }
 func (s *Store) Close() error { return s.db.Close() }
@@ -109,6 +117,8 @@ func (s *Store) Save(v Session) error {
 // events, settings and activity counts.
 func (s *Store) Forget(id string) error {
 	for _, q := range []string{
+		"DELETE FROM side_events WHERE session IN (SELECT id FROM side_chats WHERE parent=?1)",
+		"DELETE FROM side_chats WHERE parent=?1",
 		"DELETE FROM events WHERE session = ?1",
 		"DELETE FROM sessions WHERE id = ?1",
 		"DELETE FROM session_activity WHERE id = ?1",

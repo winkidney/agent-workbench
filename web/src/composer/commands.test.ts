@@ -138,3 +138,26 @@ describe("route", () => {
     expect(route("hello /plan", catalog, "codex")).toEqual({ kind: "send" });
   });
 });
+
+it("routes native side commands to the workbench even when the main turn runs", () => {
+  const side: Catalog = {
+    commands: [
+      { name: "side", aliases: ["btw"], kind: "command", source: "workbench" },
+    ],
+    skills: [],
+  };
+  expect(route("/btw explain", side, "codex")).toEqual({
+    kind: "command",
+    name: "side",
+    args: "explain",
+  });
+  const btw: Catalog = {
+    commands: [{ name: "btw", kind: "command", source: "workbench" }],
+    skills: [],
+  };
+  expect(route("/btw explain", btw, "claude")).toEqual({
+    kind: "command",
+    name: "btw",
+    args: "explain",
+  });
+});

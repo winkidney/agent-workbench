@@ -499,6 +499,8 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 		default:
 			http.Error(w, "method not allowed", 405)
 		}
+	case strings.HasPrefix(path, "side-chats/") || (strings.HasPrefix(path, "sessions/") && strings.HasSuffix(path, "/side-chats")):
+		s.sideAPI(w, r, path)
 	case strings.HasPrefix(path, "sessions/") && (r.Method == "GET" || r.Method == "PATCH"):
 		parts := strings.Split(path, "/")
 		if len(parts) != 3 {

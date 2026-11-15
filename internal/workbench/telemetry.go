@@ -277,7 +277,15 @@ func (m *Manager) readMetadata(agent, cwd string, refresh, usageOnly bool) metad
 	return result
 }
 func (m *Manager) rpc(id, method string, params map[string]any) (map[string]any, error) {
+	return m.rpcContext(context.Background(), id, method, params, nil)
+}
+
+func (m *Manager) rpcContext(ctx context.Context, id, method string, params map[string]any, capture func(string)) (map[string]any, error) {
 	m.mu.Lock()
+	if err := ctx.Err(); err != nil {
+		m.mu.Unlock()
+		return nil, err
+	}
 	r := m.find(id)
 	if r == nil || r.proc == nil {
 		m.mu.Unlock()
@@ -289,6 +297,9 @@ func (m *Manager) rpc(id, method string, params map[string]any) (map[string]any,
 		r.rpc = map[string]chan map[string]any{}
 	}
 	r.rpc[key] = ch
+	if capture != nil {
+		capture(key)
+	}
 	var v any = map[string]any{"id": key, "method": method, "params": params}
 	if r.session.Agent == "claude" {
 		params["subtype"] = method
@@ -306,7 +317,9 @@ func (m *Manager) rpc(id, method string, params map[string]any) (map[string]any,
 			return nil, fmt.Errorf("CLI control: %v", v["error"])
 		}
 		return obj(v["result"]), nil
-	case <-time.After(20 * time.Second):
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-time.After(rpcTimeout(method)):
 		return nil, errors.New("CLI control timed out")
 	}
 }
@@ -933,4 +946,11 @@ func (m *Manager) claudeModeReported(r *runtime, mode string) {
 	_ = m.store.setting("options:"+r.session.ID, o)
 	r.applied.Permissions = permissions
 	m.emit(r.session.ID, "notice", map[string]any{"text": "Claude Code left auto mode; approvals will ask you."})
+}
+
+func rpcTimeout(method string) time.Duration {
+	if method == "side_question" {
+		return 12 * time.Minute
+	}
+	return 20 * time.Second
 }

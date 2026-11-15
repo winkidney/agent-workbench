@@ -5589,3 +5589,73 @@ body.resizing iframe {
   padding: 8px 0;
   border-bottom: 1px solid var(--border);
 }
+
+.side-chat {
+  position: fixed;
+  z-index: 15;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(560px, 48vw);
+  background: var(--background, #18181b);
+  color: var(--foreground, #eee);
+  border-left: 1px solid var(--border, #444);
+  box-shadow: -12px 0 36px #0004;
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  gap: 12px;
+}
+.side-chat header,
+.side-chat-nav,
+.side-chat form {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.side-chat header {
+  justify-content: space-between;
+}
+.side-chat-nav select {
+  min-width: 0;
+  flex: 1;
+  background: inherit;
+  color: inherit;
+  border: 1px solid var(--border, #555);
+  padding: 6px;
+}
+.side-chat-status,
+.side-chat-empty {
+  font-size: 13px;
+  opacity: 0.8;
+}
+.side-chat .timeline-wrap {
+  flex: 1;
+  min-height: 0;
+}
+.side-chat .timeline {
+  flex: 1;
+  min-height: 0;
+}
+.side-chat form textarea {
+  flex: 1;
+  min-height: 70px;
+  resize: vertical;
+  background: transparent;
+  color: inherit;
+  border: 1px solid var(--border, #555);
+  padding: 8px;
+}
+.side-chat-refresh {
+  align-self: flex-start;
+}
+.side-chat [role="alert"] {
+  color: #e99;
+  font-size: 13px;
+}
+@media (max-width: 850px) {
+  .side-chat {
+    width: 100vw;
+    z-index: 15;
+  }
+}

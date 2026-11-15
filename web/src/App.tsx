@@ -1,3 +1,4 @@
+import { SidePanel, type SideChat } from "./side/SidePanel";
 import { NewSession } from "./newsession/NewSession";
 import { AgentIcon } from "./components/AgentIcon";
 import { ResizeHandle } from "./layout/ResizeHandle";
@@ -207,6 +208,8 @@ export default function App() {
   const background = useBackground(current?.id);
   // Asked before putting an engine with background work to sleep.
   const [sleepAsk, setSleepAsk] = useState(false);
+  const [sidePanel, setSidePanel] = useState(false);
+  const [sideFocus, setSideFocus] = useState<Record<string, string>>({});
   const transcript = useTranscript(
     current
       ? { id: current.id, agent: current.agent, status: current.status }
@@ -497,6 +500,37 @@ export default function App() {
     setBusy(true);
     setError("");
     try {
+      if (["stop", "sleep", "archive", "delete"].includes(action)) {
+        const sides = await api<SideChat[]>(
+          `sessions/${encodeURIComponent(active)}/side-chats`,
+        );
+        const live = sides.filter(
+          (x) => !["closed", "interrupted"].includes(x.status),
+        );
+        if (live.length) {
+          if (
+            !window.confirm(
+              "This will close the active side chat and release its resources. Its transcript will remain read-only. Continue?",
+            )
+          )
+            return;
+          for (const x of live) {
+            await api(`side-chats/${encodeURIComponent(x.id)}/close`, "POST", {
+              confirmed: true,
+            });
+            const deadline = Date.now() + 35000;
+            for (;;) {
+              const sc = await api<SideChat>(
+                `side-chats/${encodeURIComponent(x.id)}`,
+              );
+              if (["closed", "interrupted"].includes(sc.status)) break;
+              if (sc.status === "cleanup_failed" || Date.now() > deadline)
+                throw Error(sc.error || "Side chat cleanup did not finish");
+              await new Promise((resolve) => setTimeout(resolve, 200));
+            }
+          }
+        }
+      }
       await api("sessions/" + active + "/" + action, "POST", body);
       await refresh();
     } catch (e) {
@@ -679,6 +713,7 @@ export default function App() {
     try {
       const res = await api<{
         session?: string;
+        sideChat?: string;
         options?: Record<string, string>;
       }>(`sessions/${encodeURIComponent(current.id)}/command`, "POST", {
         name,
@@ -696,6 +731,10 @@ export default function App() {
       // turn's "running" and put the session back to idle.
       if (name === "goal") goalChanged(current.id);
       else await refresh();
+      if (res.sideChat) {
+        setSideFocus((xs) => ({ ...xs, [current.id]: res.sideChat! }));
+        setSidePanel(true);
+      }
       // /fork opens the new session.
       if (res.session) selectSession(res.session);
     } catch (e) {
@@ -1135,6 +1174,15 @@ export default function App() {
                 )}
               </div>
             </details>
+            {current && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setSidePanel(true)}
+              >
+                Side chat
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="icon"
@@ -1521,6 +1569,31 @@ export default function App() {
               env.openPath(item.path, item.base);
             }}
           />
+        )}
+        {sidePanel && current && (
+          <EnvContext.Provider
+            value={{
+              ...env,
+              answer: undefined,
+              implementPlan: undefined,
+              implementPlanFresh: undefined,
+              dismissPlan: undefined,
+            }}
+          >
+            <SidePanel
+              key={current.id}
+              parent={current.id}
+              focus={sideFocus[current.id]}
+              onDismiss={() => {
+                setSidePanel(false);
+                setSideFocus((xs) => {
+                  const next = { ...xs };
+                  delete next[current.id];
+                  return next;
+                });
+              }}
+            />
+          </EnvContext.Provider>
         )}
         {sleepAsk && current && (
           <Dialog open onOpenChange={(open) => !open && setSleepAsk(false)}>
