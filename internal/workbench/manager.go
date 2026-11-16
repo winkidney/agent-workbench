@@ -903,6 +903,14 @@ func (m *Manager) Reply(id, key string, allow bool, answers map[string]any) erro
 // it: auto, acceptEdits, or default (edits approved one by one; also when
 // empty).
 func (m *Manager) ReplyDecision(id, key, decision, message string, answers map[string]any, mode string) error {
+	return m.ReplyWithNotes(id, key, decision, message, answers, nil, mode)
+}
+
+// ReplyWithNotes is ReplyDecision with the notes a user added to their
+// answers to Claude's questions: AskUserQuestion's annotations, keyed by
+// question text ({"<question>": {"notes": "..."}}). Codex carries its notes
+// in the answers themselves ("user_note: ...").
+func (m *Manager) ReplyWithNotes(id, key, decision, message string, answers, annotations map[string]any, mode string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	r := m.find(id)
@@ -978,6 +986,9 @@ func (m *Manager) ReplyDecision(id, key, decision, message string, answers map[s
 					return errors.New("provide answers")
 				}
 				input["answers"] = answers
+				if len(annotations) > 0 {
+					input["annotations"] = annotations
+				}
 			}
 			response = map[string]any{"behavior": "allow", "updatedInput": input}
 			if suggestions, ok := req["permission_suggestions"].([]any); decision == "allowAlways" && ok && len(suggestions) > 0 {

@@ -1103,6 +1103,14 @@ p {
   padding: 6px 10px;
   font-size: 12.5px;
 }
+/* A note on the picked option: quieter than an answer, until it is one. */
+.question input.question-note {
+  border-style: dashed;
+}
+.question input.question-note:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
 /* Codex asking for more access; an MCP server asking for input. */
 .approval-permissions {
   margin: 4px 0 8px;

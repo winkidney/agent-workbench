@@ -1127,6 +1127,8 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 				ID, Decision, Message string
 				Allow                 bool
 				Answers               map[string]any
+				// Notes on answers to Claude's questions, by question.
+				Annotations map[string]any
 				// The permission mode an approved Claude plan continues in.
 				Mode string
 			}
@@ -1138,7 +1140,7 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 						v.Decision = "allow"
 					}
 				}
-				err = m.ReplyDecision(id, v.ID, v.Decision, v.Message, v.Answers, v.Mode)
+				err = m.ReplyWithNotes(id, v.ID, v.Decision, v.Message, v.Answers, v.Annotations, v.Mode)
 			}
 		default:
 			http.NotFound(w, r)

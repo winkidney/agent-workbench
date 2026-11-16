@@ -26,7 +26,7 @@ Agent Workbench runs on your machine next to `claude` and `codex` and gives both
 - Mermaid diagrams in replies and plans are drawn in the theme's colors, with their source a click away.
 - Paste screenshots into the prompt, or drop or pick images and files of any kind: the agent sees the images, and reads the files where the workbench keeps them.
 - Press Enter during a turn to **steer** it: Codex takes the message at its next step (`turn/steer`); Claude takes it in at its next step, as its own TUI does, with **Send now** when you can't wait.
-- Queue follow-ups for after the turn, interrupt with Esc, and answer approvals and questions from the keyboard.
+- Queue follow-ups for after the turn, interrupt with Esc, and answer approvals and questions from the keyboard; add a note to the option you pick, as the CLIs' own clients allow.
 - After a Claude turn, the prompt suggests what you would likely type next, as Claude Code's terminal does; Tab fills it in.
 - Model, effort, speed, plan mode and permissions per session, shown as pills that always show the value in effect. New sessions start with each CLI's automatic approvals (Claude Code's Auto mode, Codex's Auto-review).
 - Sessions waiting for an approval, a question or a plan decision stand out in the sidebar, count in the tab title, and can send a desktop notification.

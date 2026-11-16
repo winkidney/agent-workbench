@@ -25,6 +25,7 @@ import { useEnv } from "../transcript/media";
 import { Choices } from "./Choices";
 import { ElicitationForm } from "./ElicitationForm";
 import { parseElicitation, type Elicitation } from "./elicitation";
+import { claudeAnswers, codexAnswers } from "./answers";
 
 export type Decision = "allow" | "allowAlways" | "deny" | "cancel";
 // The permission mode an approved Claude plan continues in.
@@ -66,6 +67,8 @@ export type Reply = (
   message?: string,
   answers?: Record<string, unknown>,
   mode?: PlanMode,
+  // Notes on answers to Claude's questions (AskUserQuestion annotations).
+  annotations?: Record<string, unknown>,
 ) => Promise<void>;
 
 type Question = {
@@ -246,18 +249,28 @@ function QuestionForm({
 }: {
   questions: Question[];
   busy: boolean;
-  onSubmit: (answers: Record<string, string[]>) => void;
+  onSubmit: (
+    answers: Record<string, string[]>,
+    notes: Record<string, string>,
+  ) => void;
   onDecline: () => void;
   declineLabel: string;
 }) {
   const [picked, setPicked] = useState<Record<string, string[]>>({});
   const [other, setOther] = useState<Record<string, string>>({});
+  // A note on the picked option(s), as the CLIs' own clients allow.
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  const typed = (q: Question) => other[q.id]?.trim() ?? "";
+  // One choice: a typed answer takes the place of the picked option.
+  const chosen = (q: Question) =>
+    q.multi || !typed(q) ? (picked[q.id] ?? []) : [];
   const answer = (q: Question) => [
-    ...(picked[q.id] ?? []),
-    ...(other[q.id]?.trim() ? [other[q.id].trim()] : []),
+    ...chosen(q),
+    ...(typed(q) ? [typed(q)] : []),
   ];
   const complete = questions.every((q) => answer(q).length > 0);
-  const toggle = (q: Question, label: string) =>
+  const toggle = (q: Question, label: string) => {
+    if (!q.multi) setOther((o) => ({ ...o, [q.id]: "" }));
     setPicked((p) => {
       const cur = p[q.id] ?? [];
       if (!q.multi) return { ...p, [q.id]: cur[0] === label ? [] : [label] };
@@ -268,12 +281,20 @@ function QuestionForm({
           : [...cur, label],
       };
     });
+  };
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
         if (complete)
-          onSubmit(Object.fromEntries(questions.map((q) => [q.id, answer(q)])));
+          onSubmit(
+            Object.fromEntries(questions.map((q) => [q.id, answer(q)])),
+            Object.fromEntries(
+              questions
+                .filter((q) => chosen(q).length && notes[q.id]?.trim())
+                .map((q) => [q.id, notes[q.id].trim()]),
+            ),
+          );
       }}
     >
       {questions.map((q) => (
@@ -281,7 +302,7 @@ function QuestionForm({
           {q.header && <span className="question-header">{q.header}</span>}
           <legend>{q.question}</legend>
           {q.options.map((o, i) => {
-            const on = (picked[q.id] ?? []).includes(o.label);
+            const on = chosen(q).includes(o.label);
             return (
               <button
                 key={o.label}
@@ -307,6 +328,22 @@ function QuestionForm({
               value={other[q.id] ?? ""}
               onChange={(e) =>
                 setOther((o) => ({ ...o, [q.id]: e.target.value }))
+              }
+            />
+          )}
+          {q.options.length > 0 && !q.secret && (
+            <input
+              className="question-note"
+              aria-label={`Note for your answer to ${q.question}`}
+              placeholder={
+                chosen(q).length
+                  ? "Add a note (optional)"
+                  : "Pick an option to add a note"
+              }
+              disabled={!chosen(q).length}
+              value={chosen(q).length ? (notes[q.id] ?? "") : ""}
+              onChange={(e) =>
+                setNotes((n) => ({ ...n, [q.id]: e.target.value }))
               }
             />
           )}
@@ -404,11 +441,12 @@ export function ApprovalCard({
     message?: string,
     answers?: Record<string, unknown>,
     mode?: PlanMode,
+    annotations?: Record<string, unknown>,
   ) => {
     setBusy(true);
     setError("");
     try {
-      await reply(id, decision, message, answers, mode);
+      await reply(id, decision, message, answers, mode, annotations);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -568,22 +606,22 @@ export function ApprovalCard({
               ? onInterrupt()
               : void send("deny", "User declined to answer")
           }
-          onSubmit={(answers) =>
+          onSubmit={(answers, notes) => {
+            if (parsed.format === "codex")
+              return void send(
+                "allow",
+                undefined,
+                codexAnswers(answers, notes),
+              );
+            const claude = claudeAnswers(answers, notes);
             void send(
               "allow",
               undefined,
-              parsed.format === "codex"
-                ? Object.fromEntries(
-                    Object.entries(answers).map(([k, v]) => [
-                      k,
-                      { answers: v },
-                    ]),
-                  )
-                : Object.fromEntries(
-                    Object.entries(answers).map(([k, v]) => [k, v.join(", ")]),
-                  ),
-            )
-          }
+              claude.answers,
+              undefined,
+              claude.annotations,
+            );
+          }}
         />
       ) : parsed.kind === "unknown" ? (
         <>

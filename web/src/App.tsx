@@ -1285,6 +1285,7 @@ export default function App() {
                         message,
                         answers,
                         mode,
+                        annotations,
                       ) => {
                         await act("reply", {
                           id,
@@ -1292,6 +1293,7 @@ export default function App() {
                           message,
                           answers,
                           mode,
+                          annotations,
                         });
                       }}
                     />

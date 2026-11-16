@@ -2,6 +2,7 @@ import { useState } from "react";
 import { MessageCircleQuestion } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { useEnv } from "./media";
+import { withNote } from "../approval/answers";
 import {
   claudeAnswerText,
   questionItemId,
@@ -40,6 +41,8 @@ export function AskCard({
       : {},
   );
   const [typed, setTyped] = useState<Record<number, string>>({});
+  // A note on the picked option(s).
+  const [notes, setNotes] = useState<Record<number, string>>({});
   const [answering, setAnswering] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -51,6 +54,11 @@ export function AskCard({
       return [...(picked[i] ?? []), ...(text ? [text] : [])].join(", ");
     return text || (picked[i]?.[0] ?? "");
   };
+  // The options an answer uses: none when a typed one takes their place.
+  const chosen = (i: number) =>
+    questions[i].multi || !typed[i]?.trim() ? (picked[i] ?? []) : [];
+  const sent = (i: number) =>
+    withNote(answerOf(i), chosen(i).length ? notes[i] : undefined);
   const remaining = questions
     .map((_, i) => i)
     .filter((i) => state.answers[i] === undefined);
@@ -82,13 +90,13 @@ export function AskCard({
               remaining.map((i) => ({
                 questionItemId: questionItemId(id, i),
                 question: questions[i].title,
-                answer: answerOf(i),
+                answer: sent(i),
               })),
             )
           : claudeAnswerText(
               remaining.map((i) => ({
                 question: questions[i].title,
-                answer: answerOf(i),
+                answer: sent(i),
               })),
             ),
       );
@@ -177,6 +185,22 @@ export function AskCard({
                     setTyped((t) => ({ ...t, [i]: e.target.value }))
                   }
                 />
+                {!!q.options?.length && (
+                  <input
+                    className="question-note"
+                    aria-label={`Note for your answer to ${q.title}`}
+                    placeholder={
+                      chosen(i).length
+                        ? "Add a note (optional)"
+                        : "Pick an option to add a note"
+                    }
+                    disabled={!chosen(i).length}
+                    value={chosen(i).length ? (notes[i] ?? "") : ""}
+                    onChange={(e) =>
+                      setNotes((n) => ({ ...n, [i]: e.target.value }))
+                    }
+                  />
+                )}
               </fieldset>
             ),
           )}
