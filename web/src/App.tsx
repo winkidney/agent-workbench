@@ -92,6 +92,7 @@ import {
   Trash2,
   ExternalLink,
   CornerLeftUp,
+  MessagesSquare,
 } from "lucide-react";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
@@ -1177,10 +1178,12 @@ export default function App() {
             {current && (
               <Button
                 variant="ghost"
-                size="sm"
+                size="icon"
+                aria-label="Side chat"
+                title="Side chat"
                 onClick={() => setSidePanel(true)}
               >
-                Side chat
+                <MessagesSquare size={17} />
               </Button>
             )}
             <Button
