@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -35,10 +36,17 @@ func copyProgram(t *testing.T, name, dir, as string) string {
 func TestEngineHelperIsNotBackgroundWork(t *testing.T) {
 	bin := t.TempDir()
 	engine := copyProgram(t, "sh", bin, "engine")
-	copyProgram(t, "sleep", bin, "engine-helper")
+	// The helper is the shell again under another name (a renamed coreutils
+	// sleep may be a multi-call binary that goes by its name). It waits
+	// opening a FIFO nobody writes to.
+	copyProgram(t, "sh", bin, "engine-helper")
+	fifo := filepath.Join(t.TempDir(), "wait")
+	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	// Each line on stdin starts the next process.
-	script := `read a; "$0-helper" 30 & read b; sleep 30 & wait`
-	p, err := startDirect(exec.Command(engine, "-c", script), bin, func(map[string]any) {}, func(error) {})
+	script := `read a; "$0-helper" -c 'exec 3<"$1"' helper "$1" & read b; sleep 30 & wait`
+	p, err := startDirect(exec.Command(engine, "-c", script, engine, fifo), bin, func(map[string]any) {}, func(error) {})
 	if err != nil {
 		t.Fatal(err)
 	}
