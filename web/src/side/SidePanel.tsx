@@ -1,5 +1,12 @@
-import { useEffect, useState } from "react";
-import { ArrowUp, MessagesSquare, Plus, RefreshCw, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  ArrowUp,
+  ChevronsRight,
+  MessagesSquare,
+  Plus,
+  RefreshCw,
+  X,
+} from "lucide-react";
 import { api, checkAccess } from "../lib/api";
 import { newlineKey } from "../lib/newline";
 import { randomUUID } from "../lib/uuid";
@@ -9,12 +16,15 @@ import {
   emptyState,
   prepend,
   fromHistory,
+  withSending,
   type State,
 } from "../transcript/reducer";
 import { Timeline } from "../transcript/Timeline";
 import { ApprovalCard } from "../approval/ApprovalCard";
+import { StatusLine } from "../composer/StatusLine";
 import { Button } from "../components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "../components/ui/dialog";
+import { echoed, liveSide, sideVerb, terminal } from "./status";
 
 export type SideChat = {
   id: string;
@@ -23,8 +33,10 @@ export type SideChat = {
   status: string;
   created: string;
   error?: string;
+  // While running: when the question was sent, and what it waits on.
+  since?: string;
+  phase?: string;
 };
-const terminal = (s: string) => s === "closed" || s === "interrupted";
 const path = (id: string) => `side-chats/${encodeURIComponent(id)}`;
 // Worded and colored like the session status pill in the conversation header.
 const statusText: Record<string, string> = {
@@ -38,14 +50,23 @@ const statusText: Record<string, string> = {
 const pill = (s: string) => (s === "cleanup_failed" ? "error" : s);
 
 type Page = { events: WorkbenchEvent[]; before: number; hasMore: boolean };
+
+// The side chats of one session. It stays mounted while that session is
+// open, hidden or not: hiding keeps a side chat, its stream and its draft;
+// only closing it (confirmed) releases it, and its record stays in view.
 export function SidePanel({
   parent,
+  open,
   focus,
-  onDismiss,
+  onHide,
+  onLive,
 }: {
   parent: string;
+  open: boolean;
   focus?: string;
-  onDismiss: () => void;
+  onHide: () => void;
+  // The live side chat's status, or null when there is none.
+  onLive: (status: string | null) => void;
 }) {
   const [list, setList] = useState<SideChat[]>([]);
   const [selected, setSelected] = useState(focus ?? "");
@@ -54,18 +75,18 @@ export function SidePanel({
   const [refreshing, setRefreshing] = useState(false);
   const report = (e: unknown) =>
     setError(e instanceof Error ? e.message : String(e));
+  const listPath = `sessions/${encodeURIComponent(parent)}/side-chats`;
   const refresh = () => {
     setRefreshing(true);
-    return api<SideChat[]>(`sessions/${encodeURIComponent(parent)}/side-chats`)
+    return api<SideChat[]>(listPath)
       .then((xs) => {
         setList(xs);
-        if (!selected)
-          setSelected(xs.find((x) => !terminal(x.status))?.id ?? "");
+        if (!selected) setSelected(liveSide(xs)?.id ?? xs[0]?.id ?? "");
       })
       .finally(() => setRefreshing(false));
   };
   const create = () => {
-    api<SideChat>(`sessions/${encodeURIComponent(parent)}/side-chats`, "POST")
+    api<SideChat>(listPath, "POST")
       .then((x) => {
         setList((xs) => [x, ...xs.filter((v) => v.id !== x.id)]);
         setSelected(x.id);
@@ -74,45 +95,41 @@ export function SidePanel({
   };
   useEffect(() => {
     let live = true;
-    api<SideChat[]>(`sessions/${encodeURIComponent(parent)}/side-chats`)
+    api<SideChat[]>(listPath)
       .then((xs) => {
-        if (live) {
-          setList(xs);
-          setSelected(focus ?? xs.find((x) => !terminal(x.status))?.id ?? "");
-        }
+        if (!live) return;
+        setList(xs);
+        // The live one, else the newest record (one just closed).
+        setSelected(focus ?? liveSide(xs)?.id ?? xs[0]?.id ?? "");
       })
       .catch(report);
     return () => {
       live = false;
     };
   }, [parent, focus]);
-  const closePanel = () => {
-    const active = list.find((x) => x.id === selected);
-    if (active && !terminal(active.status)) setAsk(true);
-    else onDismiss();
-  };
+  const live = liveSide(list);
+  useEffect(() => onLive(live?.status ?? null), [live?.status]);
+  useEffect(() => () => onLive(null), []);
   useEffect(() => {
+    if (!open) return;
     const escape = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.isComposing || ask) return;
       event.preventDefault();
       event.stopPropagation();
-      closePanel();
+      onHide();
     };
     window.addEventListener("keydown", escape, true);
     return () => window.removeEventListener("keydown", escape, true);
-  }, [ask, list, selected]);
+  }, [open, ask]);
+  const current = list.find((x) => x.id === selected);
+  const closable =
+    !!current && !terminal(current.status) && current.status !== "closing";
   return (
     <aside
-      className="side-chat"
+      className={"side-chat" + (open ? "" : " hidden")}
       role="dialog"
       aria-label="Side chat"
-      onKeyDown={(e) => {
-        if (e.key === "Escape") {
-          e.preventDefault();
-          e.stopPropagation();
-          closePanel();
-        }
-      }}
+      aria-hidden={!open}
     >
       <header className="side-chat-header">
         <MessagesSquare size={15} aria-hidden />
@@ -121,7 +138,10 @@ export function SidePanel({
           variant="ghost"
           size="icon"
           aria-label="New side chat"
-          title="New side chat"
+          title={
+            live ? "Close the live side chat to start another" : "New side chat"
+          }
+          disabled={!!live}
           onClick={create}
         >
           <Plus size={17} />
@@ -136,14 +156,25 @@ export function SidePanel({
         >
           <RefreshCw size={15} className={refreshing ? "spin" : undefined} />
         </Button>
+        {closable && (
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Close side chat"
+            title="Close side chat and release it…"
+            onClick={() => setAsk(true)}
+          >
+            <X size={17} />
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="icon"
-          aria-label="Close side chat"
-          title="Close side chat (Esc)"
-          onClick={closePanel}
+          aria-label="Hide side chat"
+          title="Hide (Esc) — it keeps going"
+          onClick={onHide}
         >
-          <X size={17} />
+          <ChevronsRight size={17} />
         </Button>
       </header>
       <div className="side-chat-nav">
@@ -152,11 +183,11 @@ export function SidePanel({
           value={selected}
           onChange={(e) => setSelected(e.target.value)}
         >
-          <option value="">History</option>
+          {!list.length && <option value="">No side chats yet</option>}
           {list.map((x) => (
             <option value={x.id} key={x.id}>
-              {new Date(x.created).toLocaleString()} ·{" "}
-              {statusText[x.status] ?? x.status}
+              {terminal(x.status) ? "Read-only" : "Live"} ·{" "}
+              {new Date(x.created).toLocaleString()}
             </option>
           ))}
         </select>
@@ -172,10 +203,6 @@ export function SidePanel({
           id={selected}
           ask={ask}
           setAsk={setAsk}
-          onClosed={() => {
-            setSelected("");
-            onDismiss();
-          }}
           onStatus={(x) =>
             setList((xs) => xs.map((v) => (v.id === x.id ? x : v)))
           }
@@ -183,23 +210,26 @@ export function SidePanel({
       ) : (
         <div className="artifact-empty side-chat-empty">
           <MessagesSquare size={28} />
-          <p>Ask alongside the main task, or open a read-only record.</p>
+          <p>Ask alongside the main task without interrupting it.</p>
+          <Button variant="outline" size="sm" onClick={create}>
+            <Plus size={14} />
+            New side chat
+          </Button>
         </div>
       )}
     </aside>
   );
 }
+
 function SideView({
   id,
   ask,
   setAsk,
-  onClosed,
   onStatus,
 }: {
   id: string;
   ask: boolean;
   setAsk: (v: boolean) => void;
-  onClosed: () => void;
   onStatus: (v: SideChat) => void;
 }) {
   const [side, setSide] = useState<SideChat>();
@@ -208,9 +238,12 @@ function SideView({
   const [before, setBefore] = useState(0);
   const [text, setText] = useState("");
   const [error, setError] = useState("");
-  const [sending, setSending] = useState(false);
-  const [requestID, setRequestID] = useState(randomUUID);
-  const [requestedClose, setRequestedClose] = useState(false);
+  // A message sent from here, shown until the server's copy arrives.
+  const [sending, setSending] = useState<{
+    text: string;
+    at: number;
+    from: number;
+  } | null>(null);
   const report = (e: unknown) =>
     setError(e instanceof Error ? e.message : String(e));
   useEffect(() => {
@@ -295,33 +328,46 @@ function SideView({
     };
   }, [id]);
   useEffect(() => {
-    if (requestedClose && side?.status === "closed") onClosed();
-  }, [side?.status, requestedClose]);
+    if (sending && echoed(state, sending.from, sending.text)) setSending(null);
+  }, [state, sending]);
+  const shown = useMemo(
+    () =>
+      sending
+        ? withSending(state, sending.text, "sending:" + sending.at)
+        : state,
+    [state, sending],
+  );
   const close = async () => {
     setAsk(false);
-    setRequestedClose(true);
     try {
       await api(`${path(id)}/close`, "POST", { confirmed: true });
-      setSide((v) => (v ? { ...v, status: "closing" } : v));
+      // The stream may already have said it is closed (it closes at once
+      // when no engine runs): never go back to closing from there.
+      setSide((v) =>
+        v && !terminal(v.status) ? { ...v, status: "closing" } : v,
+      );
     } catch (e) {
-      setRequestedClose(false);
       report(e);
     }
   };
+  const ready = side?.status === "idle" && !sending;
   const send = async () => {
-    if (!text.trim() || sending) return;
-    setSending(true);
+    if (!text.trim() || !ready) return;
+    const message = { text, at: Date.now(), from: state.keys.length };
+    setSending(message);
+    setText("");
     setError("");
     try {
       await api(`${path(id)}/send`, "POST", { text, requestId: randomUUID() });
-      setText("");
-      setRequestID(randomUUID());
     } catch (e) {
+      // Not sent: the text goes back to the box.
+      setSending(null);
+      setText((t) => t || message.text);
       report(e);
-    } finally {
-      setSending(false);
     }
   };
+  const running = side?.status === "running";
+  const agent = side?.agent ?? "claude";
   return (
     <>
       {side && (
@@ -329,9 +375,7 @@ function SideView({
           <span className={"status-pill " + pill(side.status)}>
             {statusText[side.status] ?? side.status}
           </span>
-          <span>
-            {terminal(side.status) ? "Read-only record" : "Main task continues"}
-          </span>
+          {terminal(side.status) && <span>Read-only record</span>}
         </div>
       )}
       {(error || side?.error) && (
@@ -340,7 +384,7 @@ function SideView({
         </div>
       )}
       <Timeline
-        state={state}
+        state={shown}
         verbose={false}
         hasMore={before > 0}
         loadingEarlier={false}
@@ -380,6 +424,35 @@ function SideView({
             ))}
           </div>
         )}
+      {(running || sending || side?.status === "closing") && (
+        <div className="side-chat-working">
+          <StatusLine
+            sessionId={id}
+            status={
+              side?.status === "closing"
+                ? "stopping"
+                : side?.phase === "waking" || !running
+                  ? "starting"
+                  : "running"
+            }
+            startedAt={
+              side?.since ? Date.parse(side.since) : (sending?.at ?? null)
+            }
+            verb={
+              side?.status === "closing"
+                ? "Closing"
+                : running
+                  ? sideVerb(agent, side?.phase)
+                  : "Sending"
+            }
+            hint={
+              side?.status === "closing"
+                ? "releasing its resources"
+                : "esc hides, it keeps going"
+            }
+          />
+        </div>
+      )}
       {side?.status === "cleanup_failed" ? (
         <Button
           variant="outline"
@@ -392,7 +465,8 @@ function SideView({
         </Button>
       ) : (
         side &&
-        !terminal(side.status) && (
+        !terminal(side.status) &&
+        side.status !== "closing" && (
           <div className="side-chat-compose">
             <form
               className="composer"
@@ -403,12 +477,13 @@ function SideView({
             >
               <textarea
                 aria-label="Side question"
-                placeholder="Ask a side question…"
+                placeholder={
+                  ready
+                    ? "Ask a side question…"
+                    : "Write your next question; send it once this answer is in…"
+                }
                 value={text}
-                onChange={(e) => {
-                  setText(e.target.value);
-                  setRequestID(randomUUID());
-                }}
+                onChange={(e) => setText(e.target.value)}
                 onKeyDown={(e) => {
                   // Same keys as the main composer: Enter sends.
                   if (newlineKey(e)) return;
@@ -417,7 +492,6 @@ function SideView({
                     void send();
                   }
                 }}
-                disabled={side.status !== "idle" || sending}
               />
               <div className="composer-bottom">
                 <div className="composer-actions">
@@ -426,15 +500,17 @@ function SideView({
                     type="submit"
                     className="composer-send"
                     aria-label="Send side question"
-                    title="Send (Enter)"
-                    disabled={side.status !== "idle" || sending || !text.trim()}
+                    title={ready ? "Send (Enter)" : "Wait for the answer"}
+                    disabled={!ready || !text.trim()}
                   >
                     <ArrowUp size={16} />
                   </Button>
                 </div>
               </div>
             </form>
-            <div className="composer-hint">↵ send · ⇧↵ / Alt↵ new line</div>
+            <div className="composer-hint">
+              ↵ send · ⇧↵ / Alt↵ new line · esc hide
+            </div>
           </div>
         )
       )}
@@ -444,8 +520,9 @@ function SideView({
             <h2>Close side chat?</h2>
           </DialogTitle>
           <p>
-            Stop this side chat and release its resources? Its transcript will
-            remain available as read-only history. The main chat will continue.
+            Stop this side chat and release its resources? Its transcript stays
+            here as a read-only record. To keep it going, hide the panel
+            instead. The main chat is not affected.
           </p>
           {text && <p>The unsent draft will be discarded.</p>}
           <div className="confirm-actions">

@@ -20,6 +20,10 @@ type SideChat struct {
 	Status  string `json:"status"`
 	Created string `json:"created"`
 	Error   string `json:"error,omitempty"`
+	// While running: when the question was sent, and what it waits on,
+	// "waking" (the parent engine starts) or "answering".
+	Since string `json:"since,omitempty"`
+	Phase string `json:"phase,omitempty"`
 }
 type sideRuntime struct {
 	SideChat
@@ -36,6 +40,9 @@ type sideRuntime struct {
 }
 
 func (m *Manager) saveSide(sc *sideRuntime) {
+	if sc.Status != "running" {
+		sc.Since, sc.Phase = "", ""
+	}
 	b, _ := json.Marshal(sc.SideChat)
 	if _, err := m.store.db.Exec(`INSERT INTO side_chats VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET parent=excluded.parent,data=excluded.data`, sc.ID, sc.Parent, string(b)); err != nil {
 		sc.Error = err.Error()
@@ -183,6 +190,11 @@ func (m *Manager) SendSide(id, text, requestID string) error {
 	sc.cancel = cancel
 	sc.done = make(chan struct{})
 	sc.Status = "running"
+	sc.Since = now3339()
+	sc.Phase = "answering"
+	if r := m.find(sc.Parent); r == nil || !r.ready || r.proc == nil {
+		sc.Phase = "waking"
+	}
 	sc.sending = true
 	sc.request = ""
 	sc.Error = ""
@@ -225,6 +237,10 @@ func (m *Manager) runSide(ctx context.Context, sc *sideRuntime, text string) err
 		r := m.find(sc.Parent)
 		ready := r != nil && r.ready && r.proc != nil
 		if ready {
+			if sc.Status == "running" && sc.Phase != "answering" {
+				sc.Phase = "answering"
+				m.saveSide(sc)
+			}
 			sc.generation = r.generation
 			sc.options = m.options(r.session.ID)
 			if sc.options.Model == "" {
@@ -708,12 +724,15 @@ func (s *Server) sideStream(w http.ResponseWriter, r *http.Request, id string) {
 	if h := r.Header.Get("Last-Event-ID"); h != "" {
 		after, _ = strconv.ParseInt(h, 10, 64)
 	}
-	tick := time.NewTicker(time.Second)
+	// Woken by any change, with a keepalive while nothing happens.
+	tick := time.NewTicker(15 * time.Second)
 	defer tick.Stop()
+	sent := ""
 	for {
 		if !s.authorized(r) {
 			return
 		}
+		changed := s.Manager.changes.C()
 		rows, err := s.Manager.store.db.Query(`SELECT seq,kind,data,time FROM side_events WHERE session=? AND seq>? ORDER BY seq LIMIT 200`, id, after)
 		if err != nil {
 			return
@@ -738,9 +757,11 @@ func (s *Server) sideStream(w http.ResponseWriter, r *http.Request, id string) {
 		if err != nil {
 			return
 		}
-		b, _ := json.Marshal(sc)
-		if _, err = fmt.Fprintf(w, "event: status\ndata: %s\n\n", b); err != nil {
-			return
+		if b, _ := json.Marshal(sc); string(b) != sent {
+			sent = string(b)
+			if _, err = fmt.Fprintf(w, "event: status\ndata: %s\n\n", b); err != nil {
+				return
+			}
 		}
 		f.Flush()
 		if sc.Status == "closed" || sc.Status == "interrupted" {
@@ -752,7 +773,13 @@ func (s *Server) sideStream(w http.ResponseWriter, r *http.Request, id string) {
 		select {
 		case <-r.Context().Done():
 			return
+		case <-changed:
 		case <-tick.C:
+			// Keepalive: a comment the page ignores.
+			if _, err = fmt.Fprint(w, ": ping\n\n"); err != nil {
+				return
+			}
+			f.Flush()
 		}
 	}
 }

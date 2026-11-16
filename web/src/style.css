@@ -5682,6 +5682,34 @@ body.resizing iframe {
   align-self: flex-start;
   margin: 8px 16px 12px;
 }
+/* Hidden, not closed: it stays mounted and keeps its stream. */
+.side-chat.hidden {
+  display: none;
+}
+.side-chat-working {
+  flex-shrink: 0;
+  padding: 4px 16px 0;
+}
+.side-chat-working .status-line {
+  margin: 0;
+}
+.side-chat-empty button {
+  margin-top: 4px;
+}
+/* On the header's side chat icon while the panel is hidden: a live side
+   chat (idle), or one working on an answer. */
+.toggle-dot.side {
+  background: var(--success);
+}
+.toggle-dot.side.running {
+  background: var(--warning);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .toggle-dot.side.running {
+    animation: none;
+  }
+}
 @media (max-width: 850px) {
   .side-chat {
     width: 100vw;

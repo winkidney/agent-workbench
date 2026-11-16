@@ -209,8 +209,11 @@ export default function App() {
   const background = useBackground(current?.id);
   // Asked before putting an engine with background work to sleep.
   const [sleepAsk, setSleepAsk] = useState(false);
-  const [sidePanel, setSidePanel] = useState(false);
+  // Per session: whether its side chat panel is shown (hidden keeps it
+  // going), the side chat a command asked to show, and the live one's status.
+  const [sideOpen, setSideOpen] = useState<Record<string, boolean>>({});
   const [sideFocus, setSideFocus] = useState<Record<string, string>>({});
+  const [sideLive, setSideLive] = useState<Record<string, string | null>>({});
   const transcript = useTranscript(
     current
       ? { id: current.id, agent: current.agent, status: current.status }
@@ -734,7 +737,7 @@ export default function App() {
       else await refresh();
       if (res.sideChat) {
         setSideFocus((xs) => ({ ...xs, [current.id]: res.sideChat! }));
-        setSidePanel(true);
+        setSideOpen((xs) => ({ ...xs, [current.id]: true }));
       }
       // /fork opens the new session.
       if (res.session) selectSession(res.session);
@@ -1175,17 +1178,37 @@ export default function App() {
                 )}
               </div>
             </details>
-            {current && (
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="Side chat"
-                title="Side chat"
-                onClick={() => setSidePanel(true)}
-              >
-                <MessagesSquare size={17} />
-              </Button>
-            )}
+            {current &&
+              (() => {
+                const shown = !!sideOpen[current.id];
+                const live = sideLive[current.id];
+                const label = live
+                  ? `Side chat (${live === "running" ? "working" : "open"})`
+                  : "Side chat";
+                return (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={(shown ? "Hide " : "Show ") + label}
+                    aria-pressed={shown}
+                    title={(shown ? "Hide " : "Show ") + label}
+                    onClick={() =>
+                      setSideOpen((xs) => ({ ...xs, [current.id]: !shown }))
+                    }
+                  >
+                    <MessagesSquare size={17} />
+                    {!shown && live && (
+                      <span
+                        className={
+                          "toggle-dot side" +
+                          (live === "running" ? " running" : "")
+                        }
+                        aria-hidden
+                      />
+                    )}
+                  </Button>
+                );
+              })()}
             <Button
               variant="ghost"
               size="icon"
@@ -1573,7 +1596,7 @@ export default function App() {
             }}
           />
         )}
-        {sidePanel && current && (
+        {current && (
           <EnvContext.Provider
             value={{
               ...env,
@@ -1586,14 +1609,16 @@ export default function App() {
             <SidePanel
               key={current.id}
               parent={current.id}
+              open={!!sideOpen[current.id]}
               focus={sideFocus[current.id]}
-              onDismiss={() => {
-                setSidePanel(false);
-                setSideFocus((xs) => {
-                  const next = { ...xs };
-                  delete next[current.id];
-                  return next;
-                });
+              onHide={() =>
+                setSideOpen((xs) => ({ ...xs, [current.id]: false }))
+              }
+              onLive={(status) => {
+                const id = current.id;
+                setSideLive((xs) =>
+                  xs[id] === status ? xs : { ...xs, [id]: status },
+                );
               }}
             />
           </EnvContext.Provider>

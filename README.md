@@ -35,7 +35,7 @@ Agent Workbench runs on your machine next to `claude` and `codex` and gives both
 - Subagents (Claude and Codex) show as one row with the tools they run under it, the same live and after a reload, and link to their own transcripts; their permission requests say which subagent asks.
 
 **Commands and skills**
-- Side chats: Codex `/side` (alias `/btw`) and Claude `/btw` run alongside the main task. Closing asks for confirmation, stops side work, and releases its context. Read-only records remain under **Side chat**. Switching sessions or disconnecting keeps an open side chat alive; its parent engine stays awake until you close it.
+- Side chats: Codex `/side` (alias `/btw`) and Claude `/btw` run alongside the main task. Esc or the hide button puts the panel away and the side chat keeps going; a dot on the header's side chat button shows it is live, pulsing while it works. A running question shows what it waits on and for how long. Closing asks for confirmation, stops side work, releases its context, and keeps the read-only record in view. Switching sessions or disconnecting keeps an open side chat alive; its parent engine stays awake until you close it.
 - `/` commands and `$` skills with completion: Claude Code's own commands, and the Codex TUI commands that make sense outside a terminal (`/compact`, `/review`, `/goal`, `/fork`, `/mcp`, `/diff`, …).
 - `/goal` for both agents, with a goal bar above the composer: status, time and tokens, and pause, resume, edit and stop.
 - `/plan` and `/default` switch plan mode in both agents.

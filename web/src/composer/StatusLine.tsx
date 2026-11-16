@@ -71,12 +71,15 @@ export function StatusLine({
   status,
   startedAt,
   verb,
+  hint,
   onBackground,
 }: {
   sessionId: string;
   status: string;
   startedAt: number | null;
   verb: string;
+  // In place of the key hint ("esc to interrupt") where Esc does otherwise.
+  hint?: string;
   // Moves the command or subagent the turn waits on to the background.
   onBackground?: () => void;
 }) {
@@ -132,11 +135,12 @@ export function StatusLine({
     status === "running" && live.speed >= 1
       ? `~${live.speed.toFixed(0)} tok/s`
       : null,
-    status === "waiting"
-      ? "respond below"
-      : status === "external_running"
-        ? "in another client"
-        : "esc to interrupt",
+    hint ??
+      (status === "waiting"
+        ? "respond below"
+        : status === "external_running"
+          ? "in another client"
+          : "esc to interrupt"),
   ].filter(Boolean);
   return (
     <div className={"status-line " + status}>
