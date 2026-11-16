@@ -1568,7 +1568,7 @@ func (p *systemProcess) Busy() bool {
 		return true
 	}
 	for id := range now {
-		if !p.baseline[id] {
+		if pid, _ := strconv.Atoi(id); !p.baseline[id] && !engineHelper(p.main, pid) {
 			return true
 		}
 	}

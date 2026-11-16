@@ -531,7 +531,9 @@ export function applyCodex(
             : status === "failed"
               ? "failed"
               : "said";
-      const message = [text(run.statusMessage), ...said].filter(Boolean)[0];
+      // What the hook said explains it; its status message ("Loading …")
+      // only names what it was doing.
+      const message = [...said, text(run.statusMessage)].filter(Boolean)[0];
       d.upsert({
         key: "hook:" + (text(run.id) || ctx.seq),
         kind: "notice",

@@ -18,6 +18,12 @@ func processParent(pid int) int {
 	return ppid
 }
 
+// processExe is the program pid runs, or "" when it cannot be read.
+func processExe(pid int) string {
+	exe, _ := os.Readlink(fmt.Sprintf("/proc/%d/exe", pid))
+	return exe
+}
+
 // processCommand is pid's command line, shortened.
 func processCommand(pid int) string {
 	b, err := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))

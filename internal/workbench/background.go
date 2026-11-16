@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -406,6 +407,19 @@ type extraLister interface {
 // settled is how long a process must have run to count: the CLIs start short
 // helpers of their own (ps, shell snapshots) all the time.
 var settled = 10 * time.Second
+
+// engineHelper is whether pid runs another program shipped next to the
+// engine's own (root's) binary: Codex starts codex-code-mode-host with its
+// first command, after the engine became ready. It is part of the engine,
+// not work the engine left running, so it does not keep the engine awake.
+// The engine's binary run again is work like any other command.
+func engineHelper(root, pid int) bool {
+	if root <= 0 {
+		return false
+	}
+	own, exe := processExe(root), processExe(pid)
+	return own != "" && exe != "" && exe != own && filepath.Dir(exe) == filepath.Dir(own)
+}
 
 // descendsFrom is whether pid's ancestry reaches root.
 func descendsFrom(pid, root int) bool {

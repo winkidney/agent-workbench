@@ -408,12 +408,33 @@ describe("Codex records", () => {
           },
         },
       },
+      {
+        method: "hook/completed",
+        params: {
+          run: {
+            id: "h3",
+            eventName: "sessionStart",
+            status: "failed",
+            statusMessage: "Loading review mode...",
+            entries: [
+              {
+                kind: "error",
+                text: "plugin contents changed; hook approval required",
+              },
+            ],
+          },
+        },
+      },
     );
     expect(s.blocks.get("call1")!.tool!.progress).toBe(
       "Indexed 40 of 120 pages",
     );
     expect(notices(s)).toEqual([
       ["The preToolUse hook blocked this step: no deploys on Friday", "warn"],
+      [
+        "The sessionStart hook failed: plugin contents changed; hook approval required",
+        "warn",
+      ],
     ]);
   });
 });

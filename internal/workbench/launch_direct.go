@@ -19,6 +19,8 @@ type directProcess struct {
 	group    *procGroup
 	done     chan struct{}
 	baseline map[int]bool
+	// leader is the engine's own process, for engineHelper.
+	leader int
 }
 
 func DirectLaunch(s Session, onMessage func(map[string]any), onExit func(error)) (Process, error) {
@@ -49,7 +51,7 @@ func startDirect(cmd *exec.Cmd, cwd string, onMessage func(map[string]any), onEx
 	if err != nil {
 		return nil, err
 	}
-	p := &directProcess{stdin: in, group: group, done: make(chan struct{})}
+	p := &directProcess{stdin: in, group: group, done: make(chan struct{}), leader: cmd.Process.Pid}
 	abort := func() { group.Kill(group.PIDs()) }
 	exited := func() {
 		// Like a unit stopping when its main process exits: what the
@@ -115,7 +117,7 @@ func (p *directProcess) Busy() bool {
 		return true
 	}
 	for pid := range now {
-		if !p.baseline[pid] {
+		if !p.baseline[pid] && !engineHelper(p.leader, pid) {
 			return true
 		}
 	}

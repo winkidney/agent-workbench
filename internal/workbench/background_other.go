@@ -8,3 +8,4 @@ import "time"
 func processParent(int) int                { return 0 }
 func processCommand(int) string            { return "" }
 func processAge(int) (time.Duration, bool) { return 0, false }
+func processExe(int) string                { return "" }
