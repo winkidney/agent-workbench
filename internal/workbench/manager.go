@@ -281,6 +281,21 @@ func (m *Manager) Start(id string) error {
 }
 func (m *Manager) Send(id, text string) error { return m.SendWith(id, text, nil) }
 
+// errSessionBusy: a turn is running or a request waits for an answer, so a
+// message cannot start one now. Enqueue keeps such a message for later.
+var errSessionBusy = errors.New("session is busy or awaiting approval")
+
+// restingStatus is the status of a ready session that is not starting.
+func restingStatus(r *runtime) string {
+	switch {
+	case len(r.pending) > 0:
+		return "waiting"
+	case r.turn:
+		return "running"
+	}
+	return "idle"
+}
+
 // checkMessage: text, images (their upload ids), or both.
 func checkMessage(text string, images []string) error {
 	if len(text) > 1024*1024 || (strings.TrimSpace(text) == "" && len(images) == 0) {
@@ -328,6 +343,24 @@ func (m *Manager) SendWith(id, text string, images []string) error {
 			m.mu.Unlock()
 			return errors.New("agent exited during startup")
 		}
+		// Back to what the session is doing if the message is not sent after
+		// all: idle, or a turn the engine started itself.
+		revert := func() {
+			if r.phase == "mcp" {
+				r.phase = ""
+				if r.proc != nil && r.session.Status == "starting" {
+					m.status(r, restingStatus(r))
+				}
+			}
+		}
+		// Woken, Codex may start a turn of its own as soon as the thread is
+		// ready (it resumes an active goal). The session is busy then; its
+		// status stays as that turn set it.
+		if r.ready && (r.turn || len(r.pending) > 0) {
+			revert()
+			m.mu.Unlock()
+			return errSessionBusy
+		}
 		settled := mcpSettled(r)
 		if r.ready && !settled {
 			// Codex starts its MCP servers after the thread is ready. Show
@@ -341,15 +374,6 @@ func (m *Manager) SendWith(id, text string, images []string) error {
 			settled = time.Since(mcpSince) > mcpWait
 		}
 		if r.ready && settled {
-			// Back to idle if the message is not sent after all.
-			revert := func() {
-				if r.phase == "mcp" {
-					r.phase = ""
-					if r.proc != nil && r.session.Status == "starting" {
-						m.status(r, "idle")
-					}
-				}
-			}
 			if r.session.Status == "error" {
 				m.mu.Unlock()
 				return errors.New("agent reported an error; end the session before retrying")
@@ -362,7 +386,7 @@ func (m *Manager) SendWith(id, text string, images []string) error {
 			if r.turn || r.configuring || len(r.pending) > 0 {
 				revert()
 				m.mu.Unlock()
-				return errors.New("session is busy or awaiting approval")
+				return errSessionBusy
 			}
 			r.configuring = true
 			m.mu.Unlock()
@@ -381,7 +405,7 @@ func (m *Manager) SendWith(id, text string, images []string) error {
 			if r.turn || len(r.pending) > 0 {
 				revert()
 				m.mu.Unlock()
-				return errors.New("session is busy")
+				return errSessionBusy
 			}
 			userActed(r)
 			m.beginTurn(r)

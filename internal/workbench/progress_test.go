@@ -146,3 +146,69 @@ func TestSendShowsMcpStartupAndNeverFailsOnASlowServer(t *testing.T) {
 		t.Fatalf("stuck server: %v sent=%d", err, sent())
 	}
 }
+
+// Woken by a message, Codex resumes an active goal with a turn of its own
+// while its MCP servers still start. The session shows that turn running,
+// and the message waits in the queue instead of failing.
+func TestWakingIntoACodexGoalTurnKeepsItRunningAndQueuesTheMessage(t *testing.T) {
+	m, p := fixture(t)
+	s, _ := m.Create("codex", t.TempDir(), "goal")
+	_ = m.Start(s.ID)
+	r := m.sessions[s.ID]
+	gen := r.generation
+	m.receive(s.ID, gen, map[string]any{"id": "init", "result": map[string]any{}})
+	m.receive(s.ID, gen, map[string]any{"id": "thread", "result": map[string]any{"thread": map[string]any{"id": "n"}}})
+	id := r.session.ID
+	// Asleep, as after a restart.
+	r.last = time.Now().Add(-time.Second)
+	m.Sweep()
+	if r.proc != nil || r.session.Status != "sleeping" {
+		t.Fatalf("not asleep: %s", r.session.Status)
+	}
+	old := mcpWait
+	mcpWait = 200 * time.Millisecond
+	t.Cleanup(func() { mcpWait = old })
+
+	type result struct {
+		queued bool
+		err    error
+	}
+	done := make(chan result, 1)
+	go func() {
+		queued, err := m.Enqueue(id, "hello")
+		done <- result{queued, err}
+	}()
+	locked := func(f func() bool) bool {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		return f()
+	}
+	for deadline := time.Now().Add(2 * time.Second); !locked(func() bool { return r.proc != nil && r.generation != gen }); time.Sleep(time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("the message did not wake the engine")
+		}
+	}
+	gen = r.generation
+	m.receive(id, gen, map[string]any{"id": "init", "result": map[string]any{}})
+	m.receive(id, gen, map[string]any{"id": "thread", "result": map[string]any{"thread": map[string]any{"id": "n"}}})
+	m.receive(id, gen, map[string]any{"method": "mcpServer/startupStatus/updated", "params": map[string]any{"name": "slow", "status": "starting"}})
+	m.receive(id, gen, map[string]any{"method": "turn/started", "params": map[string]any{"turn": map[string]any{"id": "goal-turn"}}})
+
+	got := <-done
+	if got.err != nil || !got.queued {
+		t.Fatalf("message: queued=%v err=%v", got.queued, got.err)
+	}
+	m.mu.Lock()
+	status, queue := r.session.Status, len(r.queue)
+	m.mu.Unlock()
+	if status != "running" || queue != 1 {
+		t.Fatalf("status=%s queue=%d", status, queue)
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, in := range p.in {
+		if in["method"] == "turn/start" {
+			t.Fatal("started a turn while Codex ran its own")
+		}
+	}
+}

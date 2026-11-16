@@ -36,7 +36,17 @@ func (m *Manager) EnqueueWith(id, text string, images []string) (bool, error) {
 	busy := r != nil && r.proc != nil && (r.turn || r.configuring || len(r.pending) > 0 || (len(r.queue) > 0 && !r.queuePaused))
 	if !busy {
 		m.mu.Unlock()
-		return false, m.SendWith(id, text, images)
+		err := m.SendWith(id, text, images)
+		if !errors.Is(err, errSessionBusy) {
+			return false, err
+		}
+		// It became busy while waking: Codex resumed an active goal with a
+		// turn of its own. The message waits for that turn like any other.
+		m.mu.Lock()
+		if r = m.find(id); r == nil {
+			m.mu.Unlock()
+			return false, err
+		}
 	}
 	defer m.mu.Unlock()
 	if len(r.queue) >= queueLimit {
