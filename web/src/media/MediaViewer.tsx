@@ -49,7 +49,7 @@ import {
   type Mark,
   type Tool,
 } from "./markup";
-import { MarkLayer } from "./Markup";
+import { MarkLayer } from "./MarkLayer";
 
 const TOOLS: { tool: Tool; label: string; Icon: typeof Hand }[] = [
   { tool: "move", label: "Move", Icon: Hand },
