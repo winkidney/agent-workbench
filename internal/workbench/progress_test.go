@@ -190,8 +190,11 @@ func TestWakingIntoACodexGoalTurnKeepsItRunningAndQueuesTheMessage(t *testing.T)
 	}
 	gen = r.generation
 	m.receive(id, gen, map[string]any{"id": "init", "result": map[string]any{}})
-	m.receive(id, gen, map[string]any{"id": "thread", "result": map[string]any{"thread": map[string]any{"id": "n"}}})
+	// The MCP server is starting before the session is ready, so the message
+	// cannot slip in between: it waits for MCP, and Codex's goal turn starts
+	// meanwhile.
 	m.receive(id, gen, map[string]any{"method": "mcpServer/startupStatus/updated", "params": map[string]any{"name": "slow", "status": "starting"}})
+	m.receive(id, gen, map[string]any{"id": "thread", "result": map[string]any{"thread": map[string]any{"id": "n"}}})
 	m.receive(id, gen, map[string]any{"method": "turn/started", "params": map[string]any{"turn": map[string]any{"id": "goal-turn"}}})
 
 	got := <-done
