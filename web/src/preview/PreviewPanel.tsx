@@ -36,6 +36,7 @@ import {
 } from "./tabs";
 import type { PreviewTabsApi } from "./usePreviewTabs";
 import { TextEditor } from "./TextEditor";
+import { TextView } from "./TextView";
 
 const VIEWPORT_KEY = "workbench-preview-viewport";
 
@@ -250,14 +251,21 @@ function TabView({
     };
   }, [session, load]);
 
+  // A text file is shown here, from its text, not as a page.
+  const asText =
+    view.kind === "page" &&
+    tab.kind === "file" &&
+    !!tab.path &&
+    !!view.preview.text &&
+    !/\.(html?|svg|xhtml)$/i.test(tab.path);
   // A page on its preview origin is signed in by posting its grant into
   // the frame.
   useEffect(() => {
     if (view.kind !== "page") return;
-    setFrameBusy(view.mode !== "unavailable");
+    setFrameBusy(view.mode !== "unavailable" && !asText);
     // A page that never says it loaded stops showing as loading.
     const t = window.setTimeout(() => setFrameBusy(false), 20000);
-    if (view.mode === "origin")
+    if (view.mode === "origin" && !asText)
       submitGrant(view.preview, view.grant, frameName);
     return () => clearTimeout(t);
   }, [view]);
@@ -306,7 +314,7 @@ function TabView({
     }
   };
   const width = VIEWPORTS.find((v) => v.id === viewport)!.width;
-  const scale = scaleFor(size.w, width);
+  const scale = asText ? 1 : scaleFor(size.w, width);
   const changed =
     tab.kind === "file" &&
     !!shownStamp &&
@@ -425,19 +433,21 @@ function TabView({
             <span>Edit</span>
           </Button>
         )}
-        <select
-          aria-label="Page width"
-          value={viewport}
-          onChange={(e) => pickViewport(e.target.value as ViewportId)}
-        >
-          {VIEWPORTS.map((v) => (
-            <option key={v.id} value={v.id}>
-              {v.width
-                ? `${v.label} ${v.width}${v.id === viewport && scale < 1 ? ` · ${Math.round(scale * 100)}%` : ""}`
-                : v.label}
-            </option>
-          ))}
-        </select>
+        {!asText && (
+          <select
+            aria-label="Page width"
+            value={viewport}
+            onChange={(e) => pickViewport(e.target.value as ViewportId)}
+          >
+            {VIEWPORTS.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.width
+                  ? `${v.label} ${v.width}${v.id === viewport && scale < 1 ? ` · ${Math.round(scale * 100)}%` : ""}`
+                  : v.label}
+              </option>
+            ))}
+          </select>
+        )}
         <Button
           variant="ghost"
           size="icon"
@@ -512,13 +522,21 @@ function TabView({
             </Button>
           </div>
         )}
-        {page && page.mode === "unavailable" && (
+        {page && page.mode === "unavailable" && !asText && (
           <p className="preview-note">
             Web services open only in a browser on the workbench computer, at{" "}
             {canonicalAddress(page.preview)}. Files open anywhere.
           </p>
         )}
-        {page && page.mode !== "unavailable" && (
+        {page && asText && tab.path && (
+          <TextView
+            key={load}
+            session={session}
+            path={tab.path}
+            onError={(message) => setView({ kind: "error", message })}
+          />
+        )}
+        {page && page.mode !== "unavailable" && !asText && (
           <iframe
             key={`${frameName}`}
             title="Preview"

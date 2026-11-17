@@ -209,6 +209,7 @@ const env = (listed: string[]): Env => ({
   openPath: () => {},
   thumb: () => null,
   reveal: () => {},
+  locate: () => {},
   view: () => {},
   subagentSession: ({ agentId, threadId }) => {
     const id = agentId ? `claude:s1:agent-${agentId}` : `codex:${threadId}`;

@@ -924,6 +924,28 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 		s.media(w, r)
 	case path == "text" && (r.Method == "GET" || r.Method == "PUT"):
 		s.textFile(w, r)
+	case path == "resolve" && r.Method == "GET":
+		// Where a path a session wrote is, relative to its directory, so the
+		// page can show it in its file list.
+		q := r.URL.Query()
+		if err := m.Attach(q.Get("session")); err != nil {
+			bad(w, err)
+			return
+		}
+		full, rel, err := m.ResolvePath(q.Get("session"), q.Get("base"), q.Get("path"))
+		if errors.Is(err, os.ErrNotExist) {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		} else if err != nil {
+			bad(w, err)
+			return
+		}
+		info, err := os.Stat(full)
+		if err != nil {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		writeJSON(w, map[string]any{"path": filepath.ToSlash(rel), "directory": info.IsDir()})
 	case path == "files" && r.Method == "GET":
 		if err := m.Attach(r.URL.Query().Get("session")); err != nil {
 			bad(w, err)
@@ -1363,9 +1385,20 @@ func (s *Server) files(w http.ResponseWriter, r *http.Request) {
 		bad(w, err)
 		return
 	}
+	// show names an entry the page is pointing at: listed even when hidden
+	// (dot files, dependency folders) or past the first 1000.
+	show := r.URL.Query().Get("show")
 	out := []map[string]any{}
+	shown := false
 	for _, e := range entries {
-		if strings.HasPrefix(e.Name(), ".") || e.Name() == "node_modules" || e.Name() == "vendor" || e.Name() == "target" {
+		wanted := show != "" && e.Name() == show
+		if len(out) >= 1000 && !wanted {
+			if show == "" || shown {
+				break
+			}
+			continue // still looking for the one shown
+		}
+		if !wanted && (strings.HasPrefix(e.Name(), ".") || e.Name() == "node_modules" || e.Name() == "vendor" || e.Name() == "target") {
 			continue
 		}
 		if e.Type()&os.ModeSymlink != 0 {
@@ -1375,10 +1408,8 @@ func (s *Server) files(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			continue
 		}
+		shown = shown || wanted
 		out = append(out, map[string]any{"name": e.Name(), "path": filepath.ToSlash(filepath.Join(path, e.Name())), "directory": e.IsDir(), "size": info.Size()})
-		if len(out) == 1000 {
-			break
-		}
 	}
 	writeJSON(w, out)
 }

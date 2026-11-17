@@ -37,6 +37,7 @@ import { useAttention } from "./attention";
 import { SettingsDialog } from "./components/settings/SettingsDialog";
 import { LogoMark } from "./components/Logo";
 import { PreviewPanel } from "./preview/PreviewPanel";
+import { FileList, type Entry } from "./preview/FileList";
 import { mayLeave } from "./preview/unsaved";
 import {
   drifted,
@@ -78,8 +79,6 @@ import {
   Square,
   Moon,
   Play,
-  Folder,
-  File,
   X,
   Globe,
   PanelRightClose,
@@ -100,7 +99,6 @@ import { Input } from "./components/ui/input";
 import { Dialog, DialogContent, DialogTitle } from "./components/ui/dialog";
 
 type Event = WorkbenchEvent;
-type Entry = { name: string; path: string; directory: boolean; size: number };
 export default function App() {
   const [workspaces, setWorkspaces] = useState<string[]>([]);
   const [left, setLeft] = useState(
@@ -158,6 +156,9 @@ export default function App() {
     [composing, setComposing] = useState<{ cwd?: string } | null>(null),
     [entries, setEntries] = useState<Entry[]>([]),
     [path, setPath] = useState(""),
+    // The file list entry a link pointed at, relative to the session's
+    // directory; cleared when the list moves elsewhere.
+    [located, setLocated] = useState<string>(),
     [previews, setPreviews] = useState<Preview[]>([]),
     [serviceOpen, setServiceOpen] = useState(false),
     // The Codex session waiting for the user to confirm its deletion.
@@ -468,6 +469,7 @@ export default function App() {
   useEffect(() => {
     if (!paired || !active) return;
     setPath("");
+    setLocated(undefined);
     setExpanded(false);
   }, [active, paired]);
   // New outputs usually appear when a turn ends; refresh the file list then.
@@ -489,9 +491,7 @@ export default function App() {
   useEffect(() => {
     if (!paired || !active) return;
     let cancelled = false;
-    api<Entry[]>(
-      "files?session=" + active + "&path=" + encodeURIComponent(path),
-    )
+    listFiles(path)
       .then((v) => {
         if (!cancelled) setEntries(v);
       })
@@ -499,7 +499,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [active, path, paired, filesVersion]);
+  }, [active, path, paired, filesVersion, located]);
   const act = async (action: string, body?: unknown) => {
     setBusy(true);
     setError("");
@@ -640,6 +640,41 @@ export default function App() {
         if (r.native) return refresh();
       })
       .catch(catchError);
+  // A folder of the session's directory; the entry a link pointed at is
+  // listed even when the list would hide it.
+  const listFiles = (dir: string) => {
+    const name =
+      located && located.split("/").slice(0, -1).join("/") === dir
+        ? located.split("/").pop()
+        : undefined;
+    return api<Entry[]>(
+      "files?session=" +
+        active +
+        "&path=" +
+        encodeURIComponent(dir) +
+        (name ? "&show=" + encodeURIComponent(name) : ""),
+    );
+  };
+  const goTo = (dir: string) => {
+    setLocated(undefined);
+    setPath(dir);
+  };
+  // Shows a path a session wrote in the preview panel's file list.
+  const locate = (p: string, base?: string) =>
+    void api<{ path: string; directory: boolean }>(
+      `resolve?session=${encodeURIComponent(active)}&path=${encodeURIComponent(p)}` +
+        (base ? `&base=${encodeURIComponent(base)}` : ""),
+    )
+      .then((r) => {
+        if (previewTabs.state.active !== -1 && !mayLeave()) return;
+        setPanel(true);
+        previewTabs.show(-1);
+        setPath(r.path.split("/").slice(0, -1).join("/"));
+        setLocated(r.path);
+      })
+      .catch(catchError);
+  const locateRef = useRef(locate);
+  locateRef.current = locate;
   // Opens a file or service as the session's newest preview tab; the
   // panel shows at once that it is opening.
   const openPreview = (body: unknown, key = "open") =>
@@ -809,6 +844,7 @@ export default function App() {
               })
             : download(active, path, base)
         ).catch(catchError),
+      locate: (path, base) => locateRef.current(path, base),
       view: (items, index) => items.length && setViewer({ items, index }),
       subagentSession: ({ agentId, threadId }) => {
         const id =
@@ -1449,137 +1485,96 @@ export default function App() {
                 <Globe size={18} />
               </Button>
             </header>
-            <PreviewPanel
-              session={active}
-              tabs={previewTabs}
-              opening={working.has("open")}
-              expanded={expanded}
-              onExpand={setExpanded}
-              onError={catchError}
-              files={
-                <>
-                  <div className="file-path">
-                    <button
-                      onClick={() =>
-                        setPath(path.split("/").slice(0, -1).join("/"))
-                      }
-                    >
-                      ↑
-                    </button>
-                    <span>{path || "Working directory"}</span>
-                    <button
-                      aria-label="Refresh files"
-                      disabled={working.has("files")}
-                      onClick={() =>
+            {/* Markdown and text files shown here open links as the
+                conversation does. */}
+            <EnvContext.Provider value={env}>
+              <PreviewPanel
+                session={active}
+                tabs={previewTabs}
+                opening={working.has("open")}
+                expanded={expanded}
+                onExpand={setExpanded}
+                onError={catchError}
+                files={
+                  <>
+                    <FileList
+                      path={path}
+                      entries={entries}
+                      located={located}
+                      here={here}
+                      hasSession={!!current}
+                      refreshing={working.has("files")}
+                      onUp={() => goTo(path.split("/").slice(0, -1).join("/"))}
+                      onRefresh={() =>
                         void busyWhile("files", () =>
-                          api<Entry[]>(
-                            "files?session=" +
-                              active +
-                              "&path=" +
-                              encodeURIComponent(path),
-                          )
-                            .then(setEntries)
-                            .catch(catchError),
+                          listFiles(path).then(setEntries).catch(catchError),
                         )
                       }
-                    >
-                      <RefreshCw
-                        size={12}
-                        className={working.has("files") ? "spin" : undefined}
-                      />
-                    </button>
-                  </div>
-                  <div className="files">
-                    {entries.map((e) => (
-                      <button
-                        key={e.path}
-                        onClick={() => {
-                          if (e.directory) return setPath(e.path);
-                          // Images and videos of this folder form one gallery.
-                          const media = entries.filter(
-                            (x) => !x.directory && isMedia(x.path),
+                      onReveal={(e) => env.reveal(e.path)}
+                      onOpen={(e) => {
+                        if (e.directory) return goTo(e.path);
+                        // Images and videos of this folder form one gallery.
+                        const media = entries.filter(
+                          (x) => !x.directory && isMedia(x.path),
+                        );
+                        const at = media.findIndex((x) => x.path === e.path);
+                        if (at >= 0)
+                          return env.view(
+                            media.map((x) => pathItem(env, x.path)!),
+                            at,
                           );
-                          const at = media.findIndex((x) => x.path === e.path);
-                          if (at >= 0)
-                            return env.view(
-                              media.map((x) => pathItem(env, x.path)!),
-                              at,
-                            );
-                          // Its tab opens at once; it loads its page.
-                          previewTabs.open({
-                            kind: "file",
-                            path: e.path.replace(/^\//, ""),
-                          });
-                        }}
-                      >
-                        {e.directory ? (
-                          <Folder size={15} />
-                        ) : (
-                          <File size={15} />
-                        )}
-                        <span>{e.name}</span>
-                        {!e.directory && (
-                          <small>
-                            {e.size > 1048576
-                              ? (e.size / 1048576).toFixed(1) + " MB"
-                              : Math.ceil(e.size / 1024) + " KB"}
-                          </small>
-                        )}
-                      </button>
-                    ))}
-                    {!entries.length && (
-                      <div className="artifact-empty">
-                        <Folder size={28} />
-                        <p>
-                          {current
-                            ? "No files in this directory"
-                            : "Select a session to browse outputs"}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                  <div className="preview-services">
-                    {previews
-                      .filter((p) => p.session === active)
-                      .map((p) => (
-                        <div className="flex items-center gap-2" key={p.id}>
-                          <button
-                            className="truncate flex-1 text-left"
-                            onClick={() => previewTabs.open(tabFromPreview(p))}
-                          >
-                            {p.owned ? "●" : "○"}{" "}
-                            {p.entry === "/" ? "Web service" : p.entry}
-                          </button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            aria-label="Stop preview service"
-                            disabled={working.has("stop:" + p.id)}
-                            onClick={() =>
-                              void busyWhile("stop:" + p.id, () =>
-                                api("previews/" + p.id, "DELETE")
-                                  .then(() => refresh())
-                                  .catch(catchError),
-                              )
-                            }
-                          >
-                            {working.has("stop:" + p.id) ? (
-                              <RefreshCw size={13} className="spin" />
-                            ) : (
-                              <X size={13} />
-                            )}
-                          </Button>
-                        </div>
-                      ))}
-                  </div>
-                  <div className="artifact-foot">
-                    Images / Video / HTML / Dev servers
-                    <br />
-                    <span>Loaded on demand. Original files stay intact.</span>
-                  </div>
-                </>
-              }
-            />
+                        // Its tab opens at once; it loads its page.
+                        previewTabs.open({
+                          kind: "file",
+                          path: e.path.replace(/^\//, ""),
+                        });
+                      }}
+                    />
+                    <div className="preview-services">
+                      {previews
+                        .filter((p) => p.session === active)
+                        .map((p) => (
+                          <div className="flex items-center gap-2" key={p.id}>
+                            <button
+                              className="truncate flex-1 text-left"
+                              onClick={() =>
+                                previewTabs.open(tabFromPreview(p))
+                              }
+                            >
+                              {p.owned ? "●" : "○"}{" "}
+                              {p.entry === "/" ? "Web service" : p.entry}
+                            </button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              aria-label="Stop preview service"
+                              disabled={working.has("stop:" + p.id)}
+                              onClick={() =>
+                                void busyWhile("stop:" + p.id, () =>
+                                  api("previews/" + p.id, "DELETE")
+                                    .then(() => refresh())
+                                    .catch(catchError),
+                                )
+                              }
+                            >
+                              {working.has("stop:" + p.id) ? (
+                                <RefreshCw size={13} className="spin" />
+                              ) : (
+                                <X size={13} />
+                              )}
+                            </Button>
+                          </div>
+                        ))}
+                    </div>
+                    <div className="artifact-foot">
+                      Images / Video / HTML / Markdown / Text / Dev servers
+                      <br />
+                      <span>Loaded on demand. Original files stay intact.</span>
+                    </div>
+                  </>
+                }
+              />
+            </EnvContext.Provider>
           </aside>
         )}
         <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />

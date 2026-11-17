@@ -117,6 +117,8 @@ The interface uses a JSON API under `/api/`. Main endpoints:
 | `GET /api/media?session=&path=&base=` | Images and video |
 | `POST /api/previews`, `GET /api/previews` | Open a file or server preview (a file opens the same preview again); the running servers |
 | `GET/PUT /api/sessions/{id}/preview-tabs` | The session's preview tabs: at most six targets and the one shown; files read back with their stamp, servers with whether they run |
+| `GET /api/resolve?session=&path=&base=` | Where a path a session wrote is, relative to its directory (`{path, directory}`), so the page can show it in its file list |
+| `GET /api/files?session=&path=&show=` | One folder of the session's directory (dot files and dependency folders left out, at most 1000); `show` names an entry listed regardless |
 | `POST /api/sessions/{id}/reveal` | Show a file in the desktop file manager (refused unless the request comes from this computer) |
 | `GET/HEAD /api/download?session=&path=&base=` | Download a path the session reaches: a file as an attachment, with ranges; a folder as a zip made while it is sent, without symbolic links. HEAD checks it first |
 | `GET/POST /api/sidebar`, `GET /api/workspaces`, `GET /api/dirs?path=` | Sidebar preferences, projects, folder browser |

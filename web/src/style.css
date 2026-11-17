@@ -1723,6 +1723,26 @@ p {
 .files > button:hover {
   background: var(--background);
 }
+/* Rows open a menu on long press: no text selection or system callout. */
+.files > button {
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+/* The entry a link pointed at. */
+.files > button.located {
+  background: var(--accent);
+  color: var(--accent-foreground);
+  box-shadow: inset 2px 0 0 var(--ring);
+  animation: file-located 1.2s ease-out 1;
+}
+@keyframes file-located {
+  0%,
+  40% {
+    box-shadow:
+      inset 2px 0 0 var(--ring),
+      0 0 0 2px var(--ring);
+  }
+}
 .files > button span {
   flex: 1;
   overflow: hidden;
@@ -1818,6 +1838,20 @@ p {
 }
 .preview-note.warn {
   color: var(--warning);
+}
+/* A Markdown or text file, drawn as the conversation draws it. */
+.preview-text {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px 20px 32px;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--foreground);
+  background: var(--card);
+}
+.preview-text > .markdown > .md-code:only-child {
+  margin: 0;
 }
 .preview-note p {
   margin: 0 0 12px;

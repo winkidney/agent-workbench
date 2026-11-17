@@ -1,13 +1,12 @@
 import { createContext, useContext, useState } from "react";
 import {
-  Download,
   ExternalLink,
   File as FileIcon,
   Film,
-  FolderOpen,
   Globe,
   Image as ImageIcon,
   ImageOff,
+  LocateFixed,
 } from "lucide-react";
 import type { Media } from "./model";
 
@@ -23,6 +22,8 @@ export type Env = {
   // On the workbench computer, shows the file or folder in its file manager;
   // anywhere else (another device, a tunnel), downloads it.
   reveal: (path: string, base?: string) => void;
+  // Shows the file or folder in the preview panel's file list.
+  locate: (path: string, base?: string) => void;
   // Whether this page runs on the workbench computer (reveal shows, rather
   // than downloads).
   here?: boolean;
@@ -63,6 +64,7 @@ export const EnvContext = createContext<Env>({
   openPath: () => {},
   thumb: () => null,
   reveal: () => {},
+  locate: () => {},
   view: () => {},
 });
 export const useEnv = () => useContext(EnvContext);
@@ -80,6 +82,15 @@ export const VIDEO = /\.(mp4|webm|mov|m4v)$/i;
 export const isMedia = (path: string) => RASTER.test(path) || VIDEO.test(path);
 export const PREVIEWABLE =
   /\.(png|jpe?g|gif|webp|avif|bmp|svg|ico|mp4|webm|mov|m4v|html?|pdf)$/i;
+export const MARKDOWN = /\.(md|markdown|mdx)$/i;
+// Text the preview panel shows as it is (Markdown drawn); the panel asks the
+// server whether a file really is text before showing it so.
+export const TEXT =
+  /(?:^|\/)(?:makefile|dockerfile|license|readme|changelog|\.env[\w.-]*|\.gitignore|\.editorconfig)$|\.(?:md|markdown|mdx|txt|log|json|jsonl|ndjson|ipynb|ya?ml|toml|ini|cfg|conf|properties|env|csv|tsv|xml|go|mod|sum|rs|py|js|mjs|cjs|ts|tsx|jsx|vue|svelte|css|scss|less|sh|bash|zsh|fish|ps1|sql|rb|php|pl|java|kt|kts|gradle|swift|dart|c|h|cc|cpp|hpp|cs|lua|r|gd|gdshader|tscn|tres|glsl|wgsl|shader|proto|graphql|diff|patch|lock|dockerfile|makefile)$/i;
+// Whether a path opens in the preview panel; anything else is shown in its
+// file list.
+export const opensInPanel = (path: string) =>
+  !path.endsWith("/") && (PREVIEWABLE.test(path) || TEXT.test(path));
 
 // Map a path as written to one the server resolves: absolute paths must be
 // under the launch directory (made relative); relative paths stay as they
@@ -114,14 +125,23 @@ export function pathItem(
   };
 }
 
-// Images and videos open in the viewer, other previewable files in the
-// side panel, anything else in the file manager (downloads elsewhere).
+// Images and videos open in the viewer, pages, documents and text in the
+// side panel, anything else is shown in the panel's file list (from there,
+// in the file manager).
 export function openWorkspacePath(env: Env, path: string, base?: string) {
   const item = pathItem(env, path, base);
   if (item) env.view([item], 0);
-  else if (PREVIEWABLE.test(path)) env.openPath(path, base);
-  else env.reveal(path, base);
+  else if (opensInPanel(path)) env.openPath(path, base);
+  else env.locate(path, base);
 }
+
+// What opening a path does, said on it.
+export const openLabel = (path: string) =>
+  isMedia(path)
+    ? `View ${path}`
+    : opensInPanel(path)
+      ? `Preview ${path}`
+      : `Show ${path} in Files`;
 
 export function PathChip({ path }: { path: string }) {
   const env = useEnv();
@@ -134,43 +154,36 @@ export function PathChip({ path }: { path: string }) {
       <button
         type="button"
         className="path-chip"
-        title={isMedia(rel) ? `View ${rel}` : `Preview ${rel}`}
+        title={openLabel(rel)}
         onClick={() => openWorkspacePath(env, rel, base)}
       >
         <Icon size={12} />
         {path}
       </button>
-      <RevealButton path={rel} base={base} />
+      <LocateButton path={rel} base={base} />
     </span>
   );
 }
 
-// What reveal does for a path, said on its button.
-export function revealLabel(env: Env, path: string) {
-  return env.here === false
-    ? `Download ${path}`
-    : `Show ${path} in Files (opens on this computer)`;
-}
-
-export function RevealButton({ path, base }: { path: string; base?: string }) {
+// Shows a path in the preview panel's file list (where its menu shows it in
+// the file manager, or downloads it).
+export function LocateButton({ path, base }: { path: string; base?: string }) {
   const env = useEnv();
-  const away = env.here === false;
   return (
     <button
       type="button"
       className="path-reveal"
-      title={away ? "Download" : "Show in Files (opens on this computer)"}
-      aria-label={away ? `Download ${path}` : `Show ${path} in Files`}
-      onClick={() => env.reveal(path, base)}
+      title="Show in Files"
+      aria-label={`Show ${path} in Files`}
+      onClick={() => env.locate(path, base)}
     >
-      {away ? <Download size={12} /> : <FolderOpen size={12} />}
+      <LocateFixed size={12} />
     </button>
   );
 }
 
-// Inline code that names a file or folder (not previewable): it keeps the
-// terminal look and shows the item in the file manager when clicked, or
-// downloads it away from the workbench computer.
+// Inline code that names a file or folder: it keeps the terminal look, and
+// opens as a link to it would (preview, or the panel's file list).
 export const PATHLIKE =
   /^(?:~?\/|\.{1,2}\/)?[\w@.+-]+(?:\/[\w@.+-]+)+\/?$|^[\w@+-][\w@.+-]*\.(?:md|json|jsonl|ya?ml|toml|ini|cfg|conf|txt|log|csv|tsv|go|mod|sum|rs|py|ipynb|js|mjs|cjs|ts|tsx|jsx|css|scss|sh|bash|zsh|fish|sql|rb|java|kt|swift|c|h|cc|cpp|hpp|cs|lua|gd|gdshader|tscn|tres|glsl|wgsl|shader|lock|env|dockerfile|makefile|zip|tar|gz|wav|mp3|ogg|flac|blend|fbx|glb|gltf|obj|psd|kra|aseprite)$/i;
 
@@ -184,12 +197,12 @@ export function PathCode({ path }: { path: string }) {
       className="path-code"
       role="button"
       tabIndex={0}
-      title={revealLabel(env, rel)}
-      onClick={() => env.reveal(rel, base)}
+      title={openLabel(rel)}
+      onClick={() => openWorkspacePath(env, rel, base)}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
-          env.reveal(rel, base);
+          openWorkspacePath(env, rel, base);
         }
       }}
     >
