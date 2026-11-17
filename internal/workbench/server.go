@@ -1359,7 +1359,8 @@ func (s *Server) media(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", mime)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'")
-	w.Header().Set("Cache-Control", "private, max-age=30")
+	// Agents rewrite files under the same name: always revalidate.
+	revalidate(w, info)
 	// ServeContent answers Range requests, so videos can seek.
 	http.ServeContent(w, r, "", info.ModTime(), f)
 }

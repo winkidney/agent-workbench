@@ -20,7 +20,13 @@ import {
 import type { State } from "./reducer";
 import { CopyButton, Markdown } from "./Markdown";
 import { DiagramCache, DiagramCacheContext } from "./mermaid";
-import { BaseContext, MediaList, Mentions, useEnv } from "./media";
+import {
+  BaseContext,
+  MediaList,
+  Mentions,
+  StampContext,
+  useEnv,
+} from "./media";
 import { toolDiff, toolSummary, toolTitle, unwrapShell } from "./summarize";
 import { withContext, type DiffLine } from "./diff";
 import { hasAnsi, parseAnsi } from "./ansi";
@@ -617,7 +623,9 @@ function NoticeRow({ block, open, onToggle }: RowProps) {
 const Row = memo(function Row(props: RowProps) {
   return (
     <BaseContext.Provider value={props.block.cwd}>
-      <RowBody {...props} />
+      <StampContext.Provider value={props.block.key}>
+        <RowBody {...props} />
+      </StampContext.Provider>
     </BaseContext.Provider>
   );
 });

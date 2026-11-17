@@ -22,6 +22,7 @@ import { goalIntent, type Goal } from "./goal";
 import { shownSuggestion } from "./suggestion";
 import { pastedImages, useAttachments, type Attachment } from "./attachments";
 import { AddFiles, AttachmentStrip, useFileDrop } from "./AttachmentStrip";
+import { useComposerInbox } from "./inbox";
 import type { ViewItem } from "../transcript/media";
 
 export type SendMode = "send" | "steer" | "queue";
@@ -178,6 +179,8 @@ export function Composer({
   }, [prompt, ref]);
   const readOnly = !!session.readOnly || !!session.archived;
   const drop = useFileDrop(!readOnly, images.add);
+  // The media viewer's "Paste into message" lands here.
+  useComposerInbox(readOnly ? null : images);
   // Something to send: text, images or files, none still being added.
   const sendable =
     (!!prompt.trim() || images.ready.length > 0) && !images.uploading;

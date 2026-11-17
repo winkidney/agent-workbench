@@ -384,6 +384,7 @@ func (p *Preview) serveFile(w http.ResponseWriter, r *http.Request, path string,
 			w.Header().Set("Content-Security-Policy", "sandbox allow-scripts allow-forms allow-popups allow-modals allow-downloads; frame-ancestors 'self'")
 		}
 	}
+	revalidate(w, info)
 	http.ServeContent(w, r, info.Name(), info.ModTime(), file)
 }
 

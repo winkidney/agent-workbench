@@ -13,6 +13,7 @@ import {
   UrlLink,
   pathItem,
   useBase,
+  useStamp,
   useEnv,
   workspacePath,
 } from "./media";
@@ -36,6 +37,7 @@ const nodeText = (children: React.ReactNode): string =>
 function MarkdownImage({ src, alt }: { src?: string; alt?: string }) {
   const env = useEnv();
   const base = useBase();
+  const stamp = useStamp();
   if (!src) return null;
   if (/^(https?:|data:image\/)/i.test(src))
     return (
@@ -51,7 +53,7 @@ function MarkdownImage({ src, alt }: { src?: string; alt?: string }) {
       </button>
     );
   const rel = workspacePath(src, env.cwd);
-  const item = rel && RASTER.test(rel) ? pathItem(env, rel, base) : null;
+  const item = rel && RASTER.test(rel) ? pathItem(env, rel, base, stamp) : null;
   if (item)
     return (
       <button

@@ -31,6 +31,7 @@ export function AttachmentStrip({
     kind: "image",
     src: a.url!,
     title: a.name,
+    attachment: a.key,
   }));
   return (
     <div className="attachments" aria-label="Images in this message">

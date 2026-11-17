@@ -208,6 +208,29 @@ export function useAttachments(initial: Attachment[] = []) {
   // The list as last rendered, for how many more fit.
   const shown = useRef(items);
   shown.current = items;
+  // Starts uploading one file.
+  const start = (file: File): Attachment => {
+    const key = "a" + ++seq.current;
+    const control = new AbortController();
+    live.current.set(key, control);
+    void send(file, control.signal)
+      .then((up) => update(key, { state: "ready", ...up }))
+      .catch((e: unknown) => {
+        if (control.signal.aborted) return;
+        update(key, {
+          state: "failed",
+          error: e instanceof Error ? e.message : String(e),
+        });
+      })
+      .finally(() => live.current.delete(key));
+    return {
+      key,
+      name: file.name || "Image",
+      kind: file.type.startsWith("image/") ? "image" : "file",
+      bytes: file.size,
+      state: "uploading",
+    };
+  };
   const add = (files: File[]) => {
     const room = Math.max(0, MAX_ATTACHMENTS - shown.current.length);
     setNotice(
@@ -215,28 +238,7 @@ export function useAttachments(initial: Attachment[] = []) {
         ? `A message can have at most ${MAX_ATTACHMENTS} images and files`
         : "",
     );
-    const added = files.slice(0, room).map((file): Attachment => {
-      const key = "a" + ++seq.current;
-      const control = new AbortController();
-      live.current.set(key, control);
-      void send(file, control.signal)
-        .then((up) => update(key, { state: "ready", ...up }))
-        .catch((e: unknown) => {
-          if (control.signal.aborted) return;
-          update(key, {
-            state: "failed",
-            error: e instanceof Error ? e.message : String(e),
-          });
-        })
-        .finally(() => live.current.delete(key));
-      return {
-        key,
-        name: file.name || "Image",
-        kind: file.type.startsWith("image/") ? "image" : "file",
-        bytes: file.size,
-        state: "uploading",
-      };
-    });
+    const added = files.slice(0, room).map(start);
     shown.current = [...shown.current, ...added];
     setItems((list) => [...list, ...added]);
   };
@@ -246,12 +248,25 @@ export function useAttachments(initial: Attachment[] = []) {
     setNotice("");
     setItems((list) => list.filter((a) => a.key !== key));
   };
+  // Puts file in the place of one already added (a marked-up copy of it).
+  const replace = (key: string, file: File) => {
+    if (!shown.current.some((a) => a.key === key)) return add([file]);
+    live.current.get(key)?.abort();
+    live.current.delete(key);
+    setNotice("");
+    const added = start(file);
+    const swap = (list: Attachment[]) =>
+      list.map((a) => (a.key === key ? added : a));
+    shown.current = swap(shown.current);
+    setItems(swap);
+  };
   const ready = items.filter((a) => a.state === "ready");
   return {
     items,
     notice,
     add,
     remove,
+    replace,
     // Replaces them all (sent, or put back after a failed send).
     set: (next: Attachment[]) => {
       setNotice("");

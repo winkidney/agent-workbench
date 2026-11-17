@@ -831,9 +831,10 @@ export default function App() {
       },
       openPath: (path, base) =>
         void openPreview({ session: active, kind: "file", path, base }),
-      thumb: (path, base) =>
+      thumb: (path, base, stamp) =>
         `/api/media?session=${encodeURIComponent(active)}&path=${encodeURIComponent(path)}` +
-        (base ? `&base=${encodeURIComponent(base)}` : ""),
+        (base ? `&base=${encodeURIComponent(base)}` : "") +
+        (stamp ? `&v=${encodeURIComponent(stamp)}` : ""),
       here,
       reveal: (path, base) =>
         void (

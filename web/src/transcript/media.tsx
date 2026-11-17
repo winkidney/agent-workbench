@@ -18,7 +18,8 @@ export type Env = {
   cwd: string;
   openUrl: (url: string) => void;
   openPath: (path: string, base?: string) => void;
-  thumb: (path: string, base?: string) => string | null;
+  // stamp: the block showing it (see StampContext).
+  thumb: (path: string, base?: string, stamp?: string) => string | null;
   // On the workbench computer, shows the file or folder in its file manager;
   // anywhere else (another device, a tunnel), downloads it.
   reveal: (path: string, base?: string) => void;
@@ -56,6 +57,9 @@ export type ViewItem = {
   title: string;
   path?: string;
   base?: string;
+  // An image added to the message being written (its attachment key): a
+  // marked-up copy takes its place.
+  attachment?: string;
 };
 
 export const EnvContext = createContext<Env>({
@@ -72,6 +76,12 @@ export const useEnv = () => useContext(EnvContext);
 // The directory the agent was in for the block being rendered.
 export const BaseContext = createContext<string | undefined>(undefined);
 export const useBase = () => useContext(BaseContext);
+
+// The block being rendered. A workspace image shown by a later block gets an
+// address of its own, so the page fetches it again: agents rewrite files
+// under the same name, and the browser reuses an image it holds by address.
+export const StampContext = createContext<string | undefined>(undefined);
+export const useStamp = () => useContext(StampContext);
 
 const LOOPBACK =
   /^https?:\/\/(?:127\.\d+\.\d+\.\d+|localhost|\[::1\]|0\.0\.0\.0)(?::\d+)?(?:[/?#]|$)/i;
@@ -113,8 +123,9 @@ export function pathItem(
   env: Env,
   path: string,
   base?: string,
+  stamp?: string,
 ): ViewItem | null {
-  const src = isMedia(path) ? env.thumb(path, base) : null;
+  const src = isMedia(path) ? env.thumb(path, base, stamp) : null;
   if (!src) return null;
   return {
     kind: VIDEO.test(path) ? "video" : "image",
@@ -319,6 +330,7 @@ export function MediaList({
 }) {
   const env = useEnv();
   const base = useBase();
+  const stamp = useStamp();
   if (!media?.length) return null;
   // Everything viewable in this list forms one gallery in the viewer.
   const items: ViewItem[] = [];
@@ -340,7 +352,7 @@ export function MediaList({
       item = { kind: "image", src: "/api/uploads/" + m.upload, title: "Image" };
     else if (m.kind === "path") {
       const rel = workspacePath(m.path, env.cwd);
-      item = rel ? pathItem(env, rel, base) : null;
+      item = rel ? pathItem(env, rel, base, stamp) : null;
     }
     if (!item) return -1;
     items.push(item);

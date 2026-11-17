@@ -10,6 +10,7 @@ import { ProjectPicker } from "./ProjectPicker";
 import { AgentIcon } from "../components/AgentIcon";
 import { recentProjects } from "./recent";
 import { pastedImages, useAttachments } from "../composer/attachments";
+import { useComposerInbox } from "../composer/inbox";
 import {
   AddFiles,
   AttachmentStrip,
@@ -61,6 +62,8 @@ export function NewSession({
   const [error, setError] = useState("");
   const input = useRef<HTMLTextAreaElement>(null);
   const images = useAttachments();
+  // The media viewer's "Paste into message" lands here.
+  useComposerInbox(images);
   const drop = useFileDrop(!busy, images.add);
   const sendable =
     (!!text.trim() || images.ready.length > 0) && !images.uploading;
