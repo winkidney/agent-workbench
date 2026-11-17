@@ -186,7 +186,10 @@ func (m *Manager) SendSide(id, text, requestID string) error {
 		m.mu.Unlock()
 		return errors.New("side chat is busy or closing")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Minute)
+	// No deadline on the whole answer: a Codex side turn may run tools and
+	// wait on your approvals for as long as it needs (runSide limits only
+	// the start). Closing the side chat cancels it.
+	ctx, cancel := context.WithCancel(context.Background())
 	sc.cancel = cancel
 	sc.done = make(chan struct{})
 	sc.Status = "running"
@@ -211,6 +214,9 @@ func (m *Manager) SendSide(id, text, requestID string) error {
 		if sc.Status == "closing" || sc.Status == "cleanup_failed" || sc.Status == "interrupted" {
 			return
 		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			err = fmt.Errorf("the agent did not start answering within %v; send again, or close the side chat", sideStartLimit)
+		}
 		if err != nil {
 			sc.Error = err.Error()
 			m.sideEmit(id, "error", map[string]any{"message": err.Error()})
@@ -225,10 +231,21 @@ func (m *Manager) SendSide(id, text, requestID string) error {
 	}()
 	return nil
 }
+
+// sideStartLimit bounds what comes before a side answer runs on its own:
+// waking the parent session and starting the side turn (for Claude, the
+// whole answer, which its CLI gives in one request). A Codex side turn that
+// has started ends with turn/completed, an interrupt or a close, never on a
+// clock: it may run tools and wait on approvals.
+var sideStartLimit = 12 * time.Minute
+
 func (m *Manager) runSide(ctx context.Context, sc *sideRuntime, text string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	running := ctx
+	ctx, stop := context.WithTimeout(ctx, sideStartLimit)
+	defer stop()
 	if err := m.Start(sc.Parent); err != nil {
 		return err
 	}
@@ -319,17 +336,18 @@ func (m *Manager) runSide(ctx context.Context, sc *sideRuntime, text string) err
 		return err
 	}
 	// turn/completed owns the transition back to idle. This request remains
-	// cancellable until then; receiving an RPC acknowledgement is not completion.
+	// cancellable (by a close) until then; receiving an RPC acknowledgement
+	// is not completion.
 	for {
 		m.mu.Lock()
-		running := sc.Status == "running"
+		busy := sc.Status == "running"
 		m.mu.Unlock()
-		if !running {
+		if !busy {
 			return nil
 		}
 		select {
-		case <-ctx.Done():
-			return ctx.Err()
+		case <-running.Done():
+			return running.Err()
 		case <-time.After(50 * time.Millisecond):
 		}
 	}
