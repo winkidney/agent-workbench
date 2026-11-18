@@ -641,12 +641,25 @@ func (c *NativeCatalog) History(s Session, before string, limit int) (HistoryPag
 	}
 	c.mu.Lock()
 	path := c.paths[s.ID]
+	if path == "" {
+		// Claude names a new session seconds before it writes the
+		// transcript; the list read in between must not hide it for 5 s.
+		c.updated = time.Time{}
+		if err := c.refreshLocked(); err != nil {
+			c.mu.Unlock()
+			return HistoryPage{}, err
+		}
+		path = c.paths[s.ID]
+	}
 	c.mu.Unlock()
 	if path == "" {
-		return HistoryPage{}, errors.New("native transcript not found")
+		return HistoryPage{}, errNoTranscript
 	}
 	return readClaudeHistory(path, s, before, limit)
 }
+
+// errNoTranscript: no Claude transcript for the session (yet).
+var errNoTranscript = errors.New("native transcript not found")
 
 func nativeText(v any) string {
 	if s, ok := v.(string); ok {

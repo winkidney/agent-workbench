@@ -898,8 +898,14 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 		rt := m.find(id)
 		native := rt.session
 		live := rt.turn
+		own := rt.proc != nil
 		m.mu.Unlock()
 		v, err := m.catalog.History(native, r.URL.Query().Get("before"), limit)
+		if errors.Is(err, errNoTranscript) && own {
+			// A new session's engine runs here but Claude has not written
+			// its transcript yet: nothing to show before the live events.
+			v, err = HistoryPage{Events: []Event{}}, nil
+		}
 		if err != nil {
 			bad(w, err)
 			return

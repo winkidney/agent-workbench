@@ -285,3 +285,45 @@ func TestClaudeProcessStatusWinsOverTheRecord(t *testing.T) {
 		t.Fatalf("no status: %s", got)
 	}
 }
+
+// Claude names a new session seconds before it writes the transcript: the
+// page opening it then gets an empty page, and the transcript once written
+// is read at once, not after the catalog's 5 s.
+func TestNewClaudeSessionHistoryBeforeItsTranscript(t *testing.T) {
+	m, p := fixture(t)
+	home := t.TempDir()
+	m.catalog.ClaudeHome = home
+	m.catalog.CodexHome = t.TempDir()
+	dir := filepath.Join(home, "projects", "-tmp-work")
+	os.MkdirAll(dir, 0o700)
+	if _, err := m.catalog.List(); err != nil {
+		t.Fatal(err)
+	}
+	m.mu.Lock()
+	r := &runtime{session: Session{ID: "claude:fresh", NativeID: "fresh", Agent: "claude", Cwd: "/tmp/work"}, proc: p, ready: true, pending: map[string]any{}, previews: map[string]*Preview{}}
+	m.sessions[r.session.ID] = r
+	m.mu.Unlock()
+	s := pairedServer(m, fstest.MapFS{"index.html": {Data: []byte("<html></html>")}}, "agent.localhost:17880", "pair")
+	cookie := request(t, s, s.Host, "POST", "/api/login", `{"code":"pair"}`, nil).Result().Cookies()[0]
+	history := func() (int, HistoryPage) {
+		w := request(t, s, s.Host, "GET", "/api/history?session=claude%3Afresh", "", cookie)
+		var page HistoryPage
+		json.Unmarshal(w.Body.Bytes(), &page)
+		return w.Code, page
+	}
+	if code, page := history(); code != 200 || page.Events == nil || len(page.Events) != 0 {
+		t.Fatalf("own engine before its transcript: %d %+v", code, page)
+	}
+	m.mu.Lock()
+	r.proc = nil
+	m.mu.Unlock()
+	if code, _ := history(); code == 200 {
+		t.Fatal("a session with no transcript and no engine here reported as empty")
+	}
+	f, _ := os.Create(filepath.Join(dir, "fresh.jsonl"))
+	f.WriteString(claudeLine("u1", "", "user", "T1", `"hi"`, ""))
+	f.Close()
+	if code, page := history(); code != 200 || len(page.Events) == 0 {
+		t.Fatalf("transcript not read once written: %d %+v", code, page)
+	}
+}
