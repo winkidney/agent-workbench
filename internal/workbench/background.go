@@ -35,15 +35,17 @@ type BackgroundTask struct {
 	Description string `json:"description"`
 	// running, or how it ended: completed, failed, stopped, ended (gone
 	// without a reported result).
-	Status   string  `json:"status"`
-	Started  string  `json:"started,omitempty"`
-	Ended    string  `json:"ended,omitempty"`
-	Summary  string  `json:"summary,omitempty"`
-	Progress string  `json:"progress,omitempty"`
-	Output   bool    `json:"output,omitempty"`
-	PID      int     `json:"pid,omitempty"`
-	CPU      float64 `json:"cpu,omitempty"`
-	RSSKb    float64 `json:"rssKb,omitempty"`
+	Status   string `json:"status"`
+	Started  string `json:"started,omitempty"`
+	Ended    string `json:"ended,omitempty"`
+	Summary  string `json:"summary,omitempty"`
+	Progress string `json:"progress,omitempty"`
+	Output   bool   `json:"output,omitempty"`
+	// A scheduled task's next run (status "scheduled"; schedule.go).
+	Next  string  `json:"next,omitempty"`
+	PID   int     `json:"pid,omitempty"`
+	CPU   float64 `json:"cpu,omitempty"`
+	RSSKb float64 `json:"rssKb,omitempty"`
 
 	outputFile string
 	toolUseID  string
@@ -322,7 +324,7 @@ func tasksOf(r *runtime) []BackgroundTask {
 		}
 		out = append(others, out...)
 	}
-	return out
+	return append(out, schedulesOf(r, time.Now())...)
 }
 
 // Codex background terminals.

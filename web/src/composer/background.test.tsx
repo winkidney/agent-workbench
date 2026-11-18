@@ -150,3 +150,28 @@ describe("background work", () => {
     expect([...s.blocks.values()][0].tone).toBe("warn");
   });
 });
+
+describe("scheduled tasks", () => {
+  const wake = task({
+    id: "schedule:wakeup",
+    kind: "schedule",
+    description: "check the CI run",
+    status: "scheduled",
+    started: undefined,
+    next: "2026-11-12T10:30:00Z",
+  });
+  const at = new Date("2026-11-12T10:30:00Z").toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  it("say when they run next, and are not running work", () => {
+    expect(taskState(wake)).toBe(`next ${at}`);
+    expect(taskState({ ...wake, next: undefined })).toBe("scheduled");
+    expect(summary([wake], now)).toBe(
+      `1 scheduled task · check the CI run · next ${at}`,
+    );
+    // Running work comes first in the summary.
+    expect(summary([wake, task({})], now)).toMatch(/^1 background task/);
+  });
+});

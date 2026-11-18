@@ -488,6 +488,9 @@ func (m *Manager) track(r *runtime, v map[string]any) {
 	}
 	trackProgress(r, v)
 	trackDetail(r, v)
+	if r.session.Agent == "claude" {
+		trackSchedules(r, v, time.Now())
+	}
 	if v["type"] == "system" && v["subtype"] == "status" && str(v["permissionMode"]) != "" {
 		m.claudeModeReported(r, str(v["permissionMode"]))
 	}

@@ -95,6 +95,10 @@ type runtime struct {
 	// and those running a turn now (subagents.go).
 	children  map[string]string
 	childBusy map[string]bool
+	// Claude: timers that will wake the session (CronCreate, /loop), and
+	// the scheduling calls awaiting their results (schedule.go).
+	schedules     map[string]*schedule
+	scheduleCalls map[string]scheduleCall
 }
 type Manager struct {
 	// Terminal tabs (terminal.go), made on first use.
@@ -1153,7 +1157,7 @@ func (m *Manager) stop(id string, sleep, background bool) error {
 		m.mu.Unlock()
 		return errors.New("session has active work or previews")
 	}
-	if sleep && !background && (processBusy(r.proc) || inProcessWork(r)) {
+	if sleep && !background && (processBusy(r.proc) || inProcessWork(r) || scheduledWork(r, time.Now())) {
 		m.mu.Unlock()
 		return errors.New("background work is running; stop it, or sleep stopping it")
 	}
@@ -1170,6 +1174,8 @@ func (m *Manager) stop(id string, sleep, background bool) error {
 	r.children, r.childBusy = nil, nil
 	m.releasePending(r)
 	clearTasks(r)
+	// Its timers ended with the process.
+	r.schedules, r.scheduleCalls = nil, nil
 	forgetHeavy(r)
 	previews := r.previews
 	if sleep {
@@ -1227,6 +1233,8 @@ func (m *Manager) exited(id string, generation int, err error) {
 	r.children, r.childBusy = nil, nil
 	m.releasePending(r)
 	clearTasks(r)
+	// Its timers ended with the process.
+	r.schedules, r.scheduleCalls = nil, nil
 	state := "sleeping"
 	if err != nil && !requested && !m.closing {
 		state = "error"
@@ -1276,7 +1284,7 @@ func (m *Manager) Sweep() {
 		// A Codex goal that is still active keeps its engine, as the TUI
 		// would: Codex starts the next turn itself.
 		pursuing := r.session.Agent == "codex" && r.goal != nil && r.goal.Status == "active"
-		if !m.hasSideLocked(r.session.ID) && r.proc != nil && r.ready && !r.turn && !pursuing && len(r.pending) == 0 && (len(r.queue) == 0 || r.queuePaused) && !hasServicePreviews(r) && !inProcessWork(r) && !processBusy(r.proc) && time.Since(r.last) >= m.idle {
+		if !m.hasSideLocked(r.session.ID) && r.proc != nil && r.ready && !r.turn && !pursuing && len(r.pending) == 0 && (len(r.queue) == 0 || r.queuePaused) && !hasServicePreviews(r) && !inProcessWork(r) && !scheduledWork(r, time.Now()) && !processBusy(r.proc) && time.Since(r.last) >= m.idle {
 			ids = append(ids, id)
 		}
 	}

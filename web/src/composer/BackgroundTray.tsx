@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  AlarmClock,
   Bot,
   ChevronRight,
   Cpu,
@@ -32,6 +33,7 @@ const ICONS: Record<string, typeof Bot> = {
   mcp: Plug,
   workflow: Workflow,
   process: Cpu,
+  schedule: AlarmClock,
 };
 
 // The end of a Claude task's output file, refreshed while it runs.

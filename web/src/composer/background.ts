@@ -5,14 +5,17 @@ import { unwrapShell } from "../transcript/summarize";
 
 // What a session runs outside its turns (internal/workbench/background.go):
 // Claude's background shells, monitors and subagents, Codex's background
-// terminals, or other processes the engine left running.
+// terminals, or other processes the engine left running; and Claude's
+// scheduled tasks (CronCreate, /loop), "scheduled" until they run.
 export type BackgroundTask = {
   id: string;
   source: "claude" | "codex" | "process";
   kind: string;
   description: string;
-  // running, or how it ended: completed, failed, stopped, ended.
+  // running, scheduled, or how it ended: completed, failed, stopped, ended.
   status: string;
+  // A scheduled task's next run.
+  next?: string;
   started?: string;
   ended?: string;
   summary?: string;
@@ -32,10 +35,17 @@ export const KIND_LABEL: Record<string, string> = {
   terminal: "terminal",
   process: "process",
   task: "task",
+  schedule: "scheduled",
 };
 
 export const running = (tasks: BackgroundTask[]) =>
   tasks.filter((t) => t.status === "running");
+
+export const scheduled = (tasks: BackgroundTask[]) =>
+  tasks.filter((t) => t.status === "scheduled");
+
+const clock = (iso: string) =>
+  new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
 // The command as typed, without the shell wrapper Codex adds.
 export const taskTitle = (t: BackgroundTask) =>
@@ -59,6 +69,8 @@ const ENDED: Record<string, string> = {
 
 // The second column of a row: progress while running, how it ended after.
 export function taskState(t: BackgroundTask): string {
+  if (t.status === "scheduled")
+    return t.next ? `next ${clock(t.next)}` : "scheduled";
   if (t.status !== "running") return ENDED[t.status] ?? t.status;
   const parts: string[] = [];
   if (t.progress) parts.push(t.progress);
@@ -76,6 +88,15 @@ export function memory(kb: number): string {
 // One line for the collapsed tray: how many run, and the first of them.
 export function summary(tasks: BackgroundTask[], now: number): string {
   const live = running(tasks);
+  const waiting = scheduled(tasks);
+  if (!live.length && waiting.length) {
+    const first = waiting[0];
+    const head =
+      waiting.length === 1
+        ? "1 scheduled task"
+        : `${waiting.length} scheduled tasks`;
+    return `${head} · ${taskTitle(first)}${first.next ? ` · next ${clock(first.next)}` : ""}`;
+  }
   if (!live.length) {
     const last = tasks[tasks.length - 1];
     return last
