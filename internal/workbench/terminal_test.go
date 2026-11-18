@@ -229,6 +229,26 @@ func TestTerminalSocketSecurity(t *testing.T) {
 	if res, b := call(t, host, "POST", "/api/settings/signout-others", "", false, nil); res.StatusCode != 200 {
 		t.Fatalf("sign out: %s", b)
 	}
+	signedOut(t, c)
+	// Signed out the moment the socket opens: not missed either.
+	res, _ = call(t, host, "POST", "/api/login", `{"code":"pair"}`, true, nil)
+	for _, k := range res.Cookies() {
+		if k.Name == sessionCookie {
+			cookie = k
+		}
+	}
+	c, _, err = dial(t, host, info.ID, "http://"+host, true, cookie)
+	if err != nil {
+		t.Fatal(err)
+	}
+	call(t, host, "POST", "/api/settings/signout-others", "", false, nil)
+	signedOut(t, c)
+}
+
+// signedOut waits for the socket to end as signed out, within 5 s (well
+// before the 30 s backstop).
+func signedOut(t *testing.T, c *websocket.Conn) {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	for {
@@ -236,7 +256,7 @@ func TestTerminalSocketSecurity(t *testing.T) {
 			if websocket.CloseStatus(err) != websocket.StatusPolicyViolation {
 				t.Fatalf("closed with %v", err)
 			}
-			break
+			return
 		}
 	}
 }

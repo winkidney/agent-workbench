@@ -514,6 +514,10 @@ func (s *Server) terminalSocket(w http.ResponseWriter, r *http.Request, access h
 		return
 	}
 	id := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/terminals/"), "/socket")
+	// Watched from before the upgrade: a sign-in that ends while the socket
+	// is set up is not missed.
+	changed := s.authChanged.C()
+	req := r.Clone(context.Background())
 	// The origin was checked above, by the workbench's own rules.
 	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
 	if err != nil {
@@ -563,11 +567,13 @@ func (s *Server) terminalSocket(w http.ResponseWriter, r *http.Request, access h
 			}
 		}
 	}()
-	req := r.Clone(context.Background())
 	check := time.NewTicker(30 * time.Second)
 	defer check.Stop()
+	if !s.authorized(req) {
+		c.Close(websocket.StatusPolicyViolation, "signed out")
+		return
+	}
 	for {
-		changed := s.authChanged.C()
 		select {
 		case b := <-sock.out:
 			if err := c.Write(ctx, websocket.MessageBinary, b); err != nil {
@@ -581,6 +587,7 @@ func (s *Server) terminalSocket(w http.ResponseWriter, r *http.Request, access h
 			c.Close(websocket.StatusTryAgainLater, "fell behind")
 			return
 		case <-changed:
+			changed = s.authChanged.C()
 			if !s.authorized(req) {
 				c.Close(websocket.StatusPolicyViolation, "signed out")
 				return
