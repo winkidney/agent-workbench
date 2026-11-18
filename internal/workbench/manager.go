@@ -1153,7 +1153,7 @@ func (m *Manager) stop(id string, sleep, background bool) error {
 		m.mu.Unlock()
 		return errors.New("session has active work or previews")
 	}
-	if sleep && !background && processBusy(r.proc) {
+	if sleep && !background && (processBusy(r.proc) || inProcessWork(r)) {
 		m.mu.Unlock()
 		return errors.New("background work is running; stop it, or sleep stopping it")
 	}
@@ -1276,7 +1276,7 @@ func (m *Manager) Sweep() {
 		// A Codex goal that is still active keeps its engine, as the TUI
 		// would: Codex starts the next turn itself.
 		pursuing := r.session.Agent == "codex" && r.goal != nil && r.goal.Status == "active"
-		if !m.hasSideLocked(r.session.ID) && r.proc != nil && r.ready && !r.turn && !pursuing && len(r.pending) == 0 && (len(r.queue) == 0 || r.queuePaused) && !hasServicePreviews(r) && !processBusy(r.proc) && time.Since(r.last) >= m.idle {
+		if !m.hasSideLocked(r.session.ID) && r.proc != nil && r.ready && !r.turn && !pursuing && len(r.pending) == 0 && (len(r.queue) == 0 || r.queuePaused) && !hasServicePreviews(r) && !inProcessWork(r) && !processBusy(r.proc) && time.Since(r.last) >= m.idle {
 			ids = append(ids, id)
 		}
 	}
@@ -1589,6 +1589,30 @@ func (p *systemProcess) Busy() bool {
 	}
 	return false
 }
+
+// inProcessWork is work an engine does inside its own process, which no
+// extra process shows: a background task Claude reports running (a
+// background subagent), or a Codex subagent thread in a turn. It keeps the
+// engine awake while the engine is heard from; past an hour of silence it is
+// taken for an end that was never reported, so it cannot keep an engine
+// awake for good.
+func inProcessWork(r *runtime) bool {
+	if time.Since(r.last) > inProcessQuiet {
+		return false
+	}
+	if runningTasks(r) > 0 {
+		return true
+	}
+	for _, busy := range r.childBusy {
+		if busy {
+			return true
+		}
+	}
+	return false
+}
+
+const inProcessQuiet = time.Hour
+
 func processBusy(p Process) bool {
 	if v, ok := p.(interface{ Busy() bool }); ok {
 		return v.Busy()

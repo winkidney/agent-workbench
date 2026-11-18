@@ -29,7 +29,7 @@ Background work: Claude reports its tasks on stream-json (`background_tasks_chan
 
 Each session in the list and in its status events carries `attention` (`approval`, `question` or `plan`) while it waits for the user: computed from pending requests, a Codex async question not yet answered and a Codex plan-mode turn that ended with a plan; never stored.
 
-An engine stays running between turns and is put to sleep after the idle timeout when nothing is in progress (no turn, approval, queued message, extra process or managed preview); the next message resumes the native session. Metadata (models, commands, skills, quotas) comes from short-lived probe processes that never create a session or call a model.
+An engine stays running between turns and is put to sleep after the idle timeout when nothing is in progress (no turn, approval, queued message, extra process or managed preview, and no work inside the engine process: a background task Claude reports running, such as a background subagent, or a Codex subagent thread in a turn; that last kind counts only while the engine was heard from within the hour, so an end never reported cannot keep it awake for good); the next message resumes the native session. Metadata (models, commands, skills, quotas) comes from short-lived probe processes that never create a session or call a model.
 
 ### Processes
 

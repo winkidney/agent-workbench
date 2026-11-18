@@ -79,7 +79,7 @@ Work that runs outside a turn shows where you look, and can be stopped there.
 - **Where it shows:** the session's row in the sidebar shows a blue heartbeat, with the count before it when there is more than one, and the header reads "Idle · 2 in background". Above the composer, a tray sums it up in one line ("2 background tasks · npm run dev 12m"); click it for one row per task with its kind, command or description, running time and progress (a subagent's tool uses, a terminal's CPU and memory). **Output** shows the end of a Claude task's output, updated while it runs; **Stop** stops one, **Stop all** all of them. Ended tasks stay with how they ended until your next message.
 - **When it ends:** Claude starts a turn by itself to read the result; that turn shows as running like any other. A Codex terminal or another process that ends adds a line to the conversation.
 - **Move to the background:** while Claude waits on a long command or subagent in the foreground, press **Ctrl+B** in the composer (or **⌃B background** in the status line) to move it to the background, as in Claude Code; the turn goes on.
-- **Sleep:** background work keeps the engine awake. **Sleep** asks first ("Stop the background work?") and stops it with the engine; **End session** always stops everything.
+- **Sleep:** background work keeps the engine awake: background shells, monitors and terminals, and also background subagents (Claude) and subagent threads still working (Codex), which run inside the engine and show no process of their own. Work an engine hasn't said a word about for an hour no longer counts. **Sleep** asks first ("Stop the background work?") and stops it with the engine; **End session** always stops everything.
 
 ### Approvals and questions
 
