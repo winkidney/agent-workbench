@@ -8,6 +8,7 @@ import {
   quotaExpired,
   resetTime,
   type QuotaWindow,
+  QUOTA_EVERY,
 } from "../../lib/quota";
 import { Button } from "../ui/button";
 import { BankedResets } from "../BankedResets";
@@ -79,7 +80,8 @@ export function AgentUsage({
     };
     refresh.current = load;
     void load();
-    const timer = setInterval(() => void load(), 60000);
+    // Quotas move slowly; Refresh reads them at once.
+    const timer = setInterval(() => void load(), QUOTA_EVERY);
     const visible = () => {
       if (document.visibilityState === "visible") void load();
     };

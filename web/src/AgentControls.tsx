@@ -1,8 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { AgentUsage } from "./components/settings/UsageTab";
 import type { AgentId } from "./lib/agents";
-import { quotaSummary, quotaWindows, resetTime } from "./lib/quota";
+import {
+  QUOTA_EVERY,
+  quotaDue,
+  quotaSummary,
+  quotaWindows,
+  resetTime,
+} from "./lib/quota";
 import {
   Brain,
   ChevronDown,
@@ -142,6 +148,9 @@ export function useAgentControls({
     [error, setError] = useState(""),
     [saving, setSaving] = useState(false);
   const loading = metaFor !== session.id || dataFor !== session.id;
+  // Reads capabilities with quotas again; and when that last happened.
+  const reload = useRef<(refresh: boolean) => void>(() => {});
+  const lastRead = useRef(0);
   useEffect(() => {
     let cancel = false;
     const id = session.id;
@@ -151,6 +160,7 @@ export function useAgentControls({
     setError("");
     const load = (refresh: boolean) => {
       if (refresh && document.visibilityState !== "visible") return;
+      lastRead.current = Date.now();
       request<Meta>(
         `agents/${session.agent}/capabilities?cwd=${encodeURIComponent(session.cwd)}`,
       )
@@ -167,8 +177,10 @@ export function useAgentControls({
           }
         });
     };
+    reload.current = load;
     load(false);
-    const timer = setInterval(() => load(true), 60000);
+    // Quotas move slowly: every 5 minutes, sooner after work (below).
+    const timer = setInterval(() => load(true), QUOTA_EVERY);
     request<Usage>(`sessions/${session.id}/telemetry`)
       .then((v) => {
         if (!cancel) {
@@ -208,6 +220,19 @@ export function useAgentControls({
       window.removeEventListener("workbench:usage", usageChanged);
     };
   }, [session.id, session.agent, session.cwd]);
+  // The context changed on its own: the agent worked and spent quota, so
+  // the 5h and weekly figures are read again (at most once a minute).
+  const used = data?.context?.used;
+  const seen = useRef<{ session: string; used?: number }>({ session: "" });
+  useEffect(() => {
+    const before =
+      seen.current.session === session.id ? seen.current.used : undefined;
+    // An update without the figure keeps the last one known.
+    if (used === undefined && seen.current.session === session.id) return;
+    seen.current = { session: session.id, used };
+    if (quotaDue(before, used, lastRead.current, Date.now()))
+      reload.current(true);
+  }, [session.id, used]);
   useEffect(() => {
     if (session.status === "idle")
       void request<Usage>(`sessions/${session.id}/telemetry`)

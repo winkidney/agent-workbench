@@ -104,3 +104,24 @@ export function quotaSummary(
     ];
   });
 }
+
+// How often quotas (5h, weekly) are read again: each read starts the CLI
+// once on the workbench, and they move slowly.
+export const QUOTA_EVERY = 5 * 60_000;
+// Sooner when the session's context changed (the agent did work, which
+// spends quota), but at most once a minute.
+export const QUOTA_AFTER_WORK = 60_000;
+
+export function quotaDue(
+  before: number | undefined,
+  after: number | undefined,
+  lastRead: number,
+  now: number,
+): boolean {
+  return (
+    before !== undefined &&
+    after !== undefined &&
+    before !== after &&
+    now - lastRead >= QUOTA_AFTER_WORK
+  );
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { quotaSummary, resetTime } from "./quota";
+import { quotaSummary, resetTime, QUOTA_EVERY, quotaDue } from "./quota";
 const now = Date.parse("2026-11-14T00:00:00Z");
 const reset = (now + 1570 * 60000) / 1000;
 const window = (minutes: number, used = 18) => ({
@@ -94,5 +94,20 @@ describe("quota summaries", () => {
       resetTime(new Date(reset * 1000).toISOString(), now),
     );
     expect(resetTime(now / 1000 - 60, now)).toContain("(in 0h 0m)");
+  });
+});
+
+describe("when quotas are read again", () => {
+  it("every 5 minutes, and once a minute at most after the context moved", () => {
+    expect(QUOTA_EVERY).toBe(300_000);
+    const t = 1_000_000;
+    // The context changed and the last read was a minute ago.
+    expect(quotaDue(1000, 2000, t - 60_000, t)).toBe(true);
+    // Changed again within the minute: wait for the next.
+    expect(quotaDue(2000, 3000, t - 30_000, t)).toBe(false);
+    // Unchanged, or the first figure seen for a session: nothing to do.
+    expect(quotaDue(2000, 2000, 0, t)).toBe(false);
+    expect(quotaDue(undefined, 2000, 0, t)).toBe(false);
+    expect(quotaDue(2000, undefined, 0, t)).toBe(false);
   });
 });
