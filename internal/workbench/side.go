@@ -37,6 +37,17 @@ type sideRuntime struct {
 	sending    bool
 	generation int
 	options    Options
+	// foreign: multi-agent v2 sub-agents of the side's threads. Codex takes
+	// no direct input for them; it runs and releases them through their root.
+	foreign map[string]bool
+	// stopped: the person stopped the running answer (InterruptSide).
+	stopped bool
+}
+
+// codexOwnsThread tells whether Codex refused a request because the thread
+// is a multi-agent v2 sub-agent, which only its root thread may drive.
+func codexOwnsThread(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "not allowed for multi-agent v2 sub-agents")
 }
 
 func (m *Manager) saveSide(sc *sideRuntime) {
@@ -372,7 +383,7 @@ func (m *Manager) sideReceive(parent *runtime, v map[string]any) bool {
 				return true
 			}
 		}
-		if thread == "" || !sc.threads[thread] {
+		if thread == "" || !sc.threads[thread] && !sc.foreign[thread] {
 			continue
 		}
 		method := str(v["method"])
@@ -392,7 +403,7 @@ func (m *Manager) sideReceive(parent *runtime, v map[string]any) bool {
 			m.sideEmit(sc.ID, "approval_resolved", map[string]any{"id": key})
 		}
 		if it := obj(p["item"]); str(it["type"]) == "subAgentActivity" {
-			if child := str(it["agentThreadId"]); child != "" {
+			if child := str(it["agentThreadId"]); child != "" && !sc.foreign[child] {
 				sc.threads[child] = true
 			}
 		}
@@ -555,24 +566,37 @@ func (m *Manager) cleanupSide(ctx context.Context, sc *sideRuntime) error {
 			threads = append(threads, t)
 		}
 	}
+	root := sc.native
 	m.mu.Unlock()
-	for _, thread := range threads {
-		// Clearing the goal stops engine-initiated follow-ups during teardown.
-		if _, err := m.rpcContext(ctx, sc.Parent, "thread/goal/clear", map[string]any{"threadId": thread}, nil); err != nil && !strings.Contains(err.Error(), "ephemeral thread does not support goals") {
-			return err
+	// A v2 sub-agent refuses direct requests: it is left to Codex, which
+	// stops and releases it with the side's own thread, and not waited on.
+	settle := func(thread string, err error) (bool, error) {
+		if err == nil {
+			return true, nil
 		}
-		m.mu.Lock()
-		turn := sc.turns[thread]
-		m.mu.Unlock()
-		if turn != "" {
-			if _, err := m.rpcContext(ctx, sc.Parent, "turn/interrupt", map[string]any{"threadId": thread, "turnId": turn}, nil); err != nil {
-				return err
+		if thread != root && codexOwnsThread(err) {
+			m.mu.Lock()
+			if sc.foreign == nil {
+				sc.foreign = map[string]bool{}
 			}
+			sc.foreign[thread] = true
+			sc.threads[thread] = false
+			m.mu.Unlock()
+			return false, nil
 		}
-		if _, err := m.rpcContext(ctx, sc.Parent, "thread/backgroundTerminals/clean", map[string]any{"threadId": thread}, nil); err != nil {
+		return false, err
+	}
+	kept := threads[:0]
+	for _, thread := range threads {
+		ok, err := settle(thread, m.cleanupThread(ctx, sc, thread))
+		if err != nil {
 			return err
+		}
+		if ok {
+			kept = append(kept, thread)
 		}
 	}
+	threads = kept
 	m.mu.Lock()
 	r = m.find(sc.Parent)
 	for key, raw := range sc.rt.pending {
@@ -583,11 +607,18 @@ func (m *Manager) cleanupSide(ctx context.Context, sc *sideRuntime) error {
 		delete(sc.rt.pending, key)
 	}
 	m.mu.Unlock()
+	kept = threads[:0]
 	for _, t := range threads {
-		if _, err := m.rpcContext(ctx, sc.Parent, "thread/unsubscribe", map[string]any{"threadId": t}, nil); err != nil {
+		_, err := m.rpcContext(ctx, sc.Parent, "thread/unsubscribe", map[string]any{"threadId": t}, nil)
+		ok, err := settle(t, err)
+		if err != nil {
 			return err
 		}
+		if ok {
+			kept = append(kept, t)
+		}
 	}
+	threads = kept
 	for len(threads) > 0 {
 		v, err := m.rpcContext(ctx, sc.Parent, "thread/loaded/list", map[string]any{}, nil)
 		if err != nil {
@@ -631,6 +662,24 @@ func (m *Manager) cleanupSide(ctx context.Context, sc *sideRuntime) error {
 		}
 	}
 	return nil
+}
+
+// cleanupThread stops what one side thread may still run.
+func (m *Manager) cleanupThread(ctx context.Context, sc *sideRuntime, thread string) error {
+	// Clearing the goal stops engine-initiated follow-ups during teardown.
+	if _, err := m.rpcContext(ctx, sc.Parent, "thread/goal/clear", map[string]any{"threadId": thread}, nil); err != nil && !strings.Contains(err.Error(), "ephemeral thread does not support goals") {
+		return err
+	}
+	m.mu.Lock()
+	turn := sc.turns[thread]
+	m.mu.Unlock()
+	if turn != "" {
+		if _, err := m.rpcContext(ctx, sc.Parent, "turn/interrupt", map[string]any{"threadId": thread, "turnId": turn}, nil); err != nil {
+			return err
+		}
+	}
+	_, err := m.rpcContext(ctx, sc.Parent, "thread/backgroundTerminals/clean", map[string]any{"threadId": thread}, nil)
+	return err
 }
 func (s *Server) sideAPI(w http.ResponseWriter, r *http.Request, path string) {
 	m := s.Manager

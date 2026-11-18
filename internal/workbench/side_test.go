@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -330,5 +331,49 @@ func TestSideCleanupIncludesChildDiscoveredDuringInterrupt(t *testing.T) {
 	awaitSide(t, m, sc.ID, "closed")
 	if !childClosed.Load() {
 		t.Fatal("closed without reclaiming late child")
+	}
+}
+
+// A side thread that starts a multi-agent v2 sub-agent: Codex refuses any
+// request sent to the sub-agent itself, so closing must leave it to Codex.
+func TestSideCleanupLeavesV2SubAgentsToCodex(t *testing.T) {
+	m, p, parent := sideFixture(t, "codex")
+	sc, _ := m.OpenSide(parent)
+	m.mu.Lock()
+	active := m.sides[sc.ID]
+	active.native = "root-side"
+	active.threads["root-side"] = true
+	active.generation = 1
+	active.turns["root-side"] = "turn"
+	m.mu.Unlock()
+	m.receive(parent, 1, map[string]any{"method": "item/completed", "params": map[string]any{"threadId": "root-side", "item": map[string]any{"type": "subAgentActivity", "agentThreadId": "v2-child"}}})
+	var rootSteps sync.Map
+	p.reply = func(v map[string]any) {
+		method := str(v["method"])
+		params := obj(v["params"])
+		if params["threadId"] == "v2-child" {
+			// Interrupting the root reports the child again.
+			m.receive(parent, 1, map[string]any{"method": "item/completed", "params": map[string]any{"threadId": "root-side", "item": map[string]any{"type": "subAgentActivity", "agentThreadId": "v2-child"}}})
+			m.receive(parent, 1, map[string]any{"id": v["id"], "error": map[string]any{"code": -32600, "message": "direct app-server input is not allowed for multi-agent v2 sub-agents"}})
+			return
+		}
+		if params["threadId"] == "root-side" {
+			rootSteps.Store(method, true)
+		}
+		result := map[string]any{}
+		if method == "thread/loaded/list" {
+			// Codex may keep the sub-agent loaded for a while.
+			result["data"] = []any{"parent", "v2-child"}
+		}
+		m.receive(parent, 1, map[string]any{"id": v["id"], "result": result})
+	}
+	if err := m.CloseSide(sc.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	awaitSide(t, m, sc.ID, "closed")
+	for _, method := range []string{"turn/interrupt", "thread/unsubscribe"} {
+		if _, ok := rootSteps.Load(method); !ok {
+			t.Fatal("root thread missed", method)
+		}
 	}
 }
