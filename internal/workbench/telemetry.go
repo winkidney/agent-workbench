@@ -36,6 +36,9 @@ type Telemetry struct {
 	Phase      string  `json:"phase,omitempty"`
 	// What the turn waits on, in words (an API retry, a hook, a check).
 	Detail string `json:"detail,omitempty"`
+	// Since when a Codex turn waits to reconnect to the model; it can be
+	// tried at once by steering.
+	RetrySince string `json:"retrySince,omitempty"`
 	// While a message waits for MCP servers (phase "mcp"): how many are up.
 	McpDone   int     `json:"mcpDone,omitempty"`
 	McpTotal  int     `json:"mcpTotal,omitempty"`
@@ -445,6 +448,9 @@ func (m *Manager) telemetry(id string) Telemetry {
 		t.Average = r.average
 		if r.turn {
 			t.TurnTokens, t.Phase, t.Detail = r.turnOut, r.phase, r.detail
+			if r.detailKind == "retry" && r.session.Agent == "codex" && !r.retrySince.IsZero() {
+				t.RetrySince = r.retrySince.UTC().Format(time.RFC3339)
+			}
 		} else if r.phase == "mcp" {
 			t.Phase = r.phase
 			t.McpDone, t.McpTotal = mcpProgress(r)

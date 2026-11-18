@@ -73,6 +73,7 @@ export function StatusLine({
   verb,
   hint,
   onBackground,
+  onRetry,
 }: {
   sessionId: string;
   status: string;
@@ -82,6 +83,8 @@ export function StatusLine({
   hint?: string;
   // Moves the command or subagent the turn waits on to the background.
   onBackground?: () => void;
+  // While Codex waits to reconnect to the model: try now (a steer).
+  onRetry?: () => void;
 }) {
   const busy = [
     "running",
@@ -96,6 +99,7 @@ export function StatusLine({
     tokens: 0,
     phase: "",
     detail: "",
+    retrySince: "",
     mcp: { done: 0, total: 0 },
   });
   useEffect(() => {
@@ -112,6 +116,7 @@ export function StatusLine({
           tokens: Number(v.data?.turnTokens) || 0,
           phase: String(v.data?.phase ?? ""),
           detail: String(v.data?.detail ?? ""),
+          retrySince: String(v.data?.retrySince ?? ""),
           mcp: {
             done: Number(v.data?.mcpDone) || 0,
             total: Number(v.data?.mcpTotal) || 0,
@@ -127,8 +132,11 @@ export function StatusLine({
   const shown =
     (status !== "waiting" && live.detail) ||
     statusVerb(verb, live.phase, live.mcp);
+  const retrying = status === "running" && !!live.retrySince;
+  const waited = retrying ? now - Date.parse(live.retrySince) : 0;
   const meta = [
     startedAt ? formatDuration(Math.max(0, now - startedAt)) : null,
+    retrying && waited > 0 ? `waiting ${formatDuration(waited)}` : null,
     status === "running" && live.tokens > 0
       ? `↓ ${compact(live.tokens)} ${Math.round(live.tokens) === 1 ? "token" : "tokens"}`
       : null,
@@ -153,6 +161,16 @@ export function StatusLine({
       <span className="status-meta" aria-hidden>
         ({meta.join(" · ")})
       </span>
+      {onRetry && retrying && (
+        <button
+          type="button"
+          className="status-background"
+          title="Codex may wait minutes before its next attempt; a short message in the turn makes it try now"
+          onClick={onRetry}
+        >
+          Retry now
+        </button>
+      )}
       {onBackground && status === "running" && (
         <button
           type="button"

@@ -35,8 +35,9 @@ type runtime struct {
 	configuring           bool
 	total, usage, context map[string]any
 	samples               []sample
-	turnOut               float64 // estimated output tokens this turn
-	phase                 string  // what the running turn is doing
+	turnOut               float64   // estimated output tokens this turn
+	phase                 string    // what the running turn is doing
+	retrySince            time.Time // a Codex reconnect waited on since (progress.go)
 	began                 time.Time
 	average               float64
 	session               Session

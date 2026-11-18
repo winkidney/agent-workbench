@@ -473,13 +473,24 @@ export function applyCodex(
     }
     case "error": {
       const message = text(record(p.error).message) || text(p.message);
-      if (message)
+      if (!message) return;
+      // A lost stream Codex will try again: a passing state, not a failure.
+      if (p.willRetry === true) {
         d.upsert({
           key: "error:" + ctx.seq,
-          kind: "error",
-          text: message,
+          kind: "notice",
+          tone: "warn",
+          text: reconnecting(record(p.error), message),
           local: true,
         });
+        return;
+      }
+      d.upsert({
+        key: "error:" + ctx.seq,
+        kind: "error",
+        text: message,
+        local: true,
+      });
       return;
     }
     // A running MCP tool's progress message.
@@ -599,4 +610,20 @@ export function applyCodex(
       });
       return;
   }
+}
+
+// A Codex retry in words, as the status line says it (progress.go):
+// "Reconnecting to the model (1/5) · Selected model is at capacity".
+export function reconnecting(
+  error: Record<string, unknown>,
+  message: string,
+): string {
+  let out = "Reconnecting to the model";
+  const attempt = /(\d+)\s*\/\s*(\d+)/.exec(message);
+  if (attempt) out += ` (${attempt[1]}/${attempt[2]})`;
+  let why = text(error.additionalDetails).trim();
+  const end = why.indexOf(". ");
+  if (end > 0) why = why.slice(0, end);
+  why = why.replace(/\.$/, "");
+  return why ? `${out} · ${why}` : out;
 }

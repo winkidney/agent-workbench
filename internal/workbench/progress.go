@@ -3,6 +3,7 @@ package workbench
 import (
 	"fmt"
 	"regexp"
+	"strings"
 	"time"
 )
 
@@ -107,6 +108,20 @@ func trackDetail(r *runtime, v map[string]any) {
 	}
 	p := obj(v["params"])
 	switch str(v["method"]) {
+	case "error":
+		// Codex lost the model's stream and will try again (the model at
+		// capacity, a dropped connection). Its next attempt can wait for
+		// its stream idle timeout, minutes, so the page says so and how
+		// long it has waited, and offers to try now (steering).
+		if p["willRetry"] == true {
+			if r.detailKind != "retry" {
+				r.retrySince = time.Now()
+			}
+			set("retry", reconnecting(obj(p["error"])))
+		}
+	case "item/started", "item/completed", "item/agentMessage/delta", "item/reasoning/summaryTextDelta", "item/reasoning/textDelta":
+		// The model answers again.
+		clear("retry")
 	case "item/autoApprovalReview/started":
 		set("review", "Auto-review is checking "+reviewTarget(obj(p["action"])))
 	case "item/autoApprovalReview/completed":
@@ -147,6 +162,25 @@ func trackDetail(r *runtime, v map[string]any) {
 	case "result":
 		clear("review", "hook", "retry", "check")
 	}
+}
+
+var retryAttempt = regexp.MustCompile(`(\d+)\s*/\s*(\d+)`)
+
+// reconnecting says a Codex retry in words: "Reconnecting to the model
+// (1/5) · Selected model is at capacity".
+func reconnecting(e map[string]any) string {
+	text := "Reconnecting to the model"
+	if m := retryAttempt.FindStringSubmatch(str(e["message"])); m != nil {
+		text += " (" + m[1] + "/" + m[2] + ")"
+	}
+	if why := strings.TrimSpace(str(e["additionalDetails"])); why != "" {
+		// Its first sentence; the advice after it is for the TUI.
+		if i := strings.Index(why, ". "); i > 0 {
+			why = why[:i]
+		}
+		text += " · " + strings.TrimSuffix(why, ".")
+	}
+	return text
 }
 
 var shellWrapped = regexp.MustCompile(`^(?:/\S*/)?(?:ba|z)?sh\s+-l?c\s+(['"])([\s\S]*)['"]$`)

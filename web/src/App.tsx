@@ -1401,6 +1401,11 @@ export default function App() {
                       : activity(transcript.state, current.status)
                   }
                   onBackground={moveToBackground}
+                  onRetry={
+                    current.agent === "codex" && !current.readOnly
+                      ? () => void sendMessage("Continue.", "steer")
+                      : undefined
+                  }
                 />
               </div>
               {parentSession && (
