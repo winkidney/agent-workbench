@@ -1,7 +1,7 @@
 # ADR 0003: A side chat hides without ending, and closes only when asked
 
 - Date: 2026-11-16
-- Status: accepted
+- Status: accepted; decision 4 amended by [ADR 0005](0005-side-chat-steers-and-stops.md) (a running answer can be steered or stopped)
 
 ## Context
 
