@@ -13,53 +13,56 @@ A local-first web workbench for the Claude Code and Codex CLIs you already use.
 
 Agent Workbench runs on your machine next to `claude` and `codex` and gives both a browser interface. It drives the official CLIs through their own protocols (Claude Code's stream-json mode and the Codex app-server), so your logins, settings, MCP servers, skills and project rules keep working, and every conversation stays in the CLI's own records. Open it from a browser on the machine, or, once you set up a pairing code or a password, from any device on your network, including a phone.
 
+## Who it's for
+
+- **You already use Claude Code or Codex in a terminal** and want a better view and better control, without switching tools: sessions stay the CLIs' own, and you can carry on in a terminal at any time.
+- **You run several agents at once**, across projects, and need to see which one is working, which one waits for you, and what each changed.
+- **You want to check in from your phone or another computer**: approve a step, answer a question, steer a turn, read a diff.
+- **Your machine also has other work to do**: a laptop, a home server or a workstation that stays on for days, where idle agents shouldn't hold gigabytes of memory.
+
+It is a single-user tool for your own machine, not a hosted service for a team.
+
+## Light on memory and resources
+
+- **Idle agents sleep.** Each agent CLI is a process of its own, from about 120 MiB at start to several hundred MiB in use. An engine idle for 5 minutes (`--idle`) is stopped, and the next message resumes the same conversation, so dozens of sessions cost no more than the few that are working. Work in progress keeps its engine awake: a turn, an approval, background shells and subagents, scheduled tasks, a goal.
+- **A small server.** One Go binary with an embedded interface and a SQLite file: about 12 MiB at start and around 50 MiB in daily use with more than a thousand sessions indexed.
+- **The page holds only what you look at.** Previews, terminal views and editors exist while their tab is shown; diagrams and the terminal load their code on first use; long histories load page by page; a session's caches go when you leave it.
+- **Light on a phone's data.** The session list is sent as changes, text is compressed, and the stream carries only the session you view: about 0.6 MB an hour on a quiet session, down from 412 MB.
+- **Nothing grows with uptime.** The event cache and the terminal activity record keep 7 days, images added to messages a week (1 GB at most), a terminal its last 1 MiB of output. Everything a session or a terminal holds is released when it ends.
+
 ## Features
 
-**Every session in one place**
-- All Claude Code and Codex sessions on the machine, grouped by the project they were started in, with subagent sessions nested under their parent.
-- Search, pins, a live "Active" list, and archived or hidden sessions out of the way.
-- Sessions are the CLIs' own: continue one here or in a terminal (`claude --resume`, `codex resume`). A session another client is running is followed live, read-only.
-- Choose each agent's program and home folder in Settings (a pinned CLI version, a separate account), and sign a CLI in from the page, from any device.
+**Sessions**
+- Every Claude Code and Codex session on the machine, grouped by project, subagents under their parent; search, pins and a live Active list.
+- Native and resumable: continue any session here or in a terminal; one another client runs is followed live, read-only.
+- Per agent, choose the program and home folder (a pinned version, another account) and sign the CLI in from the page.
 
-**Live control**
-- Replies, thinking and tool calls stream in and look like each CLI's terminal UI: its colors, diffs and ANSI output.
-- Mermaid diagrams in replies and plans are drawn in the theme's colors, with their source a click away.
-- Paste screenshots into the prompt, or drop or pick images and files of any kind: the agent sees the images, and reads the files where the workbench keeps them.
-- Press Enter during a turn to **steer** it: Codex takes the message at its next step (`turn/steer`); Claude takes it in at its next step, as its own TUI does, with **Send now** when you can't wait.
-- Queue follow-ups for after the turn, interrupt with Esc, and answer approvals and questions from the keyboard; add a note to the option you pick, as the CLIs' own clients allow.
-- After a Claude turn, the prompt suggests what you would likely type next, as Claude Code's terminal does; Tab fills it in.
-- Model, effort, speed, plan mode and permissions per session, shown as pills that always show the value in effect. New sessions start with each CLI's automatic approvals (Claude Code's Auto mode, Codex's Auto-review).
-- Sessions waiting for an approval, a question or a plan decision stand out in the sidebar, count in the tab title, and can send a desktop notification.
-- Cards for Codex's requests for more access and for MCP servers' forms; lines for what the CLIs only told their terminals (auto-mode blocks, warnings, model switches, failed hooks), and one Changes row per Codex turn.
-- Background work (Claude's background shells, monitors and subagents, Codex's background terminals) shows in the sidebar and in a tray above the composer, with its output and a Stop button; Ctrl+B moves a long Claude command to the background.
-- Subagents (Claude and Codex) show as one row with the tools they run under it, the same live and after a reload, and link to their own transcripts; their permission requests say which subagent asks.
+**Working with agents**
+- Replies, thinking and tool calls stream in as in each CLI's terminal UI, with diffs, ANSI colors and Mermaid diagrams.
+- Steer a running turn, queue follow-ups, interrupt with Esc; paste screenshots or attach files.
+- Approvals and questions as cards, answered from the keyboard, with a note on the option you pick.
+- Model, effort, speed, plan mode and permissions per session, always showing the value in effect.
+- Sessions that wait for you stand out in the sidebar and the tab title, with desktop notifications.
+- Background shells, monitors and subagents in a tray above the composer, with their output and a Stop button; scheduled tasks there with their next run.
+- `/` commands and `$` skills, `/goal` with a goal bar, `/plan`, and side chats (`/side`, `/btw`) beside the main task.
 
-**Commands and skills**
-- Side chats: Codex `/side` (alias `/btw`) and Claude `/btw` run alongside the main task. Esc or the hide button puts the panel away and the side chat keeps going; a dot on the header's side chat button shows it is live, pulsing while it works. A running question shows what it waits on and for how long. While Codex answers, a message steers that answer; the stop button ends a running answer of either agent and puts the question back in the box, without closing the side chat. Closing asks for confirmation, stops side work, releases its context, and keeps the read-only record in view. Switching sessions or disconnecting keeps an open side chat alive; its parent engine stays awake until you close it.
-- `/` commands and `$` skills with completion: Claude Code's own commands, and the Codex TUI commands that make sense outside a terminal (`/compact`, `/review`, `/goal`, `/fork`, `/mcp`, `/diff`, …).
-- `/goal` for both agents, with a goal bar above the composer: status, time and tokens, and pause, resume, edit and stop.
-- `/plan` and `/default` switch plan mode in both agents.
-
-**Files and previews**
-- Paths in replies open the file, resolved from where the agent was when it wrote them.
-- Images and videos open in a zoomable viewer, where an image can be marked up (boxes, arrows, pen, text, undo/redo), copied, or added to your message; HTML, PDF, SVG and local dev servers open in an isolated preview panel, Markdown and text files drawn there too; anything else is marked in the panel's file list.
-- Terminals in the preview panel: a shell in the session's folder (Linux, macOS, Windows) that keeps running when you hide it, switch sessions or reload, until you close its tab.
-- Edit text files right in the preview: a plain editor that keeps the file's indentation and line ends, saves with Ctrl+S, and won't overwrite a file the agent changed meanwhile without asking.
-- Show any file in your desktop file manager from the file list's menu (right-click or long-press), or, from another device, download it (a folder as a zip).
+**Files, previews and tools**
+- Paths in replies open the file: images and video in a viewer, HTML, PDF, SVG, Markdown and text in a preview panel, the rest in the file list.
+- Mark up an image (boxes, arrows, pen, text) and copy it or add it to your message.
+- Terminal tabs: a shell in the session's folder that runs until you close it.
+- Preview local dev servers, and edit text files in place without overwriting the agent's changes.
 
 **Status and usage**
-- A turn clock, live tokens per second, context usage and the provider's quota windows.
+- A turn clock, tokens per second, context usage, and the 5-hour and weekly quotas.
+- Plain words for what a turn waits on: a hook, an auto-review, a reconnect, with **Retry now**.
 
-**Anywhere on your network**
-- Use it from your phone or another computer once you choose, in Settings, how other devices sign in: a pairing code, or a username and password. Settings shows how the page you are on is connected, lists signed-in devices (and signs out the others), and has an About tab with the versions of the workbench and both CLIs and a diagnostics summary.
+**Access from anywhere**
+- Other devices sign in with a pairing code or a password; signed-in devices are listed and can be signed out.
 - Layouts for desktop and phone.
 
-**Themes**
-- Light, dark or system mode, with any of ten color themes: Default (each CLI's own colors), Everforest, Gruvbox, Solarized, Paper (sepia), Catppuccin, Rosé Pine, Nord, Tokyo Night and Darcula (JetBrains' Darcula and IntelliJ Light). A theme colors the interface, code highlighting and terminal output alike.
-
-**Packaged for macOS, Windows and Linux**
-- One binary. `agent-workbench install` starts it at login (systemd user unit, launchd agent or Run key).
-- Run more than one workbench side by side, each with its own data directory, address and settings ([details](docs/install.md#more-than-one-workbench)).
+**Look and packaging**
+- Light, dark or system mode, with ten color themes for the interface, code and terminal output.
+- One binary for macOS, Windows and Linux; `agent-workbench install` starts it at login; several workbenches can run side by side.
 
 | Steering a running turn | Commands | Phone |
 | --- | --- | --- |
