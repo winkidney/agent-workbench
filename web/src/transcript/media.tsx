@@ -110,6 +110,10 @@ export type LineAt = { line: number; end?: number };
 const LINE_REF =
   /(?::(\d+)(?::\d+)?(?:-(\d+)(?::\d+)?)?|#L(\d+)(?:C\d+)?(?:-L(\d+)(?:C\d+)?)?)$/;
 export function splitLineRef(href: string): { path: string; at?: LineAt } {
+  // A web address keeps its port and fragment (host:8080, #L12 on GitHub);
+  // only file:// is a path.
+  if (/^[a-z][\w+.-]*:\/\//i.test(href) && !/^file:\/\//i.test(href))
+    return { path: href };
   const m = LINE_REF.exec(href);
   if (!m || m.index === 0) return { path: href };
   const line = Number(m[1] ?? m[3]);

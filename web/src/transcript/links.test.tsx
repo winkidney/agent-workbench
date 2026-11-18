@@ -118,6 +118,18 @@ describe("the lines a link points to", () => {
   it("leave other paths as they are", () => {
     for (const p of ["a:b.txt", "notes.md", "a.go:0", "a.go:", ":12", "v1:2x"])
       expect(splitLineRef(p), p).toEqual({ path: p });
+    // Web addresses keep their port and fragment; file:// is a path.
+    for (const u of [
+      "http://x:80",
+      "https://example.com/a.go#L12",
+      "http://localhost:5173/src/a.ts:12",
+      "vscode://file/w/a.go:3",
+    ])
+      expect(splitLineRef(u), u).toEqual({ path: u });
+    expect(splitLineRef("file:///w/a.go:12")).toEqual({
+      path: "file:///w/a.go",
+      at: { line: 12 },
+    });
     // A range that runs backwards marks its first line only.
     expect(splitLineRef("a.go:20-12")).toEqual({
       path: "a.go",
@@ -135,5 +147,25 @@ describe("the lines a link points to", () => {
     openWorkspacePath(e, "dist/app.zip", "/w", { line: 3 });
     expect(openPath).toHaveBeenCalledWith("sub/fx.gd", "/w", { line: 127 });
     expect(locate).toHaveBeenCalledWith("dist/app.zip", "/w");
+  });
+  it("leave web links as they are", () => {
+    const openUrl = vi.fn();
+    const openPath = vi.fn();
+    const e = env({ openUrl, openPath });
+    const gh = render(
+      <UrlLink href="https://example.com/a.go#L12">gh</UrlLink>,
+      e,
+    );
+    expect(gh).toContain('href="https://example.com/a.go#L12"');
+    expect(gh).toContain('target="_blank"');
+    const local = render(
+      <UrlLink href="http://localhost:5173/src/a.ts:12">dev</UrlLink>,
+      e,
+    );
+    expect(local).toContain('href="http://localhost:5173/src/a.ts:12"');
+    expect(local).toContain("Open in preview panel");
+    const file = render(<UrlLink href="file:///w/sub/a.go:12">f</UrlLink>, e);
+    expect(file).toContain('href="#sub/a.go"');
+    expect(file).toContain('title="Preview sub/a.go at line 12"');
   });
 });
