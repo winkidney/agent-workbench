@@ -5567,8 +5567,12 @@ body.resizing iframe {
     padding: 4px 8px;
   }
   .viewer-tools button {
-    min-width: 28px;
-    padding: 0 4px;
+    min-width: 26px;
+    padding: 0 3px;
+  }
+  .viewer-swatch span {
+    width: 16px;
+    height: 16px;
   }
   .viewer-sep {
     display: none;

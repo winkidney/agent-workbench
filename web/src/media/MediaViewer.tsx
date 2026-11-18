@@ -10,6 +10,7 @@ import {
   ImageOff,
   Maximize,
   PanelRight,
+  MoveUpRight,
   PenLine,
   Pencil,
   Redo2,
@@ -54,6 +55,7 @@ import { MarkLayer } from "./MarkLayer";
 const TOOLS: { tool: Tool; label: string; Icon: typeof Hand }[] = [
   { tool: "move", label: "Move", Icon: Hand },
   { tool: "rect", label: "Box", Icon: Square },
+  { tool: "arrow", label: "Arrow", Icon: MoveUpRight },
   { tool: "pen", label: "Pen", Icon: PenLine },
   { tool: "text", label: "Text", Icon: Type },
 ];
@@ -547,7 +549,18 @@ export function MediaViewer({
           setDraft(
             tool === "rect"
               ? { kind: "rect", ...p, w: 0, h: 0, color, width }
-              : { kind: "pen", points: [p.x, p.y], color, width },
+              : tool === "arrow"
+                ? // Dragged from its tail to the point it shows.
+                  {
+                    kind: "arrow",
+                    x1: p.x,
+                    y1: p.y,
+                    x2: p.x,
+                    y2: p.y,
+                    color,
+                    width,
+                  }
+                : { kind: "pen", points: [p.x, p.y], color, width },
           );
         }}
         onPointerMove={(e) => {
@@ -578,6 +591,7 @@ export function MediaViewer({
             const p = stagePoint(e);
             if (d.kind === "rect")
               setDraft({ ...d, ...box(start.x, start.y, p.x, p.y) });
+            else if (d.kind === "arrow") setDraft({ ...d, x2: p.x, y2: p.y });
             else if (d.kind === "pen") {
               const n = d.points.length;
               // Points closer than 2 screen pixels add nothing.
@@ -599,6 +613,12 @@ export function MediaViewer({
           // A box too small to see was a slip.
           if (!d || !view) return;
           if (d.kind === "rect" && Math.max(d.w, d.h) * view.s < 4) return;
+          // So is an arrow too short to point anywhere.
+          if (
+            d.kind === "arrow" &&
+            Math.hypot(d.x2 - d.x1, d.y2 - d.y1) * view.s < 8
+          )
+            return;
           setHistory((h) => addMark(h, d));
         }}
         onPointerCancel={(e) => {

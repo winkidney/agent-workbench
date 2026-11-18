@@ -1,10 +1,11 @@
 import type { Size, View } from "./zoom";
 
-// Marks drawn over an image in the viewer: boxes, freehand strokes and text,
+// Marks drawn over an image in the viewer: boxes, arrows, freehand strokes
+// and text,
 // in the image's own pixels so they follow zoom and pan, and export at the
 // image's full size. They live only while the viewer shows that image.
 
-export type Tool = "move" | "rect" | "pen" | "text";
+export type Tool = "move" | "rect" | "arrow" | "pen" | "text";
 
 export type Mark =
   | {
@@ -13,6 +14,16 @@ export type Mark =
       y: number;
       w: number;
       h: number;
+      color: string;
+      width: number;
+    }
+  // From its tail (x1, y1) to the point it shows (x2, y2).
+  | {
+      kind: "arrow";
+      x1: number;
+      y1: number;
+      x2: number;
+      y2: number;
       color: string;
       width: number;
     }
@@ -105,6 +116,37 @@ export function foreign(src: string, origin = location.origin): boolean {
   }
 }
 
+// An arrow's head: its tip at (x2, y2) and two back corners, sized by the
+// line's width; and where the line stops, so it does not show through the
+// tip.
+export function arrowHead(
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  width: number,
+) {
+  const length = Math.hypot(x2 - x1, y2 - y1) || 1;
+  const ux = (x2 - x1) / length;
+  const uy = (y2 - y1) / length;
+  // Long enough to see, never longer than the arrow itself.
+  const head = Math.min(Math.max(width * 4.5, 10), length);
+  const half = head * 0.55;
+  const bx = x2 - ux * head;
+  const by = y2 - uy * head;
+  return {
+    points: [
+      x2,
+      y2,
+      bx - uy * half,
+      by + ux * half,
+      bx + uy * half,
+      by - ux * half,
+    ],
+    lineEnd: { x: x2 - ux * head * 0.6, y: y2 - uy * head * 0.6 },
+  };
+}
+
 export function drawMarks(ctx: CanvasRenderingContext2D, marks: Mark[]) {
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
@@ -121,6 +163,21 @@ export function drawMarks(ctx: CanvasRenderingContext2D, marks: Mark[]) {
     }
     ctx.strokeStyle = m.color;
     ctx.lineWidth = m.width;
+    if (m.kind === "arrow") {
+      const { points: p, lineEnd } = arrowHead(m.x1, m.y1, m.x2, m.y2, m.width);
+      ctx.beginPath();
+      ctx.moveTo(m.x1, m.y1);
+      ctx.lineTo(lineEnd.x, lineEnd.y);
+      ctx.stroke();
+      ctx.fillStyle = m.color;
+      ctx.beginPath();
+      ctx.moveTo(p[0], p[1]);
+      ctx.lineTo(p[2], p[3]);
+      ctx.lineTo(p[4], p[5]);
+      ctx.closePath();
+      ctx.fill();
+      continue;
+    }
     ctx.beginPath();
     if (m.kind === "rect") ctx.rect(m.x, m.y, m.w, m.h);
     else {

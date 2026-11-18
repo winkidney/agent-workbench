@@ -1,4 +1,4 @@
-import { FONT, halo, penPath, type Mark } from "./markup";
+import { FONT, arrowHead, halo, penPath, type Mark } from "./markup";
 import type { Size, View } from "./zoom";
 
 // The marks over the image, drawn in its own pixels and moved with it.
@@ -44,6 +44,23 @@ function MarkShape({ mark: m }: { mark: Mark }) {
         strokeLinejoin="round"
       />
     );
+  if (m.kind === "arrow") {
+    const { points: p, lineEnd } = arrowHead(m.x1, m.y1, m.x2, m.y2, m.width);
+    return (
+      <g data-mark="arrow">
+        <line
+          x1={m.x1}
+          y1={m.y1}
+          x2={lineEnd.x}
+          y2={lineEnd.y}
+          stroke={m.color}
+          strokeWidth={m.width}
+          strokeLinecap="round"
+        />
+        <polygon points={p.join(" ")} fill={m.color} />
+      </g>
+    );
+  }
   if (m.kind === "pen")
     return (
       <path
