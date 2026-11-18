@@ -97,6 +97,8 @@ type runtime struct {
 	childBusy map[string]bool
 }
 type Manager struct {
+	// Terminal tabs (terminal.go), made on first use.
+	terms terminals
 	// closing: the workbench is shutting down (Shutdown); engines it stops
 	// then are asleep, not failed.
 	sides    map[string]*sideRuntime
@@ -1303,6 +1305,8 @@ func (m *Manager) moveSessionRows(oldID, newID string) {
 // systemd the engines' units are bound to the workbench's, so systemd may be
 // stopping them already; either way the sessions are asleep afterwards.
 func (m *Manager) Shutdown() {
+	// Terminals are the workbench's children: they end with it.
+	m.endTerminals("", "workbench stopped")
 	m.mu.Lock()
 	m.closing = true
 	for _, sc := range m.sides {

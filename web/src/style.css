@@ -1953,6 +1953,39 @@ p {
   opacity: 1;
   background: var(--accent);
 }
+/* New terminal: after the tabs, a plain icon. */
+.preview-tab.new-terminal {
+  padding: 6px 8px;
+}
+.preview-tab.new-terminal:hover:not(:disabled) {
+  color: var(--foreground);
+  background: var(--accent);
+}
+.preview-tab.new-terminal:disabled {
+  opacity: 0.5;
+}
+/* A terminal tab: the shell fills the tab, in the theme's own colors. */
+.terminal-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--background);
+}
+.terminal-host {
+  flex: 1;
+  min-height: 0;
+  padding: 6px 4px 4px 8px;
+}
+.terminal-host .xterm {
+  height: 100%;
+}
+.terminal-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
 /* A preview over the conversation. */
 .workbench.preview-expanded {
   grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
@@ -2611,6 +2644,58 @@ textarea {
 }
 .connection-card li.warn {
   color: var(--foreground);
+}
+.terminal-activity {
+  margin-top: 20px;
+}
+.terminal-activity summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  list-style: none;
+}
+.terminal-activity summary::-webkit-details-marker {
+  display: none;
+}
+.terminal-activity summary h3 {
+  margin: 0;
+}
+.terminal-activity summary svg {
+  color: var(--muted-foreground);
+  transition: transform 0.15s;
+}
+.terminal-activity[open] summary svg {
+  transform: rotate(90deg);
+}
+.terminal-activity summary:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+@media (prefers-reduced-motion: reduce) {
+  .terminal-activity summary svg {
+    transition: none;
+  }
+}
+.terminal-activity ul {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  max-height: 220px;
+  overflow: auto;
+  font-size: 12px;
+}
+.terminal-activity li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border);
+}
+.terminal-activity time {
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
 }
 .signed-in {
   margin-top: 22px;

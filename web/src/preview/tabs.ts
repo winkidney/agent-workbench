@@ -1,6 +1,7 @@
 // Preview tabs (internal/workbench/preview_tabs.go): what a session's preview
-// panel had open, the six most recently opened. Only targets are kept; a
-// tab's page loads while it is shown and is gone when it is not.
+// panel had open, the six most recently opened files and services, and its
+// terminals besides (a terminal lives until it is closed). Only targets are
+// kept; a tab's page loads while it is shown and is gone when it is not.
 
 export type Preview = {
   id: string;
@@ -19,7 +20,7 @@ export type Preview = {
 };
 
 export type PreviewTab = {
-  kind: "file" | "service";
+  kind: "file" | "service" | "terminal";
   // file: relative to the session's directory.
   path?: string;
   // service: the server attached to, or the command the workbench runs.
@@ -27,11 +28,16 @@ export type PreviewTab = {
   command?: string;
   port?: number;
   preview?: string;
-  // From the server: the file's size and time, a file gone, a service
-  // still running.
+  // terminal: the terminal shown, and its name.
+  terminal?: string;
+  title?: string;
+  // From the server: the file's size and time, a file gone (or a terminal
+  // ended with the workbench), a service or terminal still running, an
+  // ended terminal's exit status.
   stamp?: string;
   missing?: boolean;
   running?: boolean;
+  code?: number;
 };
 
 export type PreviewTabs = { tabs: PreviewTab[]; active: number };
@@ -41,18 +47,24 @@ export const NO_TABS: PreviewTabs = { tabs: [], active: -1 };
 
 export function sameTarget(a: PreviewTab, b: PreviewTab): boolean {
   if (a.kind !== b.kind) return false;
+  if (a.kind === "terminal") return a.terminal === b.terminal;
   if (a.kind === "file") return a.path === b.path;
   if (a.command || b.command)
     return a.command === b.command && a.port === b.port;
   return a.target === b.target;
 }
 
-// Opening puts a tab first and shows it; past six, the one opened longest
-// ago goes.
+// Opening puts a tab first and shows it; past six files and services, the
+// one opened longest ago goes. Terminals never go this way: only closing
+// ends one.
 export function openTab(s: PreviewTabs, tab: PreviewTab): PreviewTabs {
   const old = s.tabs.find((t) => sameTarget(t, tab));
   const rest = s.tabs.filter((t) => !sameTarget(t, tab));
-  return { tabs: [{ ...old, ...tab }, ...rest].slice(0, MAX_TABS), active: 0 };
+  let others = 0;
+  const tabs = [{ ...old, ...tab }, ...rest].filter(
+    (t) => t.kind === "terminal" || ++others <= MAX_TABS,
+  );
+  return { tabs, active: 0 };
 }
 
 // Closing shows the tab that took its place, or the one before.
@@ -79,14 +91,18 @@ export function updateTab(
 export function stored(s: PreviewTabs): PreviewTabs {
   return {
     active: s.active,
-    tabs: s.tabs.map(({ kind, path, target, command, port, preview }) => ({
-      kind,
-      path,
-      target,
-      command,
-      port,
-      preview,
-    })),
+    tabs: s.tabs.map(
+      ({ kind, path, target, command, port, preview, terminal, title }) => ({
+        kind,
+        path,
+        target,
+        command,
+        port,
+        preview,
+        terminal,
+        title,
+      }),
+    ),
   };
 }
 
@@ -98,6 +114,7 @@ export function tabFromPreview(p: Preview): PreviewTab {
 }
 
 export function tabTitle(t: PreviewTab): string {
+  if (t.kind === "terminal") return t.title || "Terminal";
   if (t.kind === "file") return (t.path ?? "").split("/").pop() || "file";
   if (t.command) return `:${t.port} ${t.command.split(/\s+/)[0] ?? ""}`.trim();
   try {
@@ -109,6 +126,7 @@ export function tabTitle(t: PreviewTab): string {
 }
 
 export function tabLabel(t: PreviewTab): string {
+  if (t.kind === "terminal") return t.title || "Terminal";
   if (t.kind === "file") return t.path ?? "";
   return t.command ? `${t.command} (port ${t.port})` : (t.target ?? "");
 }

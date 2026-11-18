@@ -9,3 +9,4 @@ Decisions that shape how the workbench behaves, why, and what they cost. Each re
 | [0003](0003-side-chat-hides-and-closes.md) | A side chat hides without ending, and closes only when asked | accepted; decision 4 amended by 0005 |
 | [0004](0004-file-links-preview-or-locate.md) | A file link previews what the browser can show, and locates the rest in the file list | accepted |
 | [0005](0005-side-chat-steers-and-stops.md) | A side answer can be steered or stopped without closing the side chat | accepted |
+| [0006](0006-terminal-tabs-live-until-closed.md) | A terminal tab lives until it is closed | accepted |

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { TerminalActivity } from "./TerminalActivity";
 import { Copy, Eye, EyeOff, LogOut, RefreshCw } from "lucide-react";
 import { api } from "../../lib/api";
 import {
@@ -405,6 +406,7 @@ export function AccessTab({
           every device out.
         </p>
       )}
+      <TerminalActivity />
     </>
   );
 }

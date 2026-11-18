@@ -36,6 +36,32 @@ describe("preview tabs", () => {
     expect(s.tabs.length).toBe(MAX_TABS);
   });
 
+  it("keeps terminals besides the six files and services", () => {
+    const term = (id: string): PreviewTab => ({
+      kind: "terminal",
+      terminal: id,
+      title: "Terminal " + id,
+    });
+    let s = openTab(NO_TABS, term("1"));
+    for (let i = 1; i <= 8; i++) s = openTab(s, file(`f${i}.html`));
+    s = openTab(s, term("2"));
+    expect(s.tabs.filter((t) => t.kind === "terminal")).toHaveLength(2);
+    expect(s.tabs.filter((t) => t.kind === "file")).toHaveLength(MAX_TABS);
+    // The oldest terminal is still there, past the files.
+    expect(s.tabs.at(-1)).toMatchObject({ terminal: "1" });
+    expect(tabTitle(s.tabs[0])).toBe("Terminal 2");
+    expect(stored(s).tabs[0]).toEqual({
+      kind: "terminal",
+      terminal: "2",
+      title: "Terminal 2",
+      path: undefined,
+      target: undefined,
+      command: undefined,
+      port: undefined,
+      preview: undefined,
+    });
+  });
+
   it("shows a neighbour when the shown tab closes", () => {
     let s = { tabs: [file("a"), file("b"), file("c")], active: 1 };
     s = closeTab(s, 1);

@@ -12,9 +12,13 @@ import (
 // Preview tabs: what a session's preview panel had open, so it can be found
 // and opened again from any device. Only the targets are kept, the six most
 // recently opened; a tab's content loads when it is shown and is gone when
-// it is not (the page holds no state of its own).
+// it is not (the page holds no state of its own). Terminal tabs are kept
+// besides those six: a terminal lives until it is closed (terminal.go).
 
-const maxPreviewTabs = 6
+const (
+	maxPreviewTabs  = 6
+	maxTerminalTabs = 2 * termPerSession
+)
 
 // PreviewTab is one opened target.
 type PreviewTab struct {
@@ -27,11 +31,16 @@ type PreviewTab struct {
 	Port    int    `json:"port,omitempty"`
 	// The preview serving a service, while it runs.
 	Preview string `json:"preview,omitempty"`
+	// terminal: the terminal shown, and its name ("Terminal 2").
+	Terminal string `json:"terminal,omitempty"`
+	Title    string `json:"title,omitempty"`
 	// Read only: a file's size and time (to tell it changed), a file gone,
 	// a service's preview still running.
 	Stamp   string `json:"stamp,omitempty"`
 	Missing bool   `json:"missing,omitempty"`
 	Running bool   `json:"running,omitempty"`
+	// Read only: an ended terminal's exit status.
+	Code *int `json:"code,omitempty"`
 }
 
 // PreviewTabs are a session's tabs, most recently opened first, and the one
@@ -85,6 +94,9 @@ func (m *Manager) PreviewTabsOf(id string) PreviewTabs {
 					t.Running = true
 				}
 			}
+		case "terminal":
+			t.Running, t.Code = m.terminalState(id, t.Terminal)
+			t.Missing = !t.Running && t.Code == nil
 		}
 	}
 	return v
@@ -92,13 +104,28 @@ func (m *Manager) PreviewTabsOf(id string) PreviewTabs {
 
 // SetPreviewTabs saves a session's tabs after checking each target.
 func (m *Manager) SetPreviewTabs(id string, v PreviewTabs) (PreviewTabs, error) {
-	if len(v.Tabs) > maxPreviewTabs {
-		v.Tabs = v.Tabs[:maxPreviewTabs]
-	}
 	clean := make([]PreviewTab, 0, len(v.Tabs))
+	others, terms := 0, 0
 	for _, t := range v.Tabs {
-		t.Stamp, t.Missing, t.Running = "", false, false
+		t.Stamp, t.Missing, t.Running, t.Code = "", false, false, nil
+		// Six files and services, most recent first; terminals besides.
+		if t.Kind == "terminal" {
+			if terms++; terms > maxTerminalTabs {
+				continue
+			}
+		} else if others++; others > maxPreviewTabs {
+			continue
+		}
 		switch t.Kind {
+		case "terminal":
+			if len(t.Terminal) != 48 || strings.Trim(t.Terminal, "0123456789abcdef") != "" {
+				return v, errors.New("a terminal tab names a terminal")
+			}
+			title := t.Title
+			if len(title) > 64 {
+				title = title[:64]
+			}
+			t = PreviewTab{Kind: "terminal", Terminal: t.Terminal, Title: title}
 		case "file":
 			// As a preview names it ("/report.html"), relative to the session.
 			p := filepath.ToSlash(filepath.Clean(strings.TrimPrefix(t.Path, "/")))
@@ -126,7 +153,7 @@ func (m *Manager) SetPreviewTabs(id string, v PreviewTabs) (PreviewTabs, error) 
 				t.Preview = ""
 			}
 		default:
-			return v, errors.New("a tab is a file or a service")
+			return v, errors.New("a tab is a file, a service or a terminal")
 		}
 		clean = append(clean, t)
 	}

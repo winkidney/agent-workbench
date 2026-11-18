@@ -15,6 +15,7 @@ import {
   Minimize2,
   RefreshCw,
   SquarePen,
+  SquareTerminal,
   X,
 } from "lucide-react";
 import { api } from "../lib/api";
@@ -37,6 +38,8 @@ import {
 import type { PreviewTabsApi } from "./usePreviewTabs";
 import { TextEditor } from "./TextEditor";
 import { TextView } from "./TextView";
+import { TerminalView } from "./TerminalView";
+import { inTerminal } from "./terminal";
 
 const VIEWPORT_KEY = "workbench-preview-viewport";
 
@@ -72,6 +75,36 @@ export function PreviewPanel({
 }) {
   const { state } = tabs;
   const active = state.tabs[state.active];
+  const [starting, setStarting] = useState(false);
+  // A new terminal: a shell in the session's directory, in a tab of its own.
+  const newTerminal = (replace?: number) => {
+    if (starting) return;
+    setStarting(true);
+    api<{ id: string; title: string }>(
+      `sessions/${encodeURIComponent(session)}/terminals`,
+      "POST",
+    )
+      .then((t) => {
+        const tab: PreviewTab = {
+          kind: "terminal",
+          terminal: t.id,
+          title: t.title,
+          running: true,
+          code: undefined,
+          missing: false,
+        };
+        if (replace === undefined) return tabs.open(tab);
+        // In an ended terminal's place, which is forgotten.
+        const old = state.tabs[replace]?.terminal;
+        if (old)
+          void api(`terminals/${encodeURIComponent(old)}`, "DELETE").catch(
+            () => {},
+          );
+        tabs.update(replace, tab);
+      })
+      .catch(onError)
+      .finally(() => setStarting(false));
+  };
   return (
     <>
       <div className="preview-tabs" role="tablist" aria-label="Previews">
@@ -86,7 +119,7 @@ export function PreviewPanel({
         </button>
         {state.tabs.map((t, i) => (
           <div
-            key={`${t.kind}:${t.path ?? t.command ?? t.target}`}
+            key={`${t.kind}:${t.terminal ?? t.path ?? t.command ?? t.target}`}
             className={
               "preview-tab" +
               (i === state.active ? " active" : "") +
@@ -100,7 +133,9 @@ export function PreviewPanel({
               title={tabLabel(t)}
               onClick={() => tabs.show(i)}
             >
-              {t.kind === "file" ? (
+              {t.kind === "terminal" ? (
+                <SquareTerminal size={13} aria-hidden />
+              ) : t.kind === "file" ? (
                 <FileText size={13} aria-hidden />
               ) : (
                 <Globe size={13} aria-hidden />
@@ -116,6 +151,15 @@ export function PreviewPanel({
             </button>
           </div>
         ))}
+        <button
+          className="preview-tab new-terminal"
+          aria-label="New terminal"
+          title="New terminal (a shell in this session's folder)"
+          disabled={starting}
+          onClick={() => newTerminal()}
+        >
+          <SquareTerminal size={13} aria-hidden />
+        </button>
       </div>
       {opening && (
         <div
@@ -124,7 +168,41 @@ export function PreviewPanel({
           aria-label="Opening"
         />
       )}
-      {active ? (
+      {active?.kind === "terminal" ? (
+        <TerminalView
+          key={`${session}:terminal:${active.terminal}`}
+          tab={active}
+          controls={
+            <>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={expanded ? "Back to the conversation" : "Expand"}
+                title={
+                  expanded
+                    ? "Back to the conversation"
+                    : "Expand over the conversation"
+                }
+                onClick={() => onExpand(!expanded)}
+              >
+                {expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Close terminal"
+                title="Close terminal"
+                onClick={() => void closeTab(tabs, state.active, onError)}
+              >
+                <X size={14} />
+              </Button>
+            </>
+          }
+          onEnded={(patch) => tabs.update(state.active, patch)}
+          onRestart={() => newTerminal(state.active)}
+          onClose={() => void closeTab(tabs, state.active, onError)}
+        />
+      ) : active ? (
         <TabView
           key={`${session}:${active.kind}:${tabLabel(active)}`}
           session={session}
@@ -143,12 +221,31 @@ export function PreviewPanel({
 }
 
 // Closing a tab of a service the workbench started asks whether to stop it.
+// Closing a terminal ends it (asked first while its shell runs): that is the
+// only way a terminal ends from the page.
 async function closeTab(
   tabs: PreviewTabsApi,
   i: number,
   onError: (e: unknown) => void,
 ) {
   const t = tabs.state.tabs[i];
+  if (t?.kind === "terminal") {
+    const running = !t.missing && t.code === undefined;
+    if (
+      running &&
+      !confirm(
+        `Close ${tabTitle(t)}? Its shell and everything running in it stop.`,
+      )
+    )
+      return;
+    if (t.terminal)
+      await api(`terminals/${encodeURIComponent(t.terminal)}`, "DELETE").catch(
+        // Already gone (the workbench restarted): nothing to end.
+        () => {},
+      );
+    tabs.close(i);
+    return;
+  }
   if (t?.command && t.preview && t.running) {
     if (confirm(`Stop ${t.command} too? Cancel keeps it running.`))
       await api("previews/" + t.preview, "DELETE").catch(onError);
@@ -297,7 +394,8 @@ function TabView({
       if (
         e.key === "Escape" &&
         !e.defaultPrevented &&
-        !document.fullscreenElement
+        !document.fullscreenElement &&
+        !inTerminal(e.target)
       )
         onExpand(false);
     };

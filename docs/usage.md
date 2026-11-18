@@ -113,6 +113,13 @@ Permission requests appear as cards in the conversation: **1** allow, **2** allo
   - The tabs, and what each opens, are kept on the workbench per session: switch sessions, reload the page, restart the workbench or come from another device, and they are there. Tabs unused for 7 days are dropped.
   - Only the tab shown has its page. Hiding the panel, switching tabs or switching sessions unloads it, to save memory; showing it again loads it afresh (scroll position and page state are not kept).
   - ✕ closes a tab. For a server the workbench started, it asks whether to stop the server too; one left running stays in the list under **Files**, where it can be opened again. After a restart such a tab offers **Start again**.
+- **Terminals.** **New terminal** (the terminal icon after the tabs) opens a shell in the session's folder as a tab: your login shell on Linux and macOS, PowerShell (else the command prompt) on Windows 10 1809 and later.
+  - **It keeps running until you close it.** Hiding the panel, switching tabs or sessions, reloading the page or coming from another device never ends it, and opening more files never pushes its tab out. Showing it again brings back its screen.
+  - **Closing** its tab (✕) asks first, then ends the shell and everything running in it, including programs started with `nohup`. A program that detached itself on purpose (`setsid`, a daemon) is left running, as a real terminal would.
+  - **When the shell exits** (`exit`), the tab shows its exit status, with **Start a new shell** or **Close**. A terminal also ends when its session is deleted or the workbench stops or restarts; its tab then offers **New terminal here**.
+  - **Keys** go to the shell: Esc, Ctrl+B, Ctrl+O and the rest don't stop the agent or hide panels while you type in a terminal.
+  - **Who can.** Any signed-in device, the same as sending tasks to agents; a device that is signed out loses its terminal view at once (the terminal keeps running). Opens and ends are listed for 7 days, with the device, under **Terminal activity** in Settings → Access & security (collapsed until you open it); what a terminal showed or was sent is never kept.
+  - **Limits.** Up to 8 terminals per session and 32 in all; each keeps its last 1 MB of output for coming back to it.
 - **The preview toolbar:**
   - **Page width:** Fit (the panel's width), Desktop 1280, Tablet 768 or Phone 390. The page is laid out at that width and shrunk to fit, with the scale shown, so a desktop page keeps its desktop layout in a narrow panel. Remembered per browser.
   - **Reload.** When a turn ends and the agent changed the file shown, the toolbar offers **Updated · Reload**; nothing reloads while you read.

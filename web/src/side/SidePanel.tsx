@@ -25,6 +25,7 @@ import { ApprovalCard } from "../approval/ApprovalCard";
 import { StatusLine } from "../composer/StatusLine";
 import { Button } from "../components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "../components/ui/dialog";
+import { inTerminal } from "../preview/terminal";
 import {
   canSteer,
   echoed,
@@ -121,7 +122,13 @@ export function SidePanel({
   useEffect(() => {
     if (!open) return;
     const escape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.isComposing || ask) return;
+      if (
+        event.key !== "Escape" ||
+        event.isComposing ||
+        ask ||
+        inTerminal(event.target)
+      )
+        return;
       event.preventDefault();
       event.stopPropagation();
       onHide();

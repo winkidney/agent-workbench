@@ -43,6 +43,7 @@ Agent Workbench runs on your machine next to `claude` and `codex` and gives both
 **Files and previews**
 - Paths in replies open the file, resolved from where the agent was when it wrote them.
 - Images and videos open in a zoomable viewer, where an image can be marked up (boxes, pen, text, undo/redo), copied, or added to your message; HTML, PDF, SVG and local dev servers open in an isolated preview panel, Markdown and text files drawn there too; anything else is marked in the panel's file list.
+- Terminals in the preview panel: a shell in the session's folder (Linux, macOS, Windows) that keeps running when you hide it, switch sessions or reload, until you close its tab.
 - Edit text files right in the preview: a plain editor that keeps the file's indentation and line ends, saves with Ctrl+S, and won't overwrite a file the agent changed meanwhile without asking.
 - Show any file in your desktop file manager from the file list's menu (right-click or long-press), or, from another device, download it (a folder as a zip).
 

@@ -41,6 +41,9 @@ type Server struct {
 	// signinGen ends those (and pairing sessions) when sign-in rules change.
 	fileGrants map[string]fileGrant
 	signinGen  uint64
+	// authChanged wakes open terminal sockets to check their sign-in again
+	// when sign-ins end (terminal.go).
+	authChanged *notifier
 	// localSignin makes this computer sign in too, for a workbench reached
 	// through a tunnel here (read without the lock by hostAccess).
 	localSignin atomic.Bool
@@ -79,7 +82,7 @@ func assetBuild(assets fs.FS) string {
 }
 
 func NewServer(m *Manager, assets fs.FS, host, pairing string) *Server {
-	s := &Server{Manager: m, Assets: assets, Host: host, Pairing: pairing, auth: map[string]time.Time{}, grants: map[string]grant{}, attempts: map[string][]time.Time{}, fileGrants: map[string]fileGrant{}, build: assetBuild(assets), compress: compressor()}
+	s := &Server{Manager: m, Assets: assets, Host: host, Pairing: pairing, auth: map[string]time.Time{}, grants: map[string]grant{}, attempts: map[string][]time.Time{}, fileGrants: map[string]fileGrant{}, build: assetBuild(assets), compress: compressor(), authChanged: newNotifier()}
 	if _, port, err := net.SplitHostPort(host); err == nil {
 		m.mu.Lock()
 		m.previewPort = port
@@ -278,6 +281,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/events" {
 			// A stream: sent as it comes.
 			s.api(w, r)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/api/terminals/") && strings.HasSuffix(r.URL.Path, "/socket") && r.Method == "GET" {
+			// A WebSocket: taken over from the HTTP server (terminal.go).
+			s.terminalSocket(w, r, access)
 			return
 		}
 		s.compress(http.HandlerFunc(s.api)).ServeHTTP(w, r)
@@ -501,6 +509,16 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 		}
 	case strings.HasPrefix(path, "side-chats/") || (strings.HasPrefix(path, "sessions/") && strings.HasSuffix(path, "/side-chats")):
 		s.sideAPI(w, r, path)
+	case strings.HasPrefix(path, "terminals/") || (strings.HasPrefix(path, "sessions/") && strings.HasSuffix(path, "/terminals")):
+		s.terminalAPI(w, r, path, s.hostAccess(r))
+	case path == "terminal-audit" && r.Method == "GET":
+		list, err := m.TerminalAudit(100)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		writeJSON(w, list)
 	case strings.HasPrefix(path, "sessions/") && (r.Method == "GET" || r.Method == "PATCH"):
 		parts := strings.Split(path, "/")
 		if len(parts) != 3 {
@@ -629,6 +647,7 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 			// Sign-ins under the old rules end, file grants with them.
 			s.auth = map[string]time.Time{}
 			s.signinGen++
+			defer s.authChanged.Broadcast()
 		}
 		if mode == remotePairing && s.hostAccess(r) == hostAuth && !s.validSessionLocked(r) {
 			// The device that saved stays connected where pairing applies.
@@ -648,6 +667,7 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 		}
 		ended := s.signOutOthersLocked(r)
 		s.mu.Unlock()
+		s.authChanged.Broadcast()
 		w.Header().Set("Cache-Control", "no-store")
 		writeJSON(w, map[string]any{"ended": ended, "settings": s.settings(r)})
 	case path == "about" && r.Method == "GET":

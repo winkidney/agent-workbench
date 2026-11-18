@@ -18,6 +18,7 @@ func (m *Manager) Delete(id string) error {
 	if err := m.threadOp(id, "thread/delete"); err != nil {
 		return err
 	}
+	m.endTerminals(id, "session deleted")
 	m.mu.Lock()
 	delete(m.sessions, id)
 	m.mu.Unlock()

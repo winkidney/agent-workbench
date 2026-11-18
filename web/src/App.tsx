@@ -39,6 +39,7 @@ import { LogoMark } from "./components/Logo";
 import { PreviewPanel } from "./preview/PreviewPanel";
 import { FileList, type Entry } from "./preview/FileList";
 import { mayLeave } from "./preview/unsaved";
+import { inTerminal } from "./preview/terminal";
 import {
   drifted,
   mergeSessions,
@@ -930,6 +931,8 @@ export default function App() {
   };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // A terminal's keys are the shell's (Esc, Ctrl+O and the rest).
+      if (inTerminal(e.target)) return;
       if (
         (e.ctrlKey || e.metaKey) &&
         !e.shiftKey &&
