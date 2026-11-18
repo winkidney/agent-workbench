@@ -31,3 +31,43 @@ describe("code block highlighting", () => {
     expect(html).toContain("<code>const</code>");
   });
 });
+
+describe("numbered lines", () => {
+  const lines = (html: string) =>
+    Array.from(
+      html.matchAll(/<span class="(code-line[^"]*)" data-line="(\d+)">/g),
+      (m) => [Number(m[2]), m[1]] as const,
+    );
+
+  it("numbers each line from 1 and marks the target ones", async () => {
+    await loadHighlighter();
+    const html = renderToStaticMarkup(
+      <Markdown text={"```\na\n\nb\nc\n```"} lines={{ line: 2, end: 3 }} />,
+    );
+    expect(lines(html)).toEqual([
+      [1, "code-line"],
+      [2, "code-line target"],
+      [3, "code-line target"],
+      [4, "code-line"],
+    ]);
+    // Each line keeps its break, so the copied text is the file's.
+    expect(html.replace(/<[^>]+>/g, "")).toContain("a\n\nb\nc");
+  });
+
+  it("keeps a token's color on every line it spans", async () => {
+    await loadHighlighter();
+    const html = renderToStaticMarkup(
+      <Markdown text={"```js\n/* one\ntwo */\nx\n```"} lines={{}} />,
+    );
+    expect(lines(html).map(([n]) => n)).toEqual([1, 2, 3]);
+    expect(html).toContain('<span class="hljs-comment">/* one</span>');
+    expect(html).toContain('<span class="hljs-comment">two */</span>');
+  });
+
+  it("are left out of the conversation's code blocks", async () => {
+    await loadHighlighter();
+    expect(
+      renderToStaticMarkup(<Markdown text={"```js\nx\n```"} />),
+    ).not.toContain("code-line");
+  });
+});

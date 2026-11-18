@@ -4,6 +4,7 @@ import {
   NO_TABS,
   closeTab,
   openTab,
+  keepMarks,
   sameTarget,
   stored,
   updateTab,
@@ -28,7 +29,9 @@ export function usePreviewTabs(
     const s = current.current;
     if (!s) return;
     api<PreviewTabs>(url(s))
-      .then((v) => current.current === s && setState(v))
+      .then(
+        (v) => current.current === s && setState(keepMarks(v, latest.current)),
+      )
       .catch(() => {});
   }, []);
 
@@ -44,7 +47,10 @@ export function usePreviewTabs(
       const s = current.current;
       if (!s) return;
       api<PreviewTabs>(url(s), "PUT", stored(next))
-        .then((v) => current.current === s && setState(v))
+        .then(
+          (v) =>
+            current.current === s && setState(keepMarks(v, latest.current)),
+        )
         .catch(onError);
     },
     [onError],

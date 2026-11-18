@@ -3,6 +3,7 @@ import {
   MAX_TABS,
   NO_TABS,
   closeTab,
+  keepMarks,
   openTab,
   scaleFor,
   stored,
@@ -124,5 +125,30 @@ describe("preview tabs", () => {
     expect(scaleFor(640, 1280)).toBe(0.5);
     expect(scaleFor(1400, 1280)).toBe(1);
     expect(scaleFor(640, 0)).toBe(1);
+  });
+
+  it("marks a file's lines for one opening only, going to them again each time", () => {
+    let s = openTab(NO_TABS, { ...file("a.go"), line: 12, lineEnd: 20 });
+    expect(s.tabs[0]).toMatchObject({ line: 12, lineEnd: 20, jump: 1 });
+    s = openTab(s, { ...file("a.go"), line: 12 });
+    expect(s.tabs[0]).toMatchObject({ line: 12, jump: 2 });
+    expect(s.tabs[0].lineEnd).toBeUndefined();
+    s = openTab(s, file("a.go"));
+    expect(s.tabs[0].line).toBeUndefined();
+    expect(s.tabs[0].jump).toBeUndefined();
+    // The server keeps the target, not the lines.
+    s = openTab(s, { ...file("a.go"), line: 3 });
+    expect(stored(s).tabs[0]).toEqual({ kind: "file", path: "a.go" });
+  });
+
+  it("keeps the marked lines when the server answers with its copy", () => {
+    const local = openTab(openTab(NO_TABS, file("b.go")), {
+      ...file("a.go"),
+      line: 7,
+    });
+    const server = stored(local);
+    const kept = keepMarks(server, local);
+    expect(kept.tabs[0]).toMatchObject({ path: "a.go", line: 7, jump: 1 });
+    expect(kept.tabs[1].line).toBeUndefined();
   });
 });

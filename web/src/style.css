@@ -1853,6 +1853,40 @@ p {
 .preview-text > .markdown > .md-code:only-child {
   margin: 0;
 }
+/* Numbered lines (a text file in the panel): the number is drawn, not text,
+   so copying takes the code alone; the lines a link pointed to are marked
+   across the block's whole width. */
+.md-code pre:has(> code > .code-line) {
+  padding-left: 0;
+  padding-right: 0;
+}
+.md-code code:has(> .code-line) {
+  display: block;
+  width: max-content;
+  min-width: 100%;
+}
+.code-line {
+  display: block;
+  padding-right: 12px;
+}
+.code-line::before {
+  content: attr(data-line);
+  display: inline-block;
+  min-width: var(--gutter, 2ch);
+  margin: 0 12px 0 10px;
+  text-align: right;
+  color: var(--muted-foreground);
+  opacity: 0.7;
+  user-select: none;
+}
+.code-line.target {
+  background: color-mix(in srgb, var(--ring) 22%, transparent);
+  box-shadow: inset 2px 0 var(--ring);
+}
+.code-line.target::before {
+  color: var(--foreground);
+  opacity: 1;
+}
 .preview-note p {
   margin: 0 0 12px;
 }

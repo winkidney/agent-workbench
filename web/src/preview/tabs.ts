@@ -23,6 +23,11 @@ export type PreviewTab = {
   kind: "file" | "service" | "terminal";
   // file: relative to the session's directory.
   path?: string;
+  // file: the lines a link pointed to, and a count that changes on each
+  // opening so the view goes to them again (not kept by the server).
+  line?: number;
+  lineEnd?: number;
+  jump?: number;
   // service: the server attached to, or the command the workbench runs.
   target?: string;
   command?: string;
@@ -56,12 +61,19 @@ export function sameTarget(a: PreviewTab, b: PreviewTab): boolean {
 
 // Opening puts a tab first and shows it; past six files and services, the
 // one opened longest ago goes. Terminals never go this way: only closing
-// ends one.
+// ends one. A file's lines are this opening's alone: opened without any,
+// it shows no lines marked.
 export function openTab(s: PreviewTabs, tab: PreviewTab): PreviewTabs {
   const old = s.tabs.find((t) => sameTarget(t, tab));
   const rest = s.tabs.filter((t) => !sameTarget(t, tab));
   let others = 0;
-  const tabs = [{ ...old, ...tab }, ...rest].filter(
+  const opened: PreviewTab = { ...old, ...tab };
+  if (tab.kind === "file") {
+    opened.line = tab.line;
+    opened.lineEnd = tab.line ? tab.lineEnd : undefined;
+    opened.jump = tab.line ? (old?.jump ?? 0) + 1 : undefined;
+  }
+  const tabs = [opened, ...rest].filter(
     (t) => t.kind === "terminal" || ++others <= MAX_TABS,
   );
   return { tabs, active: 0 };
@@ -84,6 +96,23 @@ export function updateTab(
   return {
     ...s,
     tabs: s.tabs.map((t, j) => (j === i ? { ...t, ...patch } : t)),
+  };
+}
+
+// The server's tabs, with the lines this page marked on the same files
+// (the server keeps targets only, and answers every save with its copy).
+export function keepMarks(
+  server: PreviewTabs,
+  local: PreviewTabs,
+): PreviewTabs {
+  return {
+    ...server,
+    tabs: server.tabs.map((t) => {
+      const mine = local.tabs.find((l) => l.line && sameTarget(l, t));
+      return mine
+        ? { ...t, line: mine.line, lineEnd: mine.lineEnd, jump: mine.jump }
+        : t;
+    }),
   };
 }
 

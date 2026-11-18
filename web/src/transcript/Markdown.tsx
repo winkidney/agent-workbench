@@ -1,5 +1,5 @@
 import { memo, useMemo } from "react";
-import ReactMarkdown, { type Components } from "react-markdown";
+import ReactMarkdown, { type Components, type Options } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { CopyButton } from "./CopyButton";
 import { MermaidBlock } from "./MermaidBlock";
@@ -17,10 +17,12 @@ import {
   useEnv,
   workspacePath,
 } from "./media";
-import { useHighlighter } from "./highlight";
+import { rehypeLines, useHighlighter, type LineTarget } from "./highlight";
 import { rehypeBlockWhitespace } from "./whitespace";
 
 export { CopyButton };
+
+type Plugins = NonNullable<Options["rehypePlugins"]>;
 
 const nodeText = (children: React.ReactNode): string =>
   Array.isArray(children)
@@ -117,15 +119,26 @@ const components: Components = {
 export const Markdown = memo(function Markdown({
   text,
   streaming = false,
+  lines,
 }: {
   text: string;
   // Still being written: diagrams are drawn once it is complete.
   streaming?: boolean;
+  // Number the lines of code blocks, marking the target ones (a file in the
+  // preview panel).
+  lines?: LineTarget;
 }) {
   const highlight = useHighlighter(text);
-  const rehypePlugins = useMemo(
-    () => [rehypeBlockWhitespace, ...(highlight ?? [])],
-    [highlight],
+  const line = lines?.line;
+  const end = lines?.end;
+  const numbered = !!lines;
+  const rehypePlugins = useMemo<Plugins>(
+    () => [
+      rehypeBlockWhitespace,
+      ...(highlight ?? []),
+      ...(numbered ? [[rehypeLines, { line, end }] as Plugins[number]] : []),
+    ],
+    [highlight, numbered, line, end],
   );
   return (
     <div className="markdown">

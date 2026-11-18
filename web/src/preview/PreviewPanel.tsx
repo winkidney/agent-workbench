@@ -631,6 +631,9 @@ function TabView({
             key={load}
             session={session}
             path={tab.path}
+            line={tab.line}
+            lineEnd={tab.lineEnd}
+            jump={tab.jump}
             onError={(message) => setView({ kind: "error", message })}
           />
         )}

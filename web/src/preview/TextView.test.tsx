@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fenced, languageOf } from "./TextView";
+import { fenced, languageOf, lineCount } from "./TextView";
 
 describe("a text file shown in the panel", () => {
   it("is one fence longer than any backticks in it", () => {
@@ -12,5 +12,13 @@ describe("a text file shown in the panel", () => {
     expect(languageOf("Makefile")).toBe("makefile");
     expect(languageOf("run.log")).toBe("");
     expect(languageOf("LICENSE")).toBe("");
+  });
+});
+
+describe("its lines", () => {
+  it("are counted as the code block shows them", () => {
+    expect(lineCount("a\nb\n")).toBe(2);
+    expect(lineCount("a\nb")).toBe(2);
+    expect(lineCount("")).toBe(1);
   });
 });

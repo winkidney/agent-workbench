@@ -17,7 +17,8 @@ import type { Media } from "./model";
 export type Env = {
   cwd: string;
   openUrl: (url: string) => void;
-  openPath: (path: string, base?: string) => void;
+  // at: the lines a link pointed to (file.go:12, #L12-L20).
+  openPath: (path: string, base?: string, at?: LineAt) => void;
   // stamp: the block showing it (see StampContext).
   thumb: (path: string, base?: string, stamp?: string) => string | null;
   // On the workbench computer, shows the file or folder in its file manager;
@@ -102,6 +103,24 @@ export const TEXT =
 export const opensInPanel = (path: string) =>
   !path.endsWith("/") && (PREVIEWABLE.test(path) || TEXT.test(path));
 
+// The lines a link points to, written after the path as editors and both
+// CLIs do: file.go:12, :12:5, :12-20, :12:5-20:3, or GitHub's #L12, #L12C5,
+// #L12-L20. Only a trailing reference counts; anything else stays the path.
+export type LineAt = { line: number; end?: number };
+const LINE_REF =
+  /(?::(\d+)(?::\d+)?(?:-(\d+)(?::\d+)?)?|#L(\d+)(?:C\d+)?(?:-L(\d+)(?:C\d+)?)?)$/;
+export function splitLineRef(href: string): { path: string; at?: LineAt } {
+  const m = LINE_REF.exec(href);
+  if (!m || m.index === 0) return { path: href };
+  const line = Number(m[1] ?? m[3]);
+  const end = Number(m[2] ?? m[4]) || undefined;
+  if (!line) return { path: href };
+  return {
+    path: href.slice(0, m.index),
+    at: end && end > line ? { line, end } : { line },
+  };
+}
+
 // Map a path as written to one the server resolves: absolute paths must be
 // under the launch directory (made relative); relative paths stay as they
 // are, since they are relative to where the agent was. The server confines
@@ -139,20 +158,28 @@ export function pathItem(
 // Images and videos open in the viewer, pages, documents and text in the
 // side panel, anything else is shown in the panel's file list (from there,
 // in the file manager).
-export function openWorkspacePath(env: Env, path: string, base?: string) {
+export function openWorkspacePath(
+  env: Env,
+  path: string,
+  base?: string,
+  at?: LineAt,
+) {
   const item = pathItem(env, path, base);
   if (item) env.view([item], 0);
-  else if (opensInPanel(path)) env.openPath(path, base);
+  else if (opensInPanel(path))
+    at ? env.openPath(path, base, at) : env.openPath(path, base);
   else env.locate(path, base);
 }
 
 // What opening a path does, said on it.
-export const openLabel = (path: string) =>
+export const openLabel = (path: string, at?: LineAt) =>
   isMedia(path)
     ? `View ${path}`
     : opensInPanel(path)
-      ? `Preview ${path}`
+      ? `Preview ${path}` + (at ? ` at ${lineLabel(at)}` : "")
       : `Show ${path} in Files`;
+const lineLabel = (at: LineAt) =>
+  at.end ? `lines ${at.line}–${at.end}` : `line ${at.line}`;
 
 export function PathChip({ path }: { path: string }) {
   const env = useEnv();
@@ -260,14 +287,17 @@ export function UrlLink({
         <ExternalLink size={11} className="inline-icon" />
       </a>
     );
-  const rel = workspacePath(href, env.cwd);
+  // A file link may name lines after the path (file.go:12).
+  const { path, at } = splitLineRef(href);
+  const rel = workspacePath(path, env.cwd);
   if (rel)
     return (
       <a
         href={"#" + rel}
+        title={openLabel(rel, at)}
         onClick={(e) => {
           e.preventDefault();
-          openWorkspacePath(env, rel, base);
+          openWorkspacePath(env, rel, base, at);
         }}
       >
         {children}

@@ -58,6 +58,7 @@ import {
   isMedia,
   pathItem,
   type Env,
+  type LineAt,
   type ViewItem,
 } from "./transcript/media";
 import { MediaViewer } from "./media/MediaViewer";
@@ -678,7 +679,8 @@ export default function App() {
   locateRef.current = locate;
   // Opens a file or service as the session's newest preview tab; the
   // panel shows at once that it is opening.
-  const openPreview = (body: unknown, key = "open") =>
+  // at: the lines a file link pointed to.
+  const openPreview = (body: unknown, key = "open", at?: LineAt) =>
     busyWhile(key, async () => {
       if (key === "open") setPanel(true);
       try {
@@ -687,7 +689,12 @@ export default function App() {
           "POST",
           body,
         );
-        previewTabs.open(tabFromPreview(result.preview));
+        const tab = tabFromPreview(result.preview);
+        previewTabs.open(
+          at && tab.kind === "file"
+            ? { ...tab, line: at.line, lineEnd: at.end }
+            : tab,
+        );
         setPanel(true);
         setServiceOpen(false);
         await refresh();
@@ -830,8 +837,12 @@ export default function App() {
         );
         void openPreview({ session: active, kind: "service", target });
       },
-      openPath: (path, base) =>
-        void openPreview({ session: active, kind: "file", path, base }),
+      openPath: (path, base, at) =>
+        void openPreview(
+          { session: active, kind: "file", path, base },
+          "open",
+          at,
+        ),
       thumb: (path, base, stamp) =>
         `/api/media?session=${encodeURIComponent(active)}&path=${encodeURIComponent(path)}` +
         (base ? `&base=${encodeURIComponent(base)}` : "") +

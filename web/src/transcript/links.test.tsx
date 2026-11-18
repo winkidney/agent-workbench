@@ -4,7 +4,9 @@ import {
   EnvContext,
   PathChip,
   PathCode,
+  UrlLink,
   openWorkspacePath,
+  splitLineRef,
   opensInPanel,
   type Env,
 } from "./media";
@@ -20,9 +22,9 @@ const env = (over: Partial<Env> = {}): Env => ({
   ...over,
 });
 
-const render = (node: React.ReactNode) =>
+const render = (node: React.ReactNode, e: Env = env()) =>
   renderToStaticMarkup(
-    <EnvContext.Provider value={env()}>{node}</EnvContext.Provider>,
+    <EnvContext.Provider value={e}>{node}</EnvContext.Provider>,
   );
 
 describe("what opens in the preview panel", () => {
@@ -79,5 +81,59 @@ describe("a path a session wrote", () => {
     // manager directly.
     expect(chip).toContain('aria-label="Show report.pdf in Files"');
     expect(chip).not.toContain("this computer");
+  });
+});
+
+describe("the lines a link points to", () => {
+  it("are read from the end of the path, as editors and GitHub write them", () => {
+    expect(splitLineRef("/w/a.gd:127")).toEqual({
+      path: "/w/a.gd",
+      at: { line: 127 },
+    });
+    expect(splitLineRef("a.go:12:5")).toEqual({
+      path: "a.go",
+      at: { line: 12 },
+    });
+    expect(splitLineRef("a.go:12-20")).toEqual({
+      path: "a.go",
+      at: { line: 12, end: 20 },
+    });
+    expect(splitLineRef("a.go:12:5-20:3")).toEqual({
+      path: "a.go",
+      at: { line: 12, end: 20 },
+    });
+    expect(splitLineRef("a.go#L12")).toEqual({
+      path: "a.go",
+      at: { line: 12 },
+    });
+    expect(splitLineRef("a.go#L12C5")).toEqual({
+      path: "a.go",
+      at: { line: 12 },
+    });
+    expect(splitLineRef("a.go#L12-L20")).toEqual({
+      path: "a.go",
+      at: { line: 12, end: 20 },
+    });
+  });
+  it("leave other paths as they are", () => {
+    for (const p of ["a:b.txt", "notes.md", "a.go:0", "a.go:", ":12", "v1:2x"])
+      expect(splitLineRef(p), p).toEqual({ path: p });
+    // A range that runs backwards marks its first line only.
+    expect(splitLineRef("a.go:20-12")).toEqual({
+      path: "a.go",
+      at: { line: 20 },
+    });
+  });
+  it("open the file at them, or locate it without them", () => {
+    const openPath = vi.fn();
+    const locate = vi.fn();
+    const e = env({ openPath, locate });
+    const html = render(<UrlLink href="/w/sub/fx.gd:127">fx</UrlLink>, e);
+    expect(html).toContain('href="#sub/fx.gd"');
+    expect(html).toContain('title="Preview sub/fx.gd at line 127"');
+    openWorkspacePath(e, "sub/fx.gd", "/w", { line: 127 });
+    openWorkspacePath(e, "dist/app.zip", "/w", { line: 3 });
+    expect(openPath).toHaveBeenCalledWith("sub/fx.gd", "/w", { line: 127 });
+    expect(locate).toHaveBeenCalledWith("dist/app.zip", "/w");
   });
 });
