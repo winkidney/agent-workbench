@@ -173,29 +173,41 @@ func (m *Manager) sideHistory(id string, before int64) ([]Event, error) {
 	}
 	return out, rows.Err()
 }
-func (m *Manager) SendSide(id, text, requestID string) error {
+
+// SideSendResult says what became of a side message.
+type SideSendResult struct {
+	// Steered: it went into the answer Codex is giving.
+	Steered bool `json:"steered,omitempty"`
+}
+
+// SendSide asks a side question, or steers the running Codex answer.
+func (m *Manager) SendSide(id, text, requestID string) (SideSendResult, error) {
 	if err := checkMessage(text, nil); err != nil {
-		return err
+		return SideSendResult{}, err
 	}
 	if requestID == "" {
-		return errors.New("requestId required")
+		return SideSendResult{}, errors.New("requestId required")
 	}
 	m.mu.Lock()
 	sc := m.sides[id]
 	if sc == nil {
 		m.mu.Unlock()
-		return errors.New("side chat is read-only")
+		return SideSendResult{}, errors.New("side chat is read-only")
 	}
 	// Persist an idempotency marker before starting any native request.
 	var n int
 	m.store.db.QueryRow(`SELECT count(*) FROM side_events WHERE session=? AND kind="user" AND json_extract(data,"$.requestId")=?`, id, requestID).Scan(&n)
 	if n > 0 {
 		m.mu.Unlock()
-		return nil
+		return SideSendResult{}, nil
+	}
+	if sc.Status == "running" {
+		m.mu.Unlock()
+		return m.steerSide(sc, text, requestID)
 	}
 	if sc.Status != "idle" || sc.sending {
 		m.mu.Unlock()
-		return errors.New("side chat is busy or closing")
+		return SideSendResult{}, errors.New("side chat is busy or closing")
 	}
 	// No deadline on the whole answer: a Codex side turn may run tools and
 	// wait on your approvals for as long as it needs (runSide limits only
@@ -210,6 +222,7 @@ func (m *Manager) SendSide(id, text, requestID string) error {
 		sc.Phase = "waking"
 	}
 	sc.sending = true
+	sc.stopped = false
 	sc.request = ""
 	sc.Error = ""
 	m.saveSide(sc)
@@ -228,6 +241,12 @@ func (m *Manager) SendSide(id, text, requestID string) error {
 		if errors.Is(err, context.DeadlineExceeded) {
 			err = fmt.Errorf("the agent did not start answering within %v; send again, or close the side chat", sideStartLimit)
 		}
+		if sc.stopped {
+			// Stopped on purpose: no error, the next question may follow.
+			sc.stopped = false
+			err = nil
+			m.sideEmit(id, "notice", map[string]any{"text": "Stopped"})
+		}
 		if err != nil {
 			sc.Error = err.Error()
 			m.sideEmit(id, "error", map[string]any{"message": err.Error()})
@@ -240,6 +259,82 @@ func (m *Manager) SendSide(id, text, requestID string) error {
 		sc.request = ""
 		m.saveSide(sc)
 	}()
+	return SideSendResult{}, nil
+}
+
+// steerSide adds a message to the running Codex side answer (turn/steer),
+// as the main conversation does. A Claude side answer comes in one piece.
+func (m *Manager) steerSide(sc *sideRuntime, text, requestID string) (SideSendResult, error) {
+	if sc.Agent != "codex" {
+		return SideSendResult{}, errors.New("Claude answers a side question in one piece; stop it to ask again")
+	}
+	// turn/steer names the running turn, known once turn/started arrives.
+	deadline := time.Now().Add(2 * time.Second)
+	var native, turn string
+	for {
+		m.mu.Lock()
+		running, pending, stopped := sc.Status == "running", len(sc.rt.pending), sc.stopped
+		native, turn = sc.native, sc.turns[sc.native]
+		m.mu.Unlock()
+		switch {
+		case !running || stopped:
+			return SideSendResult{}, errors.New("the answer has ended; send this as a new question")
+		case pending > 0:
+			return SideSendResult{}, errors.New("answer the pending request first")
+		}
+		if native != "" && turn != "" {
+			break
+		}
+		if time.Now().After(deadline) {
+			return SideSendResult{}, errors.New("the answer has not started yet; send this again in a moment")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if _, err := m.rpc(sc.Parent, "turn/steer", map[string]any{"threadId": native, "input": codexInput(nil, text, nil), "expectedTurnId": turn}); err != nil {
+		return SideSendResult{}, fmt.Errorf("Codex did not take it: %w", err)
+	}
+	m.sideEmit(sc.ID, "user", map[string]any{"text": text, "requestId": requestID, "steered": true})
+	return SideSendResult{Steered: true}, nil
+}
+
+// InterruptSide stops the running side answer; the side chat stays open
+// for the next question.
+func (m *Manager) InterruptSide(id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	sc := m.sides[id]
+	if sc == nil || sc.Status != "running" {
+		return errors.New("no side answer is running")
+	}
+	sc.stopped = true
+	r := m.find(sc.Parent)
+	live := r != nil && r.proc != nil && r.generation == sc.generation
+	cancel := sc.cancel
+	if sc.Agent == "codex" {
+		if turn := sc.turns[sc.native]; live && sc.native != "" && turn != "" {
+			// turn/completed brings the side chat back to idle.
+			return r.proc.Input(map[string]any{"id": token(), "method": "turn/interrupt", "params": map[string]any{"threadId": sc.native, "turnId": turn}})
+		}
+		if sc.Phase == "answering" && sc.native != "" {
+			// turn/start may be on its way: runSide stops before sending
+			// it, or turn/started interrupts it (sideReceive).
+			return nil
+		}
+	} else if live && sc.request != "" {
+		if err := r.proc.Input(map[string]any{"type": "control_cancel_request", "request_id": sc.request}); err != nil {
+			return err
+		}
+		// Claude answers the request as cancelled; should it not, stop
+		// waiting on it anyway.
+		if cancel != nil {
+			time.AfterFunc(5*time.Second, cancel)
+		}
+		return nil
+	}
+	// Still waking the parent, or forking: nothing runs yet.
+	if cancel != nil {
+		cancel()
+	}
 	return nil
 }
 
@@ -335,7 +430,7 @@ func (m *Manager) runSide(ctx context.Context, sc *sideRuntime, text string) err
 		m.mu.Unlock()
 	}
 	m.mu.Lock()
-	closing := sc.Status != "running"
+	closing := sc.Status != "running" || sc.stopped
 	m.mu.Unlock()
 	if closing {
 		return nil
@@ -410,6 +505,10 @@ func (m *Manager) sideReceive(parent *runtime, v map[string]any) bool {
 		switch method {
 		case "turn/started":
 			sc.turns[thread] = str(obj(p["turn"])["id"])
+			if thread == sc.native && sc.stopped && sc.Status == "running" {
+				// Stopped before the turn had an id.
+				_ = parent.proc.Input(map[string]any{"id": token(), "method": "turn/interrupt", "params": map[string]any{"threadId": thread, "turnId": sc.turns[thread]}})
+			}
 		case "turn/completed":
 			delete(sc.turns, thread)
 			if thread == sc.native && sc.Status == "running" {
@@ -746,6 +845,7 @@ func (s *Server) sideAPI(w http.ResponseWriter, r *http.Request, path string) {
 				return
 			}
 		} else if r.Method == "POST" {
+			steered := false
 			var v struct {
 				Text      string
 				RequestID string `json:"requestId"`
@@ -757,7 +857,11 @@ func (s *Server) sideAPI(w http.ResponseWriter, r *http.Request, path string) {
 			if err = decode(w, r, &v); err == nil {
 				switch action {
 				case "send":
-					err = m.SendSide(id, v.Text, v.RequestID)
+					var res SideSendResult
+					res, err = m.SendSide(id, v.Text, v.RequestID)
+					steered = res.Steered
+				case "interrupt":
+					err = m.InterruptSide(id)
 				case "reply":
 					err = m.ReplySide(id, v.ID, v.Decision, v.Answers)
 				case "close":
@@ -767,7 +871,7 @@ func (s *Server) sideAPI(w http.ResponseWriter, r *http.Request, path string) {
 					return
 				}
 			}
-			out = map[string]bool{"ok": err == nil}
+			out = map[string]bool{"ok": err == nil, "steered": steered}
 		} else {
 			w.WriteHeader(405)
 			return

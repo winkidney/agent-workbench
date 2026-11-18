@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { echoed, liveSide, sideVerb } from "./status";
+import { canSteer, echoed, lastQuestion, liveSide, sideVerb } from "./status";
 import { emptyState, withSending } from "../transcript/reducer";
 
 describe("side chat status", () => {
@@ -18,6 +18,21 @@ describe("side chat status", () => {
     expect(sideVerb("claude", "waking")).toBe("Waking Claude");
     expect(sideVerb("claude", "answering")).toBe("Waiting for Claude's answer");
     expect(sideVerb("codex", "answering")).toBe("Codex is working");
+  });
+
+  it("steers only a Codex answer under way", () => {
+    expect(canSteer("codex", "running", "answering")).toBe(true);
+    expect(canSteer("codex", "running", "waking")).toBe(false);
+    expect(canSteer("codex", "idle")).toBe(false);
+    expect(canSteer("claude", "running", "answering")).toBe(false);
+  });
+
+  it("gives back the last question, not a steer", () => {
+    let s = withSending(emptyState(), "the question", "q");
+    s = withSending(s, "a steer", "st");
+    s.blocks.set("st", { ...s.blocks.get("st")!, steered: true });
+    expect(lastQuestion(s)).toBe("the question");
+    expect(lastQuestion(emptyState())).toBe("");
   });
 
   it("knows when the server echoed a message sent from the page", () => {

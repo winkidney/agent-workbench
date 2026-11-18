@@ -5,6 +5,7 @@ import {
   MessagesSquare,
   Plus,
   RefreshCw,
+  Square,
   X,
 } from "lucide-react";
 import { api, checkAccess } from "../lib/api";
@@ -24,7 +25,14 @@ import { ApprovalCard } from "../approval/ApprovalCard";
 import { StatusLine } from "../composer/StatusLine";
 import { Button } from "../components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "../components/ui/dialog";
-import { echoed, liveSide, sideVerb, terminal } from "./status";
+import {
+  canSteer,
+  echoed,
+  lastQuestion,
+  liveSide,
+  sideVerb,
+  terminal,
+} from "./status";
 
 export type SideChat = {
   id: string;
@@ -350,7 +358,10 @@ function SideView({
       report(e);
     }
   };
-  const ready = side?.status === "idle" && !sending;
+  const running = side?.status === "running";
+  const agent = side?.agent ?? "claude";
+  const steering = canSteer(agent, side?.status, side?.phase);
+  const ready = (side?.status === "idle" || steering) && !sending;
   const send = async () => {
     if (!text.trim() || !ready) return;
     const message = { text, at: Date.now(), from: state.keys.length };
@@ -366,8 +377,16 @@ function SideView({
       report(e);
     }
   };
-  const running = side?.status === "running";
-  const agent = side?.agent ?? "claude";
+  // Stops the answer; the side chat stays open and the question comes back
+  // to the box (unless something else is written there) to ask again.
+  const stop = async () => {
+    try {
+      await api(`${path(id)}/interrupt`, "POST", {});
+      setText((t) => (t.trim() ? t : lastQuestion(state)));
+    } catch (e) {
+      report(e);
+    }
+  };
   return (
     <>
       {side && (
@@ -411,7 +430,7 @@ function SideView({
                 event={e}
                 agent={side.agent}
                 lookup={(key) => state.blocks.get(key)}
-                onInterrupt={() => setAsk(true)}
+                onInterrupt={() => void stop()}
                 reply={async (key, decision, _message, answers) => {
                   await api(`${path(id)}/reply`, "POST", {
                     id: key,
@@ -448,7 +467,7 @@ function SideView({
             hint={
               side?.status === "closing"
                 ? "releasing its resources"
-                : "esc hides, it keeps going"
+                : "esc hides"
             }
           />
         </div>
@@ -478,9 +497,11 @@ function SideView({
               <textarea
                 aria-label="Side question"
                 placeholder={
-                  ready
-                    ? "Ask a side question…"
-                    : "Write your next question; send it once this answer is in…"
+                  steering
+                    ? "Steer Codex's answer…"
+                    : ready
+                      ? "Ask a side question…"
+                      : "Write your next question; stop the answer or wait for it…"
                 }
                 value={text}
                 onChange={(e) => setText(e.target.value)}
@@ -495,12 +516,33 @@ function SideView({
               />
               <div className="composer-bottom">
                 <div className="composer-actions">
+                  {running && (
+                    <Button
+                      size="icon"
+                      type="button"
+                      variant="outline"
+                      className="composer-stop"
+                      aria-label="Stop side answer"
+                      title="Stop the answer and ask again"
+                      onClick={() => void stop()}
+                    >
+                      <Square size={11} fill="currentColor" />
+                    </Button>
+                  )}
                   <Button
                     size="icon"
                     type="submit"
                     className="composer-send"
-                    aria-label="Send side question"
-                    title={ready ? "Send (Enter)" : "Wait for the answer"}
+                    aria-label={
+                      steering ? "Steer side answer" : "Send side question"
+                    }
+                    title={
+                      steering
+                        ? "Steer (Enter)"
+                        : ready
+                          ? "Send (Enter)"
+                          : "Stop the answer or wait for it"
+                    }
                     disabled={!ready || !text.trim()}
                   >
                     <ArrowUp size={16} />

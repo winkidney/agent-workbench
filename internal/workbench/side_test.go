@@ -91,7 +91,7 @@ func TestSideConfirmationHistoryAndIdlePin(t *testing.T) {
 	if err != nil || len(history) != 1 {
 		t.Fatal("side history lost with cache", history, err)
 	}
-	if err = m.SendSide(a.ID, "again", "new"); err == nil {
+	if _, err = m.SendSide(a.ID, "again", "new"); err == nil {
 		t.Fatal("closed history resumed")
 	}
 }
@@ -118,7 +118,7 @@ func TestCodexSideRoutingAndCleanup(t *testing.T) {
 		}
 		m.receive(parent, 1, map[string]any{"id": v["id"], "result": result})
 	}
-	if err := m.SendSide(sc.ID, "question", "once"); err != nil {
+	if _, err := m.SendSide(sc.ID, "question", "once"); err != nil {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(time.Second)
@@ -141,7 +141,7 @@ func TestCodexSideRoutingAndCleanup(t *testing.T) {
 		t.Fatal("side modified parent")
 	}
 	m.mu.Unlock()
-	if err := m.SendSide(sc.ID, "question", "once"); err != nil {
+	if _, err := m.SendSide(sc.ID, "question", "once"); err != nil {
 		t.Fatal("duplicate not idempotent", err)
 	}
 	m.CloseSide(sc.ID, true)

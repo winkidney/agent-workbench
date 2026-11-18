@@ -33,7 +33,7 @@ func TestLongSideTurnOutlivesTheStartLimit(t *testing.T) {
 		}
 		m.receive(parent, 1, map[string]any{"id": v["id"], "result": result})
 	}
-	if err := m.SendSide(sc.ID, "a long question", "one"); err != nil {
+	if _, err := m.SendSide(sc.ID, "a long question", "one"); err != nil {
 		t.Fatal(err)
 	}
 	time.Sleep(4 * sideStartLimit)
@@ -44,7 +44,7 @@ func TestLongSideTurnOutlivesTheStartLimit(t *testing.T) {
 	awaitSide(t, m, sc.ID, "idle")
 	// The answer's goroutine notices the completion within a poll.
 	for deadline := time.Now().Add(time.Second); ; time.Sleep(5 * time.Millisecond) {
-		err := m.SendSide(sc.ID, "and another", "two")
+		_, err := m.SendSide(sc.ID, "and another", "two")
 		if err == nil {
 			break
 		}
@@ -72,7 +72,7 @@ func TestSideGivesUpWaitingForTheParent(t *testing.T) {
 	m.find(parent).ready = false
 	m.mu.Unlock()
 	sc, _ := m.OpenSide(parent)
-	if err := m.SendSide(sc.ID, "question", "one"); err != nil {
+	if _, err := m.SendSide(sc.ID, "question", "one"); err != nil {
 		t.Fatal(err)
 	}
 	awaitSide(t, m, sc.ID, "idle")

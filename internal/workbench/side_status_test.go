@@ -34,7 +34,7 @@ func TestSideSaysWhatItWaitsOn(t *testing.T) {
 		}
 		m.receive(parent, 1, map[string]any{"id": v["id"], "result": result})
 	}
-	if err := m.SendSide(sc.ID, "question", "once"); err != nil {
+	if _, err := m.SendSide(sc.ID, "question", "once"); err != nil {
 		t.Fatal(err)
 	}
 	s, _ := m.Side(sc.ID)

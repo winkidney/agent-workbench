@@ -210,7 +210,7 @@ func (m *Manager) RunCommand(id, name, args string) (CommandResult, error) {
 		}
 		res.SideChat = sc.ID
 		if args != "" {
-			err = m.SendSide(sc.ID, args, token())
+			_, err = m.SendSide(sc.ID, args, token())
 		}
 		return res, err
 	}
