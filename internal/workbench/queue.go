@@ -12,6 +12,8 @@ type queued struct {
 	Text string `json:"text"`
 	// Images added in the page, by upload id; read when it is sent.
 	Images []string `json:"images,omitempty"`
+	// The routine run that sent it (routine.go).
+	Routine string `json:"-"`
 }
 
 const queueLimit = 20
@@ -28,6 +30,11 @@ func (m *Manager) Enqueue(id, text string) (bool, error) { return m.EnqueueWith(
 
 // EnqueueWith is Enqueue for a message with images.
 func (m *Manager) EnqueueWith(id, text string, images []string) (bool, error) {
+	return m.enqueue(id, text, images, "")
+}
+
+// enqueue is EnqueueWith for a message that may come from a routine run.
+func (m *Manager) enqueue(id, text string, images []string, routine string) (bool, error) {
 	if err := checkMessage(text, images); err != nil {
 		return false, err
 	}
@@ -36,7 +43,7 @@ func (m *Manager) EnqueueWith(id, text string, images []string) (bool, error) {
 	busy := r != nil && r.proc != nil && (r.turn || r.configuring || len(r.pending) > 0 || (len(r.queue) > 0 && !r.queuePaused))
 	if !busy {
 		m.mu.Unlock()
-		err := m.SendWith(id, text, images)
+		err := m.send(id, text, images, routine)
 		if !errors.Is(err, errSessionBusy) {
 			return false, err
 		}
@@ -57,7 +64,7 @@ func (m *Manager) EnqueueWith(id, text string, images []string) (bool, error) {
 			return false, errors.New("an image is no longer available; add it again")
 		}
 	}
-	r.queue = append(r.queue, queued{ID: token()[:12], Text: text, Images: images})
+	r.queue = append(r.queue, queued{ID: token()[:12], Text: text, Images: images, Routine: routine})
 	m.emitQueue(r)
 	return true, nil
 }
@@ -70,6 +77,16 @@ func (m *Manager) turnEnded(r *runtime, failed bool) {
 	time.AfterFunc(time.Second, func() { m.refreshAllOthers(id) })
 	interrupted := r.interrupted
 	r.interrupted = false
+	if run := r.routineRun; run != "" {
+		r.routineRun = ""
+		reason := ""
+		if failed {
+			reason = "the turn failed"
+		} else if interrupted {
+			reason = "the turn was interrupted"
+		}
+		go m.routineTurnEnded(run, id, failed || interrupted, reason)
+	}
 	if len(r.queue) == 0 {
 		return
 	}
@@ -91,7 +108,7 @@ func (m *Manager) dispatchQueued(r *runtime) {
 	m.emitQueue(r)
 	id := r.session.ID
 	go func() {
-		if err := m.SendWith(id, next.Text, next.Images); err != nil {
+		if err := m.send(id, next.Text, next.Images, next.Routine); err != nil {
 			m.mu.Lock()
 			defer m.mu.Unlock()
 			if rt := m.find(id); rt != nil {
@@ -113,6 +130,9 @@ func (m *Manager) RemoveQueued(id, qid string) error {
 	}
 	for i, q := range r.queue {
 		if q.ID == qid {
+			if q.Routine != "" {
+				go m.routineTurnEnded(q.Routine, id, true, "removed from the queue")
+			}
 			r.queue = append(r.queue[:i], r.queue[i+1:]...)
 			if len(r.queue) == 0 {
 				r.queuePaused = false

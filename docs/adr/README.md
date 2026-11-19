@@ -12,3 +12,4 @@ Decisions that shape how the workbench behaves, why, and what they cost. Each re
 | [0006](0006-terminal-tabs-live-until-closed.md) | A terminal tab lives until it is closed | accepted |
 | [0007](0007-file-links-carry-a-line.md) | A file link may name lines, and a text file in the panel shows numbered lines | accepted |
 | [0008](0008-media-shown-from-anywhere.md) | Images and videos a session names are shown wherever they are | accepted; amends 0004 for media |
+| [0009](0009-routines-run-on-a-schedule.md) | Routines send messages and run commands on a schedule | accepted |

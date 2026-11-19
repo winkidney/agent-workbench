@@ -94,6 +94,9 @@ func OpenStore(dir string) (*Store, error) {
  CREATE TABLE IF NOT EXISTS session_seen(id TEXT PRIMARY KEY,seen TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS terminal_audit(time TEXT NOT NULL,session TEXT NOT NULL,terminal TEXT NOT NULL,title TEXT NOT NULL,action TEXT NOT NULL,device TEXT NOT NULL);
  CREATE INDEX IF NOT EXISTS terminal_audit_time ON terminal_audit(time);
+ CREATE TABLE IF NOT EXISTS routines(id TEXT PRIMARY KEY,data TEXT NOT NULL);
+ CREATE TABLE IF NOT EXISTS routine_runs(id TEXT PRIMARY KEY,routine TEXT NOT NULL,started TEXT NOT NULL,data TEXT NOT NULL);
+ CREATE INDEX IF NOT EXISTS routine_runs_routine ON routine_runs(routine,started);
  UPDATE sessions SET status='sleeping' WHERE status NOT IN ('stopped','sleeping');`)
 	if err == nil {
 		err = migrateRetention(db)

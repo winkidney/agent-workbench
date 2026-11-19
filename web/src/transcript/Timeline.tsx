@@ -7,8 +7,15 @@ import {
   useState,
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { ArrowDown, ArrowUpRight, ChevronRight, FileText } from "lucide-react";
+import {
+  AlarmClock,
+  ArrowDown,
+  ArrowUpRight,
+  ChevronRight,
+  FileText,
+} from "lucide-react";
 import { splitFiles } from "./files";
+import { routineLabel } from "../routines/when";
 import { PixelChase } from "../components/pixel";
 import {
   formatDuration,
@@ -405,9 +412,11 @@ function ToolRowBody({ block, kids, open, onToggle }: RowProps) {
 
 function UserRow({ block, open, onToggle }: RowProps) {
   // Files added to it are lines that say where they are: shown as the files.
+  // A routine's message is labeled with its name, not its first line.
+  const routine = useMemo(() => routineLabel(block.text ?? ""), [block.text]);
   const { text: said, files } = useMemo(
-    () => splitFiles(block.text ?? ""),
-    [block.text],
+    () => splitFiles(routine ? routine.rest : (block.text ?? "")),
+    [routine, block.text],
   );
   const lines = said.split("\n");
   const long = lines.length > 12;
@@ -417,6 +426,12 @@ function UserRow({ block, open, onToggle }: RowProps) {
     <div className={"row user" + (block.sending ? " sending" : "")}>
       <span className="mark">›</span>
       <div className="body">
+        {routine && (
+          <span className="user-routine" title="Sent by a routine">
+            <AlarmClock size={12} aria-hidden />
+            Routine · {routine.name}
+          </span>
+        )}
         {replies ? (
           <div className="user-replies">
             {replies.map((r, i) => (

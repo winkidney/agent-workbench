@@ -127,6 +127,8 @@ The interface uses a JSON API under `/api/`. Main endpoints:
 | `POST /api/settings/signout-others` | End every pairing sign-in except the caller's (pairing mode only) |
 | `GET /api/about`, `GET /api/updates` | Versions, paths, run mode, data, and each CLI's `--version` (asked once per binary until it changes); the latest GitHub release, asked on request and kept 10 minutes |
 | `GET/PATCH /api/preferences` | The workbench's own settings for every session: `{suggestions}` |
+| `GET/POST /api/routines`, `PUT/PATCH/DELETE /api/routines/{id}` | Routines: list (with `next` and `last`), create, replace, turn on or off (`{enabled}`), delete |
+| `GET /api/routines/{id}/runs`, `POST /api/routines/{id}/run` | A routine's recent runs with their output; run it now |
 
 ## Limits
 
@@ -139,6 +141,10 @@ Not included: multiple user accounts, a desktop shell, handing context between a
 ### Banked reset redemption
 
 `POST /api/agents/codex/usage/reset` accepts `accountId`, optional `creditId`, and `idempotencyKey`. It initializes a short-lived control connection, re-reads account usage, validates the selected credit, and calls `account/rateLimitResetCredit/consume`. Receipt bindings and resolved outcomes are stored in the existing settings store under a hash of the idempotency key. Unresolved retries reach native idempotency even if the credit is no longer listed. Native outcomes are preserved; `notAttempted` reports a rejected preflight, `uncertain` preserves an unresolved attempt, and `usageError` distinguishes a known outcome from a failed subsequent read. The browser stores the pending request in sessionStorage and only retries with that key. Refresh and both UI surfaces never redeem automatically.
+
+## Routines
+
+Routines ([ADR 0009](adr/0009-routines-run-on-a-schedule.md), `routine.go`) are kept in `routines` (one JSON row each) and their runs in `routine_runs`. A scheduler goroutine started with the server keeps each enabled routine's next due time in memory, computed from now at startup (missed runs are skipped), and wakes at the earliest one, at least once a minute, or when a routine changes. A due time more than 5 minutes past is recorded as skipped. A run with a command runs it with `shellCommand` in a process group (`startGroup`, `killOn` its timeout) and keeps the last 16 KiB of output; a message goes to a session through `enqueue` (sent, or queued behind the running turn) or to a new session through `createWithMessage`, the code behind `POST /api/sessions`. The run id travels with the message (`runtime.routineRun`, `queued.Routine`) and `turnEnded`, `exited` and removing a queued message end the run. Every change emits a global `routine` event (`{routine, run?}`, output left out), which Settings → Routines reloads on and which may raise a notification (`notify`). `Tidy` ends runs open for more than a day, prunes runs older than a month or past 50 per routine, and removes once routines a week after they ran.
 
 ## Side chats
 

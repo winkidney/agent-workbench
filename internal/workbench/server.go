@@ -704,6 +704,8 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 		default:
 			writeJSON(w, v)
 		}
+	case path == "routines" || strings.HasPrefix(path, "routines/"):
+		s.routinesAPI(w, r, strings.TrimPrefix(strings.TrimPrefix(path, "routines"), "/"))
 	case path == "preferences" && r.Method == "GET":
 		writeJSON(w, m.Preferences())
 	case path == "preferences" && r.Method == "PATCH":
@@ -827,41 +829,11 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 		} else if strings.TrimSpace(named) == "" {
 			named = "Image"
 		}
-		session, err := m.CreateSession(v.Agent, v.Cwd, v.Title, named)
+		created, err := m.createWithMessage(v.Agent, v.Cwd, v.Title, named, fileLines(v.InitialMessage, files), v.Images, v.Options, "")
 		if err != nil {
 			bad(w, err)
 			return
 		}
-		options := m.newSessionDefaults(v.Agent)
-		if v.Options != nil {
-			options = *v.Options
-		}
-		m.store.setting("options:"+session.ID, options)
-		if err := m.SendWith(session.ID, fileLines(v.InitialMessage, files), v.Images); err != nil {
-			bad(w, err)
-			return
-		}
-		deadline := time.Now().Add(10 * time.Second)
-		for {
-			m.mu.Lock()
-			ready := m.find(session.ID).session.NativeID != ""
-			m.mu.Unlock()
-			if ready {
-				break
-			}
-			if time.Now().After(deadline) {
-				bad(w, errors.New("native session creation not confirmed; inspect session errors"))
-				return
-			}
-			time.Sleep(20 * time.Millisecond)
-		}
-		m.mu.Lock()
-		created := m.find(session.ID).session
-		m.store.setting("options:"+created.ID, options)
-		m.mu.Unlock()
-		m.catalog.mu.Lock()
-		m.catalog.updated = time.Time{}
-		m.catalog.mu.Unlock()
 		if v.RequestID != "" {
 			data, _ := json.Marshal(created)
 			if _, err := m.store.db.Exec("INSERT INTO native_creations(request_id,payload_hash,response,created) VALUES(?,?,?,?)", v.RequestID, hash, string(data), nowStamp()); err != nil {
@@ -1531,6 +1503,8 @@ func Run(ctx context.Context, m *Manager, assets fs.FS, addr, code string) error
 			}
 		}
 	}()
+	// Routines: what falls due runs (routine.go).
+	go m.RunRoutines(ctx)
 	go func() {
 		// Old events, unused caches and the rows of sessions gone go at
 		// startup and then hourly.

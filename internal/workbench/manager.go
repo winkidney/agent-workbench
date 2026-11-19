@@ -100,6 +100,8 @@ type runtime struct {
 	// the scheduling calls awaiting their results (schedule.go).
 	schedules     map[string]*schedule
 	scheduleCalls map[string]scheduleCall
+	// The routine run whose message started the running turn (routine.go).
+	routineRun string
 }
 type Manager struct {
 	// Terminal tabs (terminal.go), made on first use.
@@ -146,10 +148,12 @@ type Manager struct {
 	signIns  signInCache
 	// Images added in the page for messages (uploads.go).
 	uploads *Uploads
+	// Routines: the scheduler's state (routine.go).
+	rt *routines
 }
 
 func NewManager(store *Store, launch Launch, idle time.Duration) (*Manager, error) {
-	m := &Manager{store: store, launch: launch, idle: idle, sessions: map[string]*runtime{}, changes: newNotifier(), activity: NewActivityIndex(store), uploads: &Uploads{dir: filepath.Join(store.dir, "uploads")}}
+	m := &Manager{store: store, launch: launch, idle: idle, sessions: map[string]*runtime{}, changes: newNotifier(), activity: NewActivityIndex(store), uploads: &Uploads{dir: filepath.Join(store.dir, "uploads")}, rt: newRoutines()}
 	m.renameCodex, m.codexThread = m.codexRename, m.codexThreadRequest
 	m.catalog = NewNativeCatalog()
 	m.catalog.startCodex = m.startCodexClient
@@ -226,6 +230,47 @@ func (m *Manager) CreateSession(agent, cwd, title, first string) (Session, error
 	m.emit(s.ID, "status", s)
 	return s, nil
 }
+
+// createWithMessage starts a new session with its first message and waits
+// until the agent has made the native session. named titles it when title
+// is empty; options default to the agent's new-session defaults. routine is
+// the routine run that sent the message, if any.
+func (m *Manager) createWithMessage(agent, cwd, title, named, text string, images []string, chosen *Options, routine string) (Session, error) {
+	session, err := m.CreateSession(agent, cwd, title, named)
+	if err != nil {
+		return session, err
+	}
+	options := m.newSessionDefaults(agent)
+	if chosen != nil {
+		options = *chosen
+	}
+	m.store.setting("options:"+session.ID, options)
+	if err := m.send(session.ID, text, images, routine); err != nil {
+		return session, err
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		m.mu.Lock()
+		ready := m.find(session.ID).session.NativeID != ""
+		m.mu.Unlock()
+		if ready {
+			break
+		}
+		if time.Now().After(deadline) {
+			return session, errors.New("native session creation not confirmed; inspect session errors")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	m.mu.Lock()
+	created := m.find(session.ID).session
+	m.store.setting("options:"+created.ID, options)
+	m.mu.Unlock()
+	m.catalog.mu.Lock()
+	m.catalog.updated = time.Time{}
+	m.catalog.mu.Unlock()
+	return created, nil
+}
+
 func (m *Manager) Start(id string) error {
 	if m.findUnlocked(id) == nil {
 		if err := m.Attach(id); err != nil {
@@ -316,6 +361,11 @@ func checkMessage(text string, images []string) error {
 
 // SendWith sends a message with the images added in the page.
 func (m *Manager) SendWith(id, text string, images []string) error {
+	return m.send(id, text, images, "")
+}
+
+// send is SendWith for a message that may come from a routine run.
+func (m *Manager) send(id, text string, images []string, routine string) error {
 	if err := checkMessage(text, images); err != nil {
 		return err
 	}
@@ -416,6 +466,7 @@ func (m *Manager) SendWith(id, text string, images []string) error {
 			}
 			userActed(r)
 			m.beginTurn(r)
+			r.routineRun = routine
 			m.emit(r.session.ID, "user", userShown(text, pics, nil))
 			var v any
 			if r.session.Agent == "codex" {
@@ -1227,6 +1278,10 @@ func (m *Manager) exited(id string, generation int, err error) {
 		m.emitQueue(r)
 	}
 	m.sideExited(r)
+	if run := r.routineRun; run != "" {
+		r.routineRun = ""
+		go m.routineTurnEnded(run, r.session.ID, true, "the agent stopped before the turn ended")
+	}
 	r.proc = nil
 	r.ready = false
 	r.turn = false

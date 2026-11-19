@@ -142,3 +142,46 @@ export function useAttention<S extends Waiting>(
   }, [sessions, ready]);
   return waiting;
 }
+
+// A routine run ended (routines/when.ts): failures always notify, and so do
+// runs the server marked (an agent answered, or a command printed what its
+// routine asked to hear about); only while this page is in the background,
+// like the attention notifications.
+export function notifyRun(
+  run: {
+    id: string;
+    name: string;
+    status: string;
+    session?: string;
+    error?: string;
+    notify?: boolean;
+  },
+  onOpen: (id: string) => void,
+) {
+  const ended = run.status === "done" || run.status === "failed";
+  if (!ended || !(run.notify || run.status === "failed")) return;
+  if (notifyState() !== "on" || !background()) return;
+  const title =
+    run.status === "failed"
+      ? `Routine failed: ${run.name}`
+      : `Routine done: ${run.name}`;
+  const body =
+    run.status === "failed"
+      ? run.error || "See Settings → Routines."
+      : run.session
+        ? "The agent answered."
+        : "It printed something; see Settings → Routines.";
+  try {
+    const n = new Notification(title, {
+      body,
+      tag: "workbench:routine:" + run.id,
+    });
+    n.onclick = () => {
+      window.focus();
+      if (run.session) onOpen(run.session);
+      n.close();
+    };
+  } catch {
+    // Some browsers only notify from a service worker.
+  }
+}

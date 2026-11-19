@@ -153,6 +153,8 @@ func (m *Manager) Tidy() {
 	if err := m.Reconcile(); err != nil {
 		fmt.Fprintln(os.Stderr, "reconcile sessions:", err)
 	}
+	// Routine runs: a month; runs that never reported back end.
+	m.tidyRoutines(time.Now())
 	// Who opened and ended terminals: a week, like the rest.
 	if err := m.pruneTerminalAudit(time.Now().Add(-eventRetention)); err != nil {
 		fmt.Fprintln(os.Stderr, "prune terminal audit:", err)

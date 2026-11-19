@@ -206,12 +206,26 @@ The workbench listens on all interfaces by default (`0.0.0.0:17880`) and `start`
 
 `--listen 127.0.0.1:17880` keeps the workbench to this machine altogether.
 
+## Routines
+
+A routine sends a message to a session, runs a command, or runs a command and hands what it printed to a session, on a schedule: once, daily at a time (on chosen weekdays), or every so many minutes, hours or days (at least every 5 minutes).
+
+- **Schedule a message:** **⋯ → Schedule message…** in the conversation header, or the same item in a session's row menu in the sidebar, makes a routine that sends a message to that session. **Settings → Routines → New routine** makes one from scratch.
+- **Run a command:** choose **Run a command**, write the command line and choose the folder it runs in. **Keep the output** only runs it: each run's output and exit code are kept, and with **Notify me when it prints something** you hear about output. **Send it to an agent** hands its output to a session with your message, and only when it printed something: a script that prints nothing when there is nothing new costs no tokens.
+- **Where a message goes:** the session you scheduled it from, or **A new session each time** in a folder with the agent you choose. A message to a busy session waits in its queue like one you typed. It shows in the conversation with a **Routine · name** label (the agent sees `[Routine: name]` as its first line).
+- **Settings → Routines** lists every routine with its schedule, command and target, when it runs next and how its last run went. Turn one on or off with its switch; open it for **Run now**, **Edit**, **Delete** and its recent runs with their output.
+- **When it runs:** while the workbench runs. A run it misses (the workbench was stopped, the computer asleep) is skipped, not made up. A command has 10 minutes by default (at most 60); a run whose command is still running skips the next one.
+- **Notifications:** a failed run always notifies, and a message's run notifies when the agent has answered, while the page is in the background and desktop notifications are on. Clicking it opens the session.
+
+Commands run with your user's rights, like a terminal tab; any signed-in device can make routines. See [ADR 0009](adr/0009-routines-run-on-a-schedule.md).
+
 ## Settings
 
-**⋯ → Settings** has four tabs:
+**⋯ → Settings** has these tabs:
 
 - **General:** appearance, desktop notifications and suggested next prompts. These are the same controls as the **⋯** menu, and they apply at once.
 - **Agents:** which program runs Claude Code and Codex, the folder each keeps its data in, and signing them in (see [Agents](#agents)). Saved with its button.
+- **Routines:** messages and commands run on a schedule (see [Routines](#routines)).
 - **Access & security:** how this page is connected, which devices may sign in and how, allowed origins, and signed-in devices (see [Access from other devices](#access-from-other-devices)). Saved with its button.
 - Unsaved changes on Agents or Access & security are marked on the tab and kept while you switch tabs. Closing asks before discarding them.
 - **About:**

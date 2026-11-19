@@ -8,6 +8,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import {
+  AlarmClock,
   Archive,
   ArchiveRestore,
   ChevronRight,
@@ -86,6 +87,8 @@ type Actions = {
   // Native thread operations (Codex only).
   onArchive: (session: Session, archived: boolean) => void;
   onDelete: (session: Session) => void;
+  // Schedule a message to the session (routines).
+  onSchedule: (session: Session) => void;
   setMenu: (key: string | null) => void;
   setEditing: (key: string | null) => void;
   onNew: (cwd?: string) => void;
@@ -197,6 +200,11 @@ function RowMenu({
         {item(<Copy size={14} />, "Copy session ID", () =>
           copy("Copy session ID", session.nativeId),
         )}
+        {!session.readOnly &&
+          item(<AlarmClock size={14} />, "Schedule message…", () => {
+            actions.onSchedule(session);
+            onClose();
+          })}
         <div className="row-menu-sep" />
         {native &&
           item(
@@ -768,6 +776,7 @@ export function Sidebar({
   onRename,
   onArchive,
   onDelete,
+  onSchedule,
   connection,
   onReconnect,
 }: {
@@ -781,6 +790,7 @@ export function Sidebar({
   onRename: (id: string, title: string) => void;
   onArchive: (session: Session, archived: boolean) => void;
   onDelete: (session: Session) => void;
+  onSchedule: (session: Session) => void;
   // Where this page is and whether live updates arrive.
   connection: FooterConnection;
   onReconnect: () => void;
@@ -838,6 +848,7 @@ export function Sidebar({
       onRename,
       onArchive,
       onDelete,
+      onSchedule,
       setMenu,
       setEditing,
       onNew,
@@ -854,6 +865,7 @@ export function Sidebar({
       onRename,
       onArchive,
       onDelete,
+      onSchedule,
       onNew,
       query,
     ],

@@ -33,7 +33,10 @@ import {
 import { Appearance } from "./components/Appearance";
 import { NotifyToggle } from "./components/NotifyToggle";
 import { SuggestToggle } from "./components/SuggestToggle";
-import { useAttention } from "./attention";
+import { notifyRun, useAttention } from "./attention";
+import { RoutineDialog } from "./routines/RoutineDialog";
+import { newDraft, type Draft, type RoutineRun } from "./routines/when";
+import { recentProjects } from "./newsession/recent";
 import { SettingsDialog } from "./components/settings/SettingsDialog";
 import { LogoMark } from "./components/Logo";
 import { PreviewPanel } from "./preview/PreviewPanel";
@@ -94,6 +97,7 @@ import {
   ExternalLink,
   CornerLeftUp,
   MessagesSquare,
+  AlarmClock,
 } from "lucide-react";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
@@ -110,6 +114,8 @@ export default function App() {
   const [connectionError, setConnectionError] = useState("");
   const [authReady, setAuthReady] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // The routine being made or changed (routines/RoutineDialog.tsx).
+  const [routineDraft, setRoutineDraft] = useState<Draft | null>(null);
   // When this page last sent a message: the turn clock starts there, not
   // when the engine has finished starting.
   const lastSent = useRef<{ session: string; at: number } | null>(null);
@@ -253,6 +259,8 @@ export default function App() {
   };
   const sidebarPrefs = usePrefs(paired, catchError);
   const receivePrefs = useRef(sidebarPrefs.receive);
+  // Opens a session from a routine's notification (set below).
+  const openSession = useRef<(id: string) => void>(() => {});
   receivePrefs.current = sidebarPrefs.receive;
   // What changed in the session list since this page's copy; all of it the
   // first time, or when the copy drifted.
@@ -397,6 +405,13 @@ export default function App() {
       }
       if (v.kind === "deleted") {
         forget.current(v.session);
+        return;
+      }
+      if (v.kind === "routine") {
+        // Settings → Routines reloads; a run's end may notify.
+        window.dispatchEvent(new CustomEvent("workbench:routines"));
+        const run = (v.data as { run?: RoutineRun }).run;
+        if (run) notifyRun(run, (id) => openSession.current(id));
         return;
       }
       if (v.kind === "prefs") receivePrefs.current(v.data);
@@ -567,6 +582,16 @@ export default function App() {
     [sessions, sidebarPrefs.prefs],
   );
   const waiting = useAttention(titled, paired, (id) => selectSession(id));
+  openSession.current = selectSession;
+  const recent = useMemo(
+    () => recentProjects(sessions, sidebarPrefs.prefs, workspaces),
+    [sessions, sidebarPrefs.prefs, workspaces],
+  );
+  const sessionTitle = (id: string) => {
+    const s = sessions.find((x) => x.id === id);
+    return s ? displayTitle(s, sidebarPrefs.prefs) : "a session that is gone";
+  };
+  const scheduleFor = (s: Session) => setRoutineDraft(newDraft(s.id, s.cwd));
   const waitingElsewhere = waiting.some((s) => s.id !== active);
   // The Claude command or subagent a running turn waits on, which Ctrl+B or
   // the status line's button moves to the background.
@@ -1107,6 +1132,7 @@ export default function App() {
             onRename={renameSession}
             onArchive={archiveSession}
             onDelete={setDeleting}
+            onSchedule={scheduleFor}
             connection={footerConnection({
               here,
               open: signin.open,
@@ -1187,6 +1213,21 @@ export default function App() {
                   <Settings size={14} />
                   Settings
                 </Button>
+                {current && !current.readOnly && !current.archived && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={(e) => {
+                      e.currentTarget
+                        .closest("details")
+                        ?.removeAttribute("open");
+                      scheduleFor(current);
+                    }}
+                  >
+                    <AlarmClock size={14} />
+                    Schedule message…
+                  </Button>
+                )}
                 {current && (
                   <>
                     <span className="menu-status">
@@ -1597,7 +1638,23 @@ export default function App() {
             </EnvContext.Provider>
           </aside>
         )}
-        <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+        <SettingsDialog
+          open={settingsOpen}
+          onOpenChange={setSettingsOpen}
+          sessionTitle={sessionTitle}
+          onEditRoutine={setRoutineDraft}
+        />
+        {routineDraft && (
+          <RoutineDialog
+            draft={routineDraft}
+            recent={recent}
+            sessionTitle={sessionTitle}
+            onClose={() => setRoutineDraft(null)}
+            onSaved={() =>
+              window.dispatchEvent(new CustomEvent("workbench:routines"))
+            }
+          />
+        )}
         {viewer && (
           <MediaViewer
             items={viewer.items}
