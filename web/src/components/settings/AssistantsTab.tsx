@@ -220,6 +220,38 @@ export function AssistantsTab({
           <AssistantItem key={a.dir} assistant={a} onOpen={onOpen} />
         ))}
       </ul>
+      {!!value.mossUpdates?.length && (
+        <section className="settings-section" role="status">
+          <h3>A newer Moss</h3>
+          <p className="subtle">
+            This version of Agent Workbench brings a newer {MAIN_NAME} for files
+            you changed: {value.mossUpdates.map((f) => f).join(", ")}.
+          </p>
+          <div className="confirm-actions">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() =>
+                void api("assistants/moss", "POST", { take: false }).then(
+                  assistantsChanged,
+                )
+              }
+            >
+              Keep mine
+            </Button>
+            <Button
+              size="sm"
+              onClick={() =>
+                void api("assistants/moss", "POST", { take: true }).then(
+                  assistantsChanged,
+                )
+              }
+            >
+              Use the new version
+            </Button>
+          </div>
+        </section>
+      )}
       <LanguageSection value={value.language ?? "zh-Hans"} />
       <BackupSection root={value.root} sync={value.sync} />
       <ChangeList list={changes} />

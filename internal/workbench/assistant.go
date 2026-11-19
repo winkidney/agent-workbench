@@ -684,6 +684,13 @@ func (m *Manager) ensureShared() {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "assistants: shared files:", err)
 	}
+	// Moss's definition follows this version where the user kept it as
+	// shipped (moss.go).
+	if updated, err := m.updateMoss(root); err != nil {
+		fmt.Fprintln(os.Stderr, "assistants: Moss:", err)
+	} else if updated {
+		wrote = true
+	}
 	if wrote {
 		commitAll(root, "chore: add shared files from Agent Workbench")
 	}
@@ -783,6 +790,10 @@ func (m *Manager) setUp(root, agent, name, lang string) (bool, error) {
 	if err := m.store.setting("assistants", assistantsSetting{Root: abs, Language: lang}); err != nil {
 		return false, err
 	}
+	// Remember what was shipped, so later versions can update it.
+	if _, err := m.updateMoss(abs); err != nil {
+		return false, err
+	}
 	commitAll(abs, "Set up assistants")
 	m.assistantsChanged()
 	return created, nil
@@ -801,6 +812,13 @@ func scaffoldAssistant(root, dir string, d scaffoldData) error {
 		"log.md":           "each/log.md",
 	}
 	for to, from := range files {
+		// The personal assistant's procedure is Moss's own file (moss.go).
+		if d.Main && to == "AGENTS.md" {
+			if err := writeNew(filepath.Join(path, to), mossFile("moss/AGENTS.md")); err != nil {
+				return err
+			}
+			continue
+		}
 		data, err := renderTemplate(from, d)
 		if err != nil {
 			return err
@@ -1293,7 +1311,19 @@ func (s *Server) assistantsAPI(w http.ResponseWriter, r *http.Request, rest stri
 	parts := strings.Split(rest, "/")
 	switch {
 	case rest == "" && r.Method == "GET":
-		writeJSON(w, map[string]any{"root": m.assistantsRoot(), "assistants": m.Assistants(), "defaultAgent": m.defaultAgent(), "language": m.language(), "sync": m.syncState(), "installed": m.installedAgents()})
+		writeJSON(w, map[string]any{"root": m.assistantsRoot(), "assistants": m.Assistants(), "defaultAgent": m.defaultAgent(), "language": m.language(), "sync": m.syncState(), "installed": m.installedAgents(), "mossUpdates": m.mossState().Pending})
+	case rest == "moss" && r.Method == "POST":
+		// The newer Moss for the files the user changed: take it or keep theirs.
+		var v struct{ Take bool }
+		if err := decode(w, r, &v); err != nil {
+			bad(w, err)
+			return
+		}
+		if err := m.ResolveMoss(v.Take); err != nil {
+			bad(w, err)
+			return
+		}
+		writeJSON(w, map[string]any{"ok": true})
 	case rest == "github" && r.Method == "POST":
 		var v struct{ Name string }
 		if err := decode(w, r, &v); err != nil {

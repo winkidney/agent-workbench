@@ -36,6 +36,8 @@ export type Assistants = {
   language?: Language;
   // The backup of the repository to its remote (sync.go).
   sync?: SyncState;
+  // Moss's files the user changed that have a newer shipped version.
+  mossUpdates?: string[];
   // Which agents' programs are installed.
   installed?: { claude?: boolean; codex?: boolean };
 };

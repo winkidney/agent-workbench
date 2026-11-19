@@ -1254,3 +1254,16 @@ These are maintainer notes on how each feature of Agent Workbench was verified, 
 - Reload instead of polling (same day): `TestAssistantFilesAreReadOnReloadOnly`. An edited name and a new assistant are not seen until `assistantsChanged()`, then both are. Tests that edit files now reload. The page reloads once when it loads. `go test`, Vitest (376) and typecheck passed.
 - Loaded on demand (same day): the assistant card, settings, setup dialog, change list, routine dialog and Assistants tab are lazy chunks (3–8 KB each) that load when first shown; their data is per view and released when it closes.
 - Routines by assistant (same day): `groupRoutines` test (Moss first and taking unlinked routines, then the assistants' order, a removed assistant last). In the browser, ⋯ → Routines opened the Routines tab, grouped as "Moss 2 / Weekly report 1", with no page errors.
+
+## Moss ships and comes back (2026-11-20)
+
+- `TestMossFollowsNewVersionsAndKeepsUserChanges`:
+  - Setting up writes Moss's procedure from `moss/AGENTS.md` and records all six digests.
+  - A newer version replaces an unchanged file, and keeps and offers a changed one.
+  - Keep mine stops the offer for that version; Use the new version writes it.
+- `TestMossExportsOnlyItsDefinition`:
+  - Nothing is copied while the files match.
+  - A learned line in Moss's procedure is copied to `moss/AGENTS.md`, while `state/` stays home.
+  - The language rule goes back to `{{.LanguageLine}}`.
+  - A token in a skill stops the export, and a folder that is not a checkout is refused.
+- The user's Moss procedure equals the shipped one, so upgrading offers nothing.

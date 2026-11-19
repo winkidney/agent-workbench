@@ -19,3 +19,4 @@ Decisions that shape how the workbench behaves, why, and what they cost. Each re
 | [0013](0013-assistants-set-up-on-first-use.md) | Assistants are set up on first use; each picks its agent; Moss makes new ones | accepted; amends 0010 |
 | [0014](0014-moss-welcomes-one-template.md) | Moss welcomes the user; assistants come from one template and are backed up to GitHub | accepted |
 | [0015](0015-an-assistant-explains-itself.md) | An assistant explains itself: metadata, a home card, its own settings | accepted |
+| [0016](0016-moss-ships-and-comes-back.md) | Moss ships with Agent Workbench and comes back from the user's repository | accepted |

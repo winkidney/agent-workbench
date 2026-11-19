@@ -42,6 +42,8 @@ Commands:
   version     print the version
   routine     add, list or remove routines (agent-workbench routine help)
   assistant   send an assistant a message (agent-workbench assistant help)
+  moss        moss export --to REPO: copy your Moss's definition into an
+              agent-workbench checkout, for review and a commit there
 
 Flags:
   --data-dir PATH      private state directory
@@ -85,6 +87,9 @@ func run() error {
 	// The agents' commands take their own flags (agents.go).
 	if action == "routine" || action == "assistant" {
 		return agentCommand(action, args)
+	}
+	if action == "moss" {
+		return mossCommand(args)
 	}
 	var c config
 	flags := flag.NewFlagSet(action, flag.ContinueOnError)
