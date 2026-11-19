@@ -15,6 +15,9 @@ import {
   MessageSquarePlus,
   Power,
   PowerOff,
+  Check,
+  Settings,
+  Wrench,
   TriangleAlert,
   ArchiveRestore,
   ChevronRight,
@@ -46,7 +49,9 @@ import {
   MAIN_NAME,
   moved,
   newRoutine,
+  openAssistantSettings,
   saveOrder,
+  setUpAssistant,
   setUpAssistants,
   type Assistant,
 } from "../lib/assistants";
@@ -898,6 +903,8 @@ function AssistantRow({
   onOpen,
   order,
   drag,
+  open: isOpen,
+  installed,
 }: {
   assistant: Assistant;
   nodes: Node[];
@@ -906,6 +913,9 @@ function AssistantRow({
   // Every assistant's folder, in order: for moving.
   order: string[];
   drag: AssistantDrag;
+  // It is the assistant open now: highlighted.
+  open: boolean;
+  installed?: { claude?: boolean; codex?: boolean };
 }) {
   const [open, setOpen] = useState(false);
   const [anchor, setAnchor] = useState<DOMRect | null>(null);
@@ -913,7 +923,7 @@ function AssistantRow({
   const latest = nodes[0]?.session;
   const waiting = nodes.find((n) => needsYou(n))?.session;
   const shown = waiting ?? latest;
-  const selected = !!actions.activeId && a.current === actions.activeId;
+  const selected = isOpen;
   const movable = a.dir !== "main";
   const at = order.indexOf(a.dir);
   const close = () => actions.setMenu(null);
@@ -988,6 +998,8 @@ function AssistantRow({
           </span>
           {a.enabled === false ? (
             <span className="session-time">off</span>
+          ) : !a.ready && !a.error ? (
+            <span className="session-time assistant-setup-hint">set up</span>
           ) : shown &&
             (statusLabel[shown.status] ||
               shown.attention ||
@@ -1043,6 +1055,50 @@ function AssistantRow({
             item(<AlarmClock size={14} />, "New routine for it…", () =>
               newRoutine(a.dir),
             )}
+          {a.enabled !== false &&
+            !a.error &&
+            !a.ready &&
+            item(
+              <Wrench size={14} />,
+              "Set up…",
+              () => void setUpAssistant(a.dir),
+            )}
+          {!a.error &&
+            item(<Settings size={14} />, "Settings…", () =>
+              openAssistantSettings(a.dir),
+            )}
+          {!a.error && (
+            <>
+              <div className="row-menu-sep" />
+              <div className="row-menu-label">Agent</div>
+              {(["claude", "codex"] as const).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={a.agent === v}
+                  disabled={installed?.[v] === false && a.agent !== v}
+                  onClick={() => {
+                    close();
+                    if (a.agent !== v)
+                      void api(`assistants/${a.dir}`, "PATCH", {
+                        agent: v,
+                      }).then(assistantsChanged);
+                  }}
+                >
+                  {a.agent === v ? (
+                    <Check size={14} />
+                  ) : (
+                    <AgentIcon agent={v} size={14} />
+                  )}
+                  <span>
+                    {v === "claude" ? "Claude" : "Codex"}
+                    {installed?.[v] === false && " (not installed)"}
+                  </span>
+                </button>
+              ))}
+            </>
+          )}
           {movable && (
             <>
               <div className="row-menu-sep" />
@@ -1143,6 +1199,8 @@ export function Sidebar({
   assistants,
   assistantRoot,
   assistantsReady,
+  installedAgents,
+  openAssistantDir,
   onOpenAssistant,
   connection,
   onReconnect,
@@ -1163,6 +1221,10 @@ export function Sidebar({
   assistantRoot: string;
   // Known whether they are set up; until then nothing is offered.
   assistantsReady: boolean;
+  // Which agents can run, for the assistant menu's agent switch.
+  installedAgents?: { claude?: boolean; codex?: boolean };
+  // The assistant open now (its new request, or a session in its folder).
+  openAssistantDir: string;
   onOpenAssistant: (dir: string) => void;
   // Where this page is and whether live updates arrive.
   connection: FooterConnection;
@@ -1367,6 +1429,8 @@ export function Sidebar({
                   onOpen={onOpenAssistant}
                   order={assistantOrder}
                   drag={assistantDrag}
+                  open={a.dir === openAssistantDir}
+                  installed={installedAgents}
                 />
               ))}
             {offCount > 0 && (

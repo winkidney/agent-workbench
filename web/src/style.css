@@ -6370,3 +6370,95 @@ body.resizing iframe {
   letter-spacing: 0;
   text-transform: none;
 }
+/* An assistant's home card (assistants/AssistantHome.tsx; ADR 0015). */
+.assistant-home {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  margin: 0 0 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card, var(--background));
+}
+.assistant-home-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.assistant-home-head h2 {
+  margin: 0;
+  font-size: 17px;
+}
+.assistant-home-head p {
+  margin: 2px 0 0;
+  font-size: 12px;
+}
+.assistant-home h3 {
+  margin: 6px 0 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+.assistant-home-description {
+  margin: 0;
+}
+.assistant-home-list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 13px;
+}
+.assistant-home .quick-start {
+  margin: 0;
+}
+.assistant-home-setup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  background: var(--muted);
+  font-size: 13px;
+}
+.assistant-home-setup span {
+  flex: 1;
+}
+.assistant-home-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.assistant-settings-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.assistant-settings-routine {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.assistant-settings-routine > span {
+  flex: 1;
+  min-width: 0;
+}
+.assistant-setup-hint {
+  color: var(--primary);
+}
+.row-menu-label {
+  padding: 4px 8px 2px;
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted-foreground);
+}
+.row-menu button[aria-checked="true"] {
+  font-weight: 600;
+}

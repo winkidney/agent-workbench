@@ -428,3 +428,56 @@ func TestAssistantsOrderAndTurningOff(t *testing.T) {
 		t.Fatalf("insert: %q", got)
 	}
 }
+
+func TestAssistantsDescribeThemselves(t *testing.T) {
+	m, _ := fixture(t)
+	root := filepath.Join(t.TempDir(), "assistants")
+	if _, err := m.setUp(root, "claude", "", "zh-Hant"); err != nil {
+		t.Fatal(err)
+	}
+	root = m.assistantsRoot()
+	moss, _ := m.assistant("main")
+	if !moss.Ready || !strings.Contains(moss.Description, "個人助理") || len(moss.Capabilities) == 0 || len(moss.Examples) == 0 {
+		t.Fatalf("Moss: %+v", moss)
+	}
+	a, err := m.NewAssistant("Report", "", "claude", "per-task")
+	if err != nil || a.Ready || a.Description != "" {
+		t.Fatalf("new: %+v %v", a, err)
+	}
+	// The page fills in the home card; lists are TOML arrays, quotes kept.
+	desc, caps, ex, ready := `Drafts the "weekly" report`, []string{"Reads git logs", " ", "Asks before sending"}, []string{"Draft this week's report"}, true
+	a, err = m.PatchAssistant("report", AssistantPatch{Description: &desc, Capabilities: &caps, Examples: &ex, Ready: &ready, Sessions: "continuous"})
+	if err != nil || a.Description != desc || len(a.Capabilities) != 2 || a.Examples[0] != ex[0] || !a.Ready || a.Sessions != "continuous" {
+		t.Fatalf("patched: %+v %v", a, err)
+	}
+	b, _ := os.ReadFile(filepath.Join(root, "report", "assistant.toml"))
+	if !strings.Contains(string(b), `capabilities = ["Reads git logs", "Asks before sending"]`) || !strings.Contains(string(b), "# What the page shows about it") {
+		t.Fatalf("assistant.toml:\n%s", b)
+	}
+	// Missing keys are added; bad values are refused and leave the file.
+	writeToml(t, filepath.Join(root, "old", "assistant.toml"), "name = \"Old\"\nagent = \"codex\"\n")
+	if a, err := m.PatchAssistant("old", AssistantPatch{Description: &desc}); err != nil || a.Description != desc || !a.Ready {
+		t.Fatalf("old: %+v %v", a, err)
+	}
+	long := []string{strings.Repeat("x", 201)}
+	if _, err := m.PatchAssistant("report", AssistantPatch{Examples: &long}); err == nil {
+		t.Fatal("a 201-character example was accepted")
+	}
+	two := "a\nb"
+	if _, err := m.PatchAssistant("report", AssistantPatch{Description: &two}); err == nil {
+		t.Fatal("a two-line description was accepted")
+	}
+	many := make([]string, 13)
+	for i := range many {
+		many[i] = "x"
+	}
+	if _, err := m.PatchAssistant("report", AssistantPatch{Capabilities: &many}); err == nil {
+		t.Fatal("13 capabilities were accepted")
+	}
+	if a, _ := m.assistant("report"); a.Description != desc {
+		t.Fatalf("a refused change touched the file: %+v", a)
+	}
+	if !strings.Contains(setUpText("Report", "en"), "ready = true") {
+		t.Fatal("the set-up message does not say to set ready")
+	}
+}

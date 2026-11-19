@@ -1224,3 +1224,20 @@ These are maintainer notes on how each feature of Agent Workbench was verified, 
     - Turn on brings an assistant back, and Show more goes away.
     - The ⋯ menu shows "This conversation" (with its status) above "Workbench".
     - No page errors.
+
+## An assistant explains itself (2026-11-19)
+
+- Go `TestAssistantsDescribeThemselves`:
+  - Moss gets its description, capabilities and examples in the setup language (zh-Hant) and is ready.
+  - A new assistant is not ready and has no description.
+  - Patching description, capabilities (blank items dropped), examples, ready and topics writes TOML strings and arrays, and keeps the comments.
+  - A file without the keys gets them.
+  - Refused, leaving the file as it was: a 201-character example, a two-line description, 13 capabilities.
+  - The set-up message says to set `ready`.
+- Web: `routinesOf`. 376 Vitest tests and typecheck passed.
+- Browser (isolated workbench, only a stand-in `codex`, Playwright):
+  - Opening the per-task "Weekly report" highlights only its row, which reads "set up". Its card shows "Not set up yet · Set up" and "No description yet".
+  - The settings dialog saved a Chinese description, capabilities and examples. The card showed them at once: it now reads the live list, not the copy taken when it opened. Clicking an example filled the input.
+  - Moss's card shows its 简体中文 description and capabilities, and only Moss is highlighted.
+  - The row menu offers Open, New routine for it, Set up…, Settings…, Agent (Claude marked not installed and disabled, Codex) and Turn off.
+  - No page errors.

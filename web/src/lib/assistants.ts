@@ -13,6 +13,11 @@ export type Assistant = {
   routines: number;
   // Turned on; a turned-off one is under Show more and its routines wait.
   enabled: boolean;
+  // Its home card (assistant.toml; ADR 0015), and whether it is set up.
+  description?: string;
+  capabilities?: string[];
+  examples?: string[];
+  ready: boolean;
   error?: string;
   current?: string;
   previous?: string[];
@@ -29,7 +34,36 @@ export type Assistants = {
   language?: Language;
   // The backup of the repository to its remote (sync.go).
   sync?: SyncState;
+  // Which agents' programs are installed.
+  installed?: { claude?: boolean; codex?: boolean };
 };
+
+// Asks App.tsx to open an assistant's settings (assistants/AssistantSettings).
+export const ASSISTANT_SETTINGS_EVENT = "workbench:assistant-settings";
+export const openAssistantSettings = (dir: string) =>
+  window.dispatchEvent(
+    new CustomEvent(ASSISTANT_SETTINGS_EVENT, { detail: dir }),
+  );
+
+// An assistant's routines: those in its file, and those sent to it.
+export function routinesOf<
+  R extends {
+    createdBy: string;
+    target?: { kind: string; assistant?: string };
+  },
+>(list: R[], dir: string): R[] {
+  return list.filter(
+    (r) =>
+      r.createdBy === "file:" + dir ||
+      (r.target?.kind === "assistant" && r.target.assistant === dir),
+  );
+}
+
+// Starts an assistant's set-up conversation and opens it.
+export const setUpAssistant = (dir: string) =>
+  api<{ session: string }>(`assistants/${dir}/setup`, "POST").then((o) =>
+    openSessionLater(o.session),
+  );
 
 export type Language = "en" | "zh-Hans" | "zh-Hant";
 export const LANGUAGES: [Language, string][] = [

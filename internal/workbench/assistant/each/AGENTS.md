@@ -29,7 +29,7 @@ What this assistant does, in a sentence or two. (Write it with the user: see the
 
 ## Setting up
 
-What to ask the user the first time, step by step. Credentials (passwords, tokens, keys, private URLs) never go in this repository: the user saves them in `~/.config/assistant/secrets/` (mode 600), or the assistant uses a tool's existing sign-in; they are never given in the conversation. Run the check once, then set `enabled = true` on the routines and run `"$AGENT_WORKBENCH_BIN" assistant reload`.
+What to ask the user the first time, step by step. Credentials (passwords, tokens, keys, private URLs) never go in this repository: the user saves them in `~/.config/assistant/secrets/` (mode 600), or the assistant uses a tool's existing sign-in; they are never given in the conversation. Run the check once, then set `enabled = true` on the routines, `ready = true` at the top of `assistant.toml` (with its `description`, `capabilities` and `examples` filled in, in the user's language), and run `"$AGENT_WORKBENCH_BIN" assistant reload`.
 
 ## Procedure
 

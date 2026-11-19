@@ -7,6 +7,7 @@ import {
   MAIN_NAME,
   MAIN_STARTERS,
   moved,
+  routinesOf,
   SET_UP_EVENT,
   setUpAssistants,
   type Assistant,
@@ -98,5 +99,26 @@ describe("order", () => {
     expect(moved(dirs, "c", "main")).toEqual(["main", "c", "a", "b"]);
     expect(moved(dirs, "main", "c")).toEqual(dirs);
     expect(moved(dirs, "x", "a")).toEqual(dirs);
+  });
+});
+
+describe("an assistant's routines", () => {
+  it("are those in its file and those sent to it", () => {
+    const list = [
+      { id: "1", createdBy: "file:mail" },
+      {
+        id: "2",
+        createdBy: "page",
+        target: { kind: "assistant", assistant: "mail" },
+      },
+      {
+        id: "3",
+        createdBy: "page",
+        target: { kind: "assistant", assistant: "main" },
+      },
+      { id: "4", createdBy: "file:main" },
+      { id: "5", createdBy: "agent:x", target: { kind: "session" } },
+    ];
+    expect(routinesOf(list, "mail").map((r) => r.id)).toEqual(["1", "2"]);
   });
 });

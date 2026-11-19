@@ -7,6 +7,7 @@ import {
   folderFor,
   LANGUAGES,
   MAIN_NAME,
+  openAssistantSettings,
   openSessionLater,
   setUpAssistants,
   useChanges,
@@ -304,6 +305,15 @@ function AssistantItem({
               onClick={() => setNaming(a.name)}
             >
               <Pencil size={14} />
+            </Button>
+          )}
+          {!a.error && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => openAssistantSettings(a.dir)}
+            >
+              Settings
             </Button>
           )}
           <Button

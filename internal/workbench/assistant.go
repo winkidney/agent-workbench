@@ -36,7 +36,13 @@ var assistantTemplates embed.FS
 type AssistantFile struct {
 	Name string `toml:"name"`
 	// false: turned off (hidden under Show more, routines paused).
-	Enabled  *bool         `toml:"enabled"`
+	Enabled *bool `toml:"enabled"`
+	// What the page shows about it (ADR 0015).
+	Description  string   `toml:"description"`
+	Capabilities []string `toml:"capabilities"`
+	Examples     []string `toml:"examples"`
+	// false until set up; missing (older files) means set up.
+	Ready    *bool         `toml:"ready"`
 	Agent    string        `toml:"agent"`
 	Sessions string        `toml:"sessions"`
 	Memory   string        `toml:"memory"`
@@ -72,6 +78,11 @@ type Assistant struct {
 	Routines int    `json:"routines"`
 	// Turned on (the personal assistant always is).
 	Enabled bool `json:"enabled"`
+	// What it does, can do, and requests to try; set up yet (ADR 0015).
+	Description  string   `json:"description,omitempty"`
+	Capabilities []string `json:"capabilities,omitempty"`
+	Examples     []string `json:"examples,omitempty"`
+	Ready        bool     `json:"ready"`
 	// What is wrong with its assistant.toml; it is then not used.
 	Error string `json:"error,omitempty"`
 	// continuous: the session of the ongoing topic, and earlier ones.
@@ -197,6 +208,28 @@ func fileRoutineID(dir, name string) string {
 }
 
 // readAssistant reads one assistant.toml.
+// Limits on what the home card shows (ADR 0015).
+const (
+	metaItems = 12
+	metaChars = 200
+)
+
+func oneLine(key, s string) error {
+	if strings.ContainsAny(s, "\n\r") || len([]rune(s)) > metaChars {
+		return fmt.Errorf("%s: one line, at most %d characters", key, metaChars)
+	}
+	return nil
+}
+
+// tomlStrings is a TOML array of strings.
+func tomlStrings(list []string) string {
+	q := make([]string, len(list))
+	for i, s := range list {
+		q[i] = strconv.Quote(s)
+	}
+	return "[" + strings.Join(q, ", ") + "]"
+}
+
 func readAssistant(path string) (AssistantFile, error) {
 	var f AssistantFile
 	md, err := toml.DecodeFile(path, &f)
@@ -223,6 +256,19 @@ func readAssistant(path string) (AssistantFile, error) {
 	}
 	if f.Memory != "state" && f.Memory != "wiki" {
 		return f, errors.New(`memory: "state" or "wiki"`)
+	}
+	if err := oneLine("description", f.Description); err != nil {
+		return f, err
+	}
+	for key, list := range map[string][]string{"capabilities": f.Capabilities, "examples": f.Examples} {
+		if len(list) > metaItems {
+			return f, fmt.Errorf("%s: at most %d", key, metaItems)
+		}
+		for _, item := range list {
+			if err := oneLine(key, item); err != nil {
+				return f, err
+			}
+		}
 	}
 	names := map[string]bool{}
 	for i, r := range f.Routines {
@@ -352,6 +398,8 @@ func (m *Manager) Assistants() []Assistant {
 		} else {
 			a.Name, a.Agent, a.Sessions, a.Memory, a.Routines, a.file = f.Name, f.Agent, f.Sessions, f.Memory, len(f.Routines), f
 			a.Enabled = f.Enabled == nil || *f.Enabled || a.Dir == "main"
+			a.Description, a.Capabilities, a.Examples = f.Description, f.Capabilities, f.Examples
+			a.Ready = f.Ready == nil || *f.Ready
 		}
 		list = append(list, a)
 	}
@@ -508,6 +556,9 @@ func slug(name string) string {
 type scaffoldData struct {
 	Name, Agent, Sessions, Memory string
 	Main                          bool
+	// The personal assistant's home card, in the setup language.
+	Description                    string
+	CapabilitiesTOML, ExamplesTOML string
 	// The rule naming the language, for the root AGENTS.md.
 	LanguageLine string
 }
@@ -635,6 +686,16 @@ func (m *Manager) ensureShared() {
 	}
 }
 
+// installedAgents says which agents' programs can be found.
+func (m *Manager) installedAgents() map[string]bool {
+	out := map[string]bool{}
+	for _, agent := range []string{"claude", "codex"} {
+		_, err := m.cli(agent)
+		out[agent] = err == nil
+	}
+	return out
+}
+
 // defaultAgent is the agent setting up chooses: Claude Code if it is
 // installed, else Codex; "" with neither.
 func (m *Manager) defaultAgent() string {
@@ -710,7 +771,8 @@ func (m *Manager) setUp(root, agent, name, lang string) (bool, error) {
 	}
 	created := false
 	if len(assistantFiles(abs)) == 0 {
-		if err := scaffoldAssistant(abs, "main", scaffoldData{Name: name, Agent: agent, Sessions: "continuous", Memory: "wiki", Main: true}); err != nil {
+		meta := mossMeta(lang)
+		if err := scaffoldAssistant(abs, "main", scaffoldData{Name: name, Agent: agent, Sessions: "continuous", Memory: "wiki", Main: true, Description: meta.Description, CapabilitiesTOML: tomlStrings(meta.Capabilities), ExamplesTOML: tomlStrings(meta.Examples)}); err != nil {
 			return false, err
 		}
 		created = true
@@ -912,6 +974,14 @@ func setTopLevelRaw(text, key, raw string) (string, bool) {
 	return head[:loc[0]] + key + " = " + raw + head[end:] + tail, true
 }
 
+// setOrInsert sets a top-level key, adding it when it is missing.
+func setOrInsert(text, key, raw string) string {
+	if t, ok := setTopLevelRaw(text, key, raw); ok {
+		return t
+	}
+	return insertTopLevel(text, key, raw)
+}
+
 // insertTopLevel adds `key = raw` after the agent line (else at the end of
 // the top-level keys, before the first table).
 func insertTopLevel(text, key, raw string) string {
@@ -932,6 +1002,25 @@ func insertTopLevel(text, key, raw string) string {
 // continuous assistant that changes agent starts a new topic: the ongoing
 // session belongs to the old one.
 func (m *Manager) UpdateAssistant(dir, name, agent string, enabled *bool) (Assistant, error) {
+	return m.PatchAssistant(dir, AssistantPatch{Name: name, Agent: agent, Enabled: enabled})
+}
+
+// AssistantPatch is what the page changes in an assistant.toml; nil and ""
+// leave a field as it is.
+type AssistantPatch struct {
+	Name, Agent, Sessions string
+	Description           *string
+	Capabilities          *[]string
+	Examples              *[]string
+	Enabled, Ready        *bool
+}
+
+// PatchAssistant changes only the given top-level lines of an
+// assistant.toml (comments and routines stay), checks the result before it
+// replaces the file, and commits. A continuous assistant that switches agent
+// or topic mode starts a new topic.
+func (m *Manager) PatchAssistant(dir string, p AssistantPatch) (Assistant, error) {
+	name, agent, enabled := p.Name, p.Agent, p.Enabled
 	a, err := m.assistant(dir)
 	if err != nil {
 		return a, err
@@ -979,6 +1068,37 @@ func (m *Manager) UpdateAssistant(dir, name, agent string, enabled *bool) (Assis
 		} else {
 			did = append(did, "turn off")
 		}
+	}
+	if p.Sessions != "" && p.Sessions != a.Sessions {
+		if p.Sessions != "per-task" && p.Sessions != "continuous" {
+			return a, errors.New("sessions: per-task or continuous")
+		}
+		text = setOrInsert(text, "sessions", strconv.Quote(p.Sessions))
+		did, switched = append(did, "topics "+p.Sessions), true
+	}
+	if p.Description != nil && *p.Description != a.Description {
+		text = setOrInsert(text, "description", strconv.Quote(strings.TrimSpace(*p.Description)))
+		did = append(did, "description")
+	}
+	for _, f := range []struct {
+		key  string
+		list *[]string
+	}{{"capabilities", p.Capabilities}, {"examples", p.Examples}} {
+		if f.list == nil {
+			continue
+		}
+		clean := []string{}
+		for _, item := range *f.list {
+			if item = strings.TrimSpace(item); item != "" {
+				clean = append(clean, item)
+			}
+		}
+		text = setOrInsert(text, f.key, tomlStrings(clean))
+		did = append(did, f.key)
+	}
+	if p.Ready != nil && *p.Ready != a.Ready {
+		text = setOrInsert(text, "ready", strconv.FormatBool(*p.Ready))
+		did = append(did, map[bool]string{true: "ready", false: "not set up"}[*p.Ready])
 	}
 	if len(did) == 0 {
 		return a, nil
@@ -1169,7 +1289,7 @@ func (s *Server) assistantsAPI(w http.ResponseWriter, r *http.Request, rest stri
 	parts := strings.Split(rest, "/")
 	switch {
 	case rest == "" && r.Method == "GET":
-		writeJSON(w, map[string]any{"root": m.assistantsRoot(), "assistants": m.Assistants(), "defaultAgent": m.defaultAgent(), "language": m.language(), "sync": m.syncState()})
+		writeJSON(w, map[string]any{"root": m.assistantsRoot(), "assistants": m.Assistants(), "defaultAgent": m.defaultAgent(), "language": m.language(), "sync": m.syncState(), "installed": m.installedAgents()})
 	case rest == "github" && r.Method == "POST":
 		var v struct{ Name string }
 		if err := decode(w, r, &v); err != nil {
@@ -1270,15 +1390,12 @@ func (s *Server) assistantsAPI(w http.ResponseWriter, r *http.Request, rest stri
 		// Made in the page: it asks the user what it is for.
 		writeJSON(w, m.afterNew(a))
 	case len(parts) == 1 && parts[0] != "" && r.Method == "PATCH":
-		var v struct {
-			Name, Agent string
-			Enabled     *bool
-		}
+		var v AssistantPatch
 		if err := decode(w, r, &v); err != nil {
 			bad(w, err)
 			return
 		}
-		a, err := m.UpdateAssistant(parts[0], v.Name, v.Agent, v.Enabled)
+		a, err := m.PatchAssistant(parts[0], v)
 		if err != nil {
 			bad(w, err)
 			return
@@ -1291,6 +1408,14 @@ func (s *Server) assistantsAPI(w http.ResponseWriter, r *http.Request, rest stri
 			return
 		}
 		writeJSON(w, out)
+	case len(parts) == 2 && parts[1] == "setup" && r.Method == "POST":
+		// Set it up now: its set-up conversation (welcome.go).
+		s, err := m.SetUpMessage(parts[0])
+		if err != nil {
+			bad(w, err)
+			return
+		}
+		writeJSON(w, map[string]any{"session": s.ID})
 	case len(parts) == 2 && parts[1] == "memory" && r.Method == "POST":
 		started, err := m.IngestNow(parts[0], "")
 		if err != nil {

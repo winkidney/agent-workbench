@@ -19,6 +19,7 @@ import {
 import type { ViewItem } from "../transcript/media";
 import { MAIN_STARTERS, type Assistant } from "../lib/assistants";
 import { QuickStart } from "../assistants/QuickStart";
+import { AssistantHome } from "../assistants/AssistantHome";
 
 type Agent = "claude" | "codex";
 const STORE = "workbench-new";
@@ -128,7 +129,6 @@ export function NewSession({
       <div className="new-hero">
         {assistant ? (
           <>
-            <h1>{assistant.name}</h1>
             <p>
               {assistant.sessions === "continuous"
                 ? continues
@@ -153,7 +153,20 @@ export function NewSession({
           </>
         )}
       </div>
-      {assistant?.dir === "main" && !text && (
+      {/* The assistant's home card (ADR 0015); its examples fill the box. */}
+      {assistant && (
+        <AssistantHome
+          assistant={assistant}
+          onTry={(t) => {
+            setText(t);
+            requestAnimationFrame(() => {
+              input.current?.focus();
+              input.current?.setSelectionRange(t.length, t.length);
+            });
+          }}
+        />
+      )}
+      {assistant?.dir === "main" && !assistant.examples?.length && !text && (
         <QuickStart
           starters={MAIN_STARTERS}
           onPick={(t) => {

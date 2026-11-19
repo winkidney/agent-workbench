@@ -9,6 +9,22 @@ sessions = {{printf "%q" .Sessions}}
 # state: this assistant keeps state/ and log.md. wiki: it also maintains
 # ../shared/wiki from its conversations.
 memory = {{printf "%q" .Memory}}
+# What the page shows about it (its home card): one line on what it does,
+# what it can do, and requests to try. Keep them true when the procedure
+# changes.
+{{if .Main -}}
+description = {{printf "%q" .Description}}
+capabilities = {{.CapabilitiesTOML}}
+examples = {{.ExamplesTOML}}
+# Set up and working.
+ready = true
+{{- else -}}
+description = ""
+capabilities = []
+examples = []
+# false until its setup is done: the page offers to set it up.
+ready = false
+{{- end}}
 {{if .Main}}
 [[routines]]
 name = "Daily check"

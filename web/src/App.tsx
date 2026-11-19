@@ -41,6 +41,7 @@ import {
   assistantOf,
   assistantsChanged,
   changesChanged,
+  ASSISTANT_SETTINGS_EVENT,
   latestFor,
   MAIN_STARTERS,
   newRoutine,
@@ -55,6 +56,13 @@ import {
 } from "./lib/assistants";
 import { ChangeBanner } from "./assistants/Changes";
 import { SetUpDialog } from "./assistants/SetUpDialog";
+import { AssistantHome } from "./assistants/AssistantHome";
+import { AssistantSettings } from "./assistants/AssistantSettings";
+import {
+  Dialog as AboutDialog,
+  DialogContent as AboutContent,
+  DialogTitle as AboutTitle,
+} from "./components/ui/dialog";
 import { SettingsDialog } from "./components/settings/SettingsDialog";
 import { LogoMark } from "./components/Logo";
 import { PreviewPanel } from "./preview/PreviewPanel";
@@ -118,6 +126,7 @@ import {
   AlarmClock,
   MessageSquarePlus,
   BookOpen,
+  Info,
 } from "lucide-react";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
@@ -632,6 +641,15 @@ export default function App() {
   const assistantList = useAssistants(paired);
   // Assistants used before they are set up (lib/assistants.ts).
   const [settingUp, setSettingUp] = useState(false);
+  // One assistant's settings, and the open conversation's assistant card.
+  const [settingsFor, setSettingsFor] = useState<string | null>(null);
+  const [aboutOpen, setAboutOpen] = useState(false);
+  useEffect(() => {
+    const show = ((e: CustomEvent<string>) =>
+      setSettingsFor(e.detail)) as EventListener;
+    window.addEventListener(ASSISTANT_SETTINGS_EVENT, show);
+    return () => window.removeEventListener(ASSISTANT_SETTINGS_EVENT, show);
+  }, []);
   useEffect(() => {
     const ask = () => setSettingUp(true);
     window.addEventListener(SET_UP_EVENT, ask);
@@ -1245,6 +1263,8 @@ export default function App() {
             onDelete={setDeleting}
             onSchedule={scheduleFor}
             assistants={assistantList.assistants}
+            installedAgents={assistantList.installed}
+            openAssistantDir={composing?.assistant?.dir ?? topicOf?.dir ?? ""}
             assistantRoot={assistantList.root}
             assistantsReady={!!assistantList.loaded}
             onOpenAssistant={openAssistant}
@@ -1311,6 +1331,17 @@ export default function App() {
                 </>
               )}
             </div>
+            {topicOf && current && !composing && (
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={`About ${topicOf.name}`}
+                title={`About ${topicOf.name}`}
+                onClick={() => setAboutOpen(true)}
+              >
+                <Info size={17} />
+              </Button>
+            )}
             <details className="conversation-menu">
               <summary aria-label="More actions" title="More actions">
                 <MoreHorizontal size={18} />
@@ -1726,7 +1757,14 @@ export default function App() {
               workspaces={workspaces}
               prefs={sidebarPrefs.prefs}
               initialCwd={composing?.cwd}
-              assistant={composing?.assistant}
+              // The live entry, so its card follows changes to its file.
+              assistant={
+                composing?.assistant &&
+                (assistantList.assistants.find(
+                  (a) => a.dir === composing.assistant?.dir,
+                ) ??
+                  composing.assistant)
+              }
               continues={composing?.continues}
               onView={view}
               onCreated={(s) => {
@@ -1855,6 +1893,58 @@ export default function App() {
           assistants={assistantList}
           onOpenAssistant={openAssistant}
         />
+        {settingsFor &&
+          (() => {
+            const a = assistantList.assistants.find(
+              (x) => x.dir === settingsFor,
+            );
+            return a ? (
+              <AssistantSettings
+                key={a.dir}
+                assistant={a}
+                installed={assistantList.installed}
+                onClose={() => setSettingsFor(null)}
+                onOpenFile={
+                  current
+                    ? (p) => {
+                        setPanel(true);
+                        env.openPath(p);
+                      }
+                    : undefined
+                }
+              />
+            ) : null;
+          })()}
+        {aboutOpen && topicOf && current && (
+          <AboutDialog open onOpenChange={(o) => !o && setAboutOpen(false)}>
+            <AboutContent className="modal modal-content setup-dialog">
+              <AboutTitle className="sr-only">About {topicOf.name}</AboutTitle>
+              <button
+                className="modal-close"
+                aria-label="Close"
+                onClick={() => setAboutOpen(false)}
+              >
+                <X size={18} />
+              </button>
+              <AssistantHome
+                assistant={topicOf}
+                onTry={(text) => {
+                  setAboutOpen(false);
+                  window.dispatchEvent(
+                    new CustomEvent("workbench:compose", {
+                      detail: { session: current.id, text },
+                    }),
+                  );
+                }}
+                onOpenFile={(p) => {
+                  setAboutOpen(false);
+                  setPanel(true);
+                  env.openPath(p);
+                }}
+              />
+            </AboutContent>
+          </AboutDialog>
+        )}
         {settingUp && (
           <SetUpDialog
             defaultAgent={assistantList.defaultAgent ?? ""}
