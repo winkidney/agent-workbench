@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"text/template"
@@ -492,14 +493,109 @@ func skillsLink(dir string) error {
 	return nil
 }
 
-// setUpRoot writes the repository's shared files and, the first time, the
-// main assistant; it starts the git repository when git is there.
-func (m *Manager) SetUpAssistants(root, agent string) error {
+// The name the personal assistant starts with; the user can change it.
+const mainName = "Moss"
+
+// sharedFiles are the files at the top of the repository of assistants.
+var sharedFiles = map[string]string{
+	"AGENTS.md":               "root/AGENTS.md",
+	"CLAUDE.md":               "root/CLAUDE.md",
+	".gitignore":              "root/gitignore",
+	".claude/settings.json":   "root/claude-settings.json",
+	"shared/wiki/index.md":    "root/wiki/index.md",
+	"shared/wiki/overview.md": "root/wiki/overview.md",
+	".agents/skills/create-assistant/SKILL.md": "root/skills/create-assistant/SKILL.md",
+}
+
+// writeShared writes the shared files root lacks and links its skills; it
+// reports whether it wrote anything.
+func writeShared(root string) (bool, error) {
+	wrote := false
+	for to, from := range sharedFiles {
+		path := filepath.Join(root, filepath.FromSlash(to))
+		if _, err := os.Lstat(path); err == nil {
+			continue
+		}
+		data, err := assistantTemplates.ReadFile("assistant/" + from)
+		if err != nil {
+			return wrote, err
+		}
+		if err := writeNew(path, data); err != nil {
+			return wrote, err
+		}
+		wrote = true
+	}
+	if _, err := os.Lstat(filepath.Join(root, ".claude", "skills")); err != nil {
+		wrote = true
+	}
+	return wrote, skillsLink(root)
+}
+
+// ensureShared brings a repository set up by an earlier version up to the
+// shared files this one has (a new shared skill), never changing one that
+// is there.
+func (m *Manager) ensureShared() {
+	root := m.assistantsRoot()
+	if root == "" {
+		return
+	}
+	if _, err := os.Stat(root); err != nil {
+		return
+	}
+	wrote, err := writeShared(root)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "assistants: shared files:", err)
+	}
+	if wrote {
+		commitAll(root, "chore: add shared files from Agent Workbench")
+	}
+}
+
+// defaultAgent is the agent setting up chooses: Claude Code if it is
+// installed, else Codex; "" with neither.
+func (m *Manager) defaultAgent() string {
+	for _, agent := range []string{"claude", "codex"} {
+		if _, err := m.cli(agent); err == nil {
+			return agent
+		}
+	}
+	return ""
+}
+
+// assistantName checks a name an assistant is given.
+func assistantName(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" || len([]rune(name)) > 60 || strings.ContainsAny(name, "\n\r") {
+		return name, errors.New("name it: one line, at most 60 characters")
+	}
+	return name, nil
+}
+
+// SetUpAssistants makes the repository of assistants with its shared files
+// and, the first time, the personal assistant; it starts the git repository
+// when git is there. Empty values take the defaults: ~/assistants, the
+// installed agent, and the name Moss.
+func (m *Manager) SetUpAssistants(root, agent, name string) error {
+	if strings.TrimSpace(root) == "" {
+		root = "~/assistants"
+	}
+	if agent == "" {
+		if agent = m.defaultAgent(); agent == "" {
+			return errors.New("install Claude Code or Codex first (Settings → Agents)")
+		}
+	}
 	if agent != "claude" && agent != "codex" {
 		return errors.New("agent must be claude or codex")
 	}
+	if strings.TrimSpace(name) == "" {
+		name = mainName
+	}
+	name, err := assistantName(name)
+	if err != nil {
+		return err
+	}
 	abs, err := filepath.Abs(expandHome(strings.TrimSpace(root)))
-	if err != nil || strings.TrimSpace(root) == "" {
+	if err != nil {
 		return errors.New("choose a folder")
 	}
 	if err := os.MkdirAll(abs, 0o755); err != nil {
@@ -508,28 +604,11 @@ func (m *Manager) SetUpAssistants(root, agent string) error {
 	if abs, err = filepath.EvalSymlinks(abs); err != nil {
 		return err
 	}
-	shared := map[string]string{
-		"AGENTS.md":               "root/AGENTS.md",
-		"CLAUDE.md":               "root/CLAUDE.md",
-		".gitignore":              "root/gitignore",
-		".claude/settings.json":   "root/claude-settings.json",
-		"shared/wiki/index.md":    "root/wiki/index.md",
-		"shared/wiki/overview.md": "root/wiki/overview.md",
-	}
-	for to, from := range shared {
-		data, err := assistantTemplates.ReadFile("assistant/" + from)
-		if err != nil {
-			return err
-		}
-		if err := writeNew(filepath.Join(abs, filepath.FromSlash(to)), data); err != nil {
-			return err
-		}
-	}
-	if err := skillsLink(abs); err != nil {
+	if _, err := writeShared(abs); err != nil {
 		return err
 	}
 	if len(assistantFiles(abs)) == 0 {
-		if err := scaffoldAssistant(abs, "main", "", scaffoldData{Name: "Assistant", Agent: agent, Sessions: "continuous", Memory: "wiki", Main: true}); err != nil {
+		if err := scaffoldAssistant(abs, "main", "", scaffoldData{Name: name, Agent: agent, Sessions: "continuous", Memory: "wiki", Main: true}); err != nil {
 			return err
 		}
 	}
@@ -736,6 +815,88 @@ func (m *Manager) newTopic(a Assistant, st assistantState) {
 	m.emit("", "assistants", map[string]any{"assistant": a.Dir})
 }
 
+// setTopLevel replaces the first `key = "…"` line before assistant.toml's
+// first table ([[routines]] has name lines of its own); false when there
+// is none.
+func setTopLevel(text, key, value string) (string, bool) {
+	line := regexp.MustCompile(`(?m)^` + key + `[ \t]*=[ \t]*"(?:[^"\\\n]|\\.)*"[ \t]*\r?$`)
+	head, tail := text, ""
+	if loc := regexp.MustCompile(`(?m)^[ \t]*\[`).FindStringIndex(text); loc != nil {
+		head, tail = text[:loc[0]], text[loc[0]:]
+	}
+	loc := line.FindStringIndex(head)
+	if loc == nil {
+		return text, false
+	}
+	end := loc[1]
+	if strings.HasSuffix(head[loc[0]:end], "\r") {
+		end--
+	}
+	return head[:loc[0]] + key + " = " + strconv.Quote(value) + head[end:] + tail, true
+}
+
+// UpdateAssistant renames an assistant or switches its agent, changing only
+// those lines of its assistant.toml (comments and routines stay). A
+// continuous assistant that changes agent starts a new topic: the ongoing
+// session belongs to the old one.
+func (m *Manager) UpdateAssistant(dir, name, agent string) (Assistant, error) {
+	a, err := m.assistant(dir)
+	if err != nil {
+		return a, err
+	}
+	path := filepath.Join(a.Path, "assistant.toml")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return a, err
+	}
+	text := string(data)
+	var did []string
+	if name != "" && strings.TrimSpace(name) != a.Name {
+		if name, err = assistantName(name); err != nil {
+			return a, err
+		}
+		var ok bool
+		if text, ok = setTopLevel(text, "name", name); !ok {
+			return a, errors.New(`assistant.toml has no name = "…" line to change`)
+		}
+		did = append(did, "rename to "+name)
+	}
+	switched := false
+	if agent != "" && agent != a.Agent {
+		if agent != "claude" && agent != "codex" {
+			return a, errors.New("agent must be claude or codex")
+		}
+		var ok bool
+		if text, ok = setTopLevel(text, "agent", agent); !ok {
+			return a, errors.New(`assistant.toml has no agent = "…" line to change`)
+		}
+		did, switched = append(did, "switch to "+agent), true
+	}
+	if len(did) == 0 {
+		return a, nil
+	}
+	// Checked before it replaces the file: a change never breaks it.
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, []byte(text), 0o644); err != nil {
+		return a, err
+	}
+	if _, err := readAssistant(tmp); err != nil {
+		os.Remove(tmp)
+		return a, err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return a, err
+	}
+	if switched && a.Sessions == "continuous" {
+		m.as.topic.Lock()
+		m.newTopic(a, m.topicState(a.Dir))
+		m.as.topic.Unlock()
+	}
+	commitAll(m.assistantsRoot(), a.Dir+": "+strings.Join(did, ", "))
+	m.assistantsChanged()
+	return m.assistant(dir)
+}
+
 // topicMoved follows a session from its first id (a workbench token) to its
 // native one in the topics that name it.
 func (m *Manager) topicMoved(oldID, newID string) {
@@ -883,7 +1044,7 @@ func (s *Server) assistantsAPI(w http.ResponseWriter, r *http.Request, rest stri
 	parts := strings.Split(rest, "/")
 	switch {
 	case rest == "" && r.Method == "GET":
-		writeJSON(w, map[string]any{"root": m.assistantsRoot(), "assistants": m.Assistants()})
+		writeJSON(w, map[string]any{"root": m.assistantsRoot(), "assistants": m.Assistants(), "defaultAgent": m.defaultAgent()})
 	case rest == "changes" && r.Method == "GET":
 		list, err := m.AssistantChanges()
 		if err != nil {
@@ -905,12 +1066,12 @@ func (s *Server) assistantsAPI(w http.ResponseWriter, r *http.Request, rest stri
 		}
 		writeJSON(w, v)
 	case rest == "setup" && r.Method == "POST":
-		var v struct{ Root, Agent string }
+		var v struct{ Root, Agent, Name string }
 		if err := decode(w, r, &v); err != nil {
 			bad(w, err)
 			return
 		}
-		if err := m.SetUpAssistants(v.Root, v.Agent); err != nil {
+		if err := m.SetUpAssistants(v.Root, v.Agent, v.Name); err != nil {
 			bad(w, err)
 			return
 		}
@@ -922,6 +1083,18 @@ func (s *Server) assistantsAPI(w http.ResponseWriter, r *http.Request, rest stri
 			return
 		}
 		a, err := m.NewAssistant(v.Name, v.Dir, v.Agent, v.Sessions, v.Kind)
+		if err != nil {
+			bad(w, err)
+			return
+		}
+		writeJSON(w, a)
+	case len(parts) == 1 && parts[0] != "" && r.Method == "PATCH":
+		var v struct{ Name, Agent string }
+		if err := decode(w, r, &v); err != nil {
+			bad(w, err)
+			return
+		}
+		a, err := m.UpdateAssistant(parts[0], v.Name, v.Agent)
 		if err != nil {
 			bad(w, err)
 			return

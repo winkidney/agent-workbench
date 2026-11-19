@@ -4,6 +4,9 @@ import {
   changeText,
   folderFor,
   latestFor,
+  MAIN_NAME,
+  SET_UP_EVENT,
+  setUpAssistants,
   type Assistant,
   type AssistantChange,
 } from "./assistants";
@@ -51,5 +54,20 @@ describe("changes", () => {
     ];
     expect(latestFor(list, "s")?.id).toBe("new");
     expect(latestFor(list, "x")).toBeUndefined();
+  });
+});
+
+describe("setting up", () => {
+  it("asks the page to show the set-up dialog", () => {
+    // Tests run without a DOM: an EventTarget stands in for the window.
+    const g = globalThis as unknown as { window?: EventTarget };
+    const before = g.window;
+    g.window = new EventTarget();
+    let asked = 0;
+    g.window.addEventListener(SET_UP_EVENT, () => asked++);
+    setUpAssistants();
+    g.window = before;
+    expect(asked).toBe(1);
+    expect(MAIN_NAME).toBe("Moss");
   });
 });

@@ -86,7 +86,7 @@ func assistantsWithGit(t *testing.T) (*Manager, string) {
 	posixOnly(t)
 	m, _ := fixture(t)
 	root := filepath.Join(t.TempDir(), "assistants")
-	if err := m.SetUpAssistants(root, "claude"); err != nil {
+	if err := m.SetUpAssistants(root, "claude", ""); err != nil {
 		t.Fatal(err)
 	}
 	// Sessions name their folder resolved, as the root is kept (macOS

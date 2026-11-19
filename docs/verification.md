@@ -1133,3 +1133,29 @@ These are maintainer notes on how each feature of Agent Workbench was verified, 
   - Before it is set up, `uv run tools/fetch.py` exits 1 with "config.toml: set host (see AGENTS.md, Setting up)".
   - No page errors.
 - Not exercised: a real mailbox.
+
+## Set up on first use, Moss, agents per assistant (2026-11-19)
+
+- Go:
+  - Setup with no fields:
+    - With no CLI on PATH, it says to install one.
+    - With only a stand-in `codex`, it chooses Codex and makes `~/assistants` under a scratch HOME.
+    - The personal assistant is named Moss, its procedure names itself from `assistant.toml`, and the create-assistant skill is at the root.
+    - A two-line name is refused.
+  - Rename and agent switch:
+    - Renaming `main` to "Mo" changes one line, and the routines keep their names.
+    - A rename keeps the topic; switching to Codex starts a new one.
+    - A bad agent, a two-line name, a name over 60 characters and an unknown assistant are refused.
+    - A file without a top-level `name` line is refused, not broken. CRLF files keep their line ends.
+    - Commits are "main: rename to Mo" and "main: switch to codex".
+  - Older repositories: a repository without the skill gets it with one commit, the user's own `AGENTS.md` is left alone, and a second run commits nothing.
+  - `AgentNewAssistant`: per-task by default; an existing folder is refused; `mail` works.
+  - The CLI's `assistant new` sends its flags and refuses a stray argument.
+- Web: `lib/assistants.test.ts` (the set-up event), 373 Vitest tests, typecheck, Prettier, build.
+- Browser (isolated workbench, scratch HOME, only a stand-in `codex` on PATH, Playwright, 1280 px and dark 390 px):
+  - The sidebar shows "Assistants · Moss · Set up", and the routine dialog offers "Set up assistants…".
+  - The dialog reads "Meet Moss, your personal assistant" with Codex chosen. Set up and open Moss closed it and opened Moss's new topic with Codex in `…/assistants/main`.
+  - Settings → Assistants renamed it to "Mo" and switched it to Claude, each one commit changing one line.
+  - Against the same workbench, `assistant new --name "Weekly report"` made a Codex per-task assistant, and a second one into the same folder was refused.
+  - No page errors, and no overflow on the phone.
+- Not exercised: Moss making an assistant with a real agent.

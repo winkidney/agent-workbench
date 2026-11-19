@@ -9,7 +9,7 @@ import { ProjectPicker } from "../newsession/ProjectPicker";
 import type { RecentProject } from "../newsession/recent";
 import { api } from "../lib/api";
 import { DAYS, routineOf, type Draft, type Routine } from "./when";
-import type { Assistant } from "../lib/assistants";
+import { setUpAssistants, type Assistant } from "../lib/assistants";
 
 // One small segmented choice, styled like the new-session agent switch.
 function Choice<T extends string>({
@@ -197,6 +197,22 @@ export function RoutineDialog({
                   }
                 />
               </div>
+              {!assistants.length && (
+                <div className="routine-row">
+                  <span className="subtle">No assistants yet.</span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      onClose();
+                      setUpAssistants();
+                    }}
+                  >
+                    Set up assistants…
+                  </Button>
+                </div>
+              )}
               {d.target === "assistant" && (
                 <label className="routine-field">
                   <span className="routine-label">Assistant</span>

@@ -1,10 +1,12 @@
 import { useState } from "react";
-import { Loader2, Plus } from "lucide-react";
+import { Loader2, Pencil, Plus } from "lucide-react";
 import { api } from "../../lib/api";
 import { ChangeList } from "../../assistants/Changes";
 import {
   assistantsChanged,
   folderFor,
+  MAIN_NAME,
+  setUpAssistants,
   useChanges,
   type Assistant,
   type Assistants,
@@ -49,8 +51,7 @@ export function AssistantsTab({
   value: Assistants;
   onOpen: (dir: string) => void;
 }) {
-  const [root, setRoot] = useState("~/assistants");
-  const [agent, setAgent] = useState<Agent>("claude");
+  const [agent, setAgent] = useState<Agent>(value.defaultAgent || "claude");
   const [name, setName] = useState("");
   const [folder, setFolder] = useState("");
   const [sessions, setSessions] = useState<Assistant["sessions"]>("per-task");
@@ -79,38 +80,14 @@ export function AssistantsTab({
       <section className="settings-section">
         <h3>Assistants</h3>
         <p className="subtle">
-          An assistant does one kind of work your way: its procedure, skills,
-          scripts and schedule live in a folder of its own, in one git
-          repository. Setting up makes the repository with shared rules, a
-          shared wiki and a personal assistant to start with.
+          {MAIN_NAME}, your personal assistant, keeps one ongoing conversation
+          with you and remembers what matters. Ask it for an assistant for any
+          job you repeat. Everything lives as plain files in a git repository on
+          this computer.
         </p>
-        <form
-          className="assistant-form"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void run(() => api("assistants/setup", "POST", { root, agent }));
-          }}
-        >
-          <label className="routine-field">
-            <span className="routine-label">Folder</span>
-            <Input value={root} onChange={(e) => setRoot(e.target.value)} />
-          </label>
-          <div className="routine-row">
-            <span className="routine-label">Agent</span>
-            <AgentChoice value={agent} onChange={setAgent} />
-          </div>
-          {error && (
-            <p className="error-text" role="alert">
-              {error}
-            </p>
-          )}
-          <div>
-            <Button type="submit" disabled={busy || !root.trim()}>
-              {busy && <Loader2 size={14} className="spin" />}
-              Set up
-            </Button>
-          </div>
-        </form>
+        <div>
+          <Button onClick={setUpAssistants}>Set up…</Button>
+        </div>
       </section>
     );
   return (
@@ -264,36 +241,111 @@ export function AssistantsTab({
       </section>
       <ul className="routine-list">
         {value.assistants.map((a) => (
-          <li key={a.dir} className="routine-item">
-            <div className="routine-head">
-              <span className="routine-name">{a.name}</span>
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={!!a.error}
-                onClick={() => onOpen(a.dir)}
-              >
-                Open
-              </Button>
-            </div>
-            <p className="routine-meta">
-              <code>{a.dir}/</code>
-              {a.agent && ` · ${a.agent === "claude" ? "Claude" : "Codex"}`}
-              {a.sessions &&
-                ` · ${a.sessions === "continuous" ? "one ongoing conversation" : "a session per request"}`}
-              {a.memory === "wiki" && " · keeps the shared wiki"}
-              {a.routines > 0 &&
-                ` · ${a.routines} routine${a.routines === 1 ? "" : "s"}`}
-            </p>
-            {a.error && (
-              <p className="routine-meta error-text">
-                assistant.toml: {a.error}
-              </p>
-            )}
-          </li>
+          <AssistantItem key={a.dir} assistant={a} onOpen={onOpen} />
         ))}
       </ul>
       <ChangeList list={changes} />
     </>
+  );
+}
+
+// One assistant: open it, rename it, switch its agent. Both change its
+// assistant.toml (PATCH /api/assistants/{dir}).
+function AssistantItem({
+  assistant: a,
+  onOpen,
+}: {
+  assistant: Assistant;
+  onOpen: (dir: string) => void;
+}) {
+  const [naming, setNaming] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const update = async (change: { name?: string; agent?: Agent }) => {
+    setBusy(true);
+    setError("");
+    try {
+      await api(`assistants/${a.dir}`, "PATCH", change);
+      assistantsChanged();
+      setNaming(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <li className="routine-item">
+      <div className="routine-head">
+        {naming === null ? (
+          <span className="routine-name">
+            {a.name}
+            {a.dir === "main" && (
+              <span className="subtle"> · your personal assistant</span>
+            )}
+          </span>
+        ) : (
+          <form
+            className="assistant-rename"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void update({ name: naming });
+            }}
+          >
+            <Input
+              value={naming}
+              autoFocus
+              maxLength={60}
+              aria-label="Name"
+              onChange={(e) => setNaming(e.target.value)}
+              onKeyDown={(e) => e.key === "Escape" && setNaming(null)}
+            />
+            <Button type="submit" size="sm" disabled={busy || !naming.trim()}>
+              Save
+            </Button>
+          </form>
+        )}
+        <span className="change-actions">
+          {naming === null && !a.error && (
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label={`Rename ${a.name}`}
+              onClick={() => setNaming(a.name)}
+            >
+              <Pencil size={14} />
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={!!a.error}
+            onClick={() => onOpen(a.dir)}
+          >
+            Open
+          </Button>
+        </span>
+      </div>
+      <div className="assistant-meta">
+        {!a.error && (a.agent === "claude" || a.agent === "codex") && (
+          <AgentChoice
+            value={a.agent}
+            onChange={(agent) => !busy && void update({ agent })}
+          />
+        )}
+        <span className="routine-meta">
+          <code>{a.dir}/</code>
+          {a.sessions &&
+            ` · ${a.sessions === "continuous" ? "one ongoing conversation" : "a session per request"}`}
+          {a.memory === "wiki" && " · keeps the shared wiki"}
+          {a.routines > 0 &&
+            ` · ${a.routines} routine${a.routines === 1 ? "" : "s"}`}
+        </span>
+      </div>
+      {error && <p className="routine-meta error-text">{error}</p>}
+      {a.error && (
+        <p className="routine-meta error-text">assistant.toml: {a.error}</p>
+      )}
+    </li>
   );
 }

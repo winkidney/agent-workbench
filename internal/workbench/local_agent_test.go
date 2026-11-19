@@ -195,3 +195,21 @@ func TestEnginesLearnWhereTheWorkbenchIs(t *testing.T) {
 		t.Fatalf("env: %v", got)
 	}
 }
+
+func TestAgentsMakeAssistants(t *testing.T) {
+	m, _ := fixture(t)
+	root := filepath.Join(t.TempDir(), "assistants")
+	if err := m.SetUpAssistants(root, "claude", ""); err != nil {
+		t.Fatal(err)
+	}
+	a, err := m.AgentNewAssistant("Weekly report", "", "codex", "", "")
+	if err != nil || a.Dir != "weekly-report" || a.Agent != "codex" || a.Sessions != "per-task" {
+		t.Fatalf("new: %+v %v", a, err)
+	}
+	if _, err := m.AgentNewAssistant("Again", "weekly-report", "codex", "", ""); err == nil {
+		t.Fatal("replaced a folder")
+	}
+	if a, err := m.AgentNewAssistant("Mail", "", "claude", "", "mail"); err != nil || a.Routines != 1 {
+		t.Fatalf("mail: %+v %v", a, err)
+	}
+}

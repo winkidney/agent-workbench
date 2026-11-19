@@ -24,6 +24,7 @@ import {
   PinOff,
   Plus,
   Search,
+  Sparkles,
   Terminal,
   Trash2,
   X,
@@ -35,7 +36,7 @@ import { AgentIcon, StatusIcon, statusLabel } from "../components/AgentIcon";
 import { LogoLockup } from "../components/Logo";
 import { ATTENTION_LABEL } from "../attention";
 import type { FooterConnection } from "../lib/connection";
-import type { Assistant } from "../lib/assistants";
+import { MAIN_NAME, setUpAssistants, type Assistant } from "../lib/assistants";
 import {
   buildSidebar,
   relativeTime,
@@ -826,7 +827,8 @@ function Section({
 }: {
   id: string;
   title: string;
-  count: number;
+  // Left out where a number would say nothing.
+  count?: number;
   forceOpen: boolean;
   defaultOpen?: boolean;
   // Shown even while the section is closed (sessions waiting for the user).
@@ -851,7 +853,7 @@ function Section({
         <ChevronRight size={11} className={expanded ? "chev open" : "chev"} />
         <span>{title}</span>
         {badge && <span className="section-badge">{badge}</span>}
-        <span className="section-count">{count}</span>
+        {count !== undefined && <span className="section-count">{count}</span>}
       </button>
       {expanded && <div className="section-body">{children}</div>}
     </section>
@@ -872,6 +874,7 @@ export function Sidebar({
   onSchedule,
   assistants,
   assistantRoot,
+  assistantsReady,
   onOpenAssistant,
   connection,
   onReconnect,
@@ -890,6 +893,8 @@ export function Sidebar({
   // The assistants and their folder (lib/assistants.ts).
   assistants: Assistant[];
   assistantRoot: string;
+  // Known whether they are set up; until then nothing is offered.
+  assistantsReady: boolean;
   onOpenAssistant: (dir: string) => void;
   // Where this page is and whether live updates arrive.
   connection: FooterConnection;
@@ -1033,6 +1038,28 @@ export function Sidebar({
         )}
       </div>
       <nav className="sidebar-scroll" aria-label="Sessions">
+        {/* Not set up: the personal assistant is offered, and set up on
+            first use (assistants/SetUpDialog.tsx). */}
+        {assistantsReady && !assistantRoot && !model.searching && (
+          <Section id="assistants" title="Assistants" forceOpen={false}>
+            <div
+              className="session-row assistant-row"
+              style={{ paddingLeft: 6 }}
+            >
+              <span className="tree-spacer" />
+              <button
+                type="button"
+                className="session-main"
+                title="Set up your personal assistant"
+                onClick={setUpAssistants}
+              >
+                <Sparkles size={15} aria-hidden />
+                <span className="session-name">{MAIN_NAME}</span>
+                <span className="session-time">Set up</span>
+              </button>
+            </div>
+          </Section>
+        )}
         {assistants.length > 0 && (
           <Section
             id="assistants"

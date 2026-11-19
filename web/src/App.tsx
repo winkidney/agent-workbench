@@ -42,6 +42,7 @@ import {
   assistantsChanged,
   changesChanged,
   latestFor,
+  SET_UP_EVENT,
   useAssistants,
   useChanges,
   type Assistant,
@@ -49,6 +50,7 @@ import {
   type Opened,
 } from "./lib/assistants";
 import { ChangeBanner } from "./assistants/Changes";
+import { SetUpDialog } from "./assistants/SetUpDialog";
 import { SettingsDialog } from "./components/settings/SettingsDialog";
 import { LogoMark } from "./components/Logo";
 import { PreviewPanel } from "./preview/PreviewPanel";
@@ -623,6 +625,13 @@ export default function App() {
   };
   const scheduleFor = (s: Session) => setRoutineDraft(newDraft(s.id, s.cwd));
   const assistantList = useAssistants(paired);
+  // Assistants used before they are set up (lib/assistants.ts).
+  const [settingUp, setSettingUp] = useState(false);
+  useEffect(() => {
+    const ask = () => setSettingUp(true);
+    window.addEventListener(SET_UP_EVENT, ask);
+    return () => window.removeEventListener(SET_UP_EVENT, ask);
+  }, []);
   // An assistant opens on its ongoing topic, or on a new message for it.
   const openAssistant = (dir: string) =>
     void api<Opened>(`assistants/${dir}/open`, "POST")
@@ -1196,6 +1205,7 @@ export default function App() {
             onSchedule={scheduleFor}
             assistants={assistantList.assistants}
             assistantRoot={assistantList.root}
+            assistantsReady={!!assistantList.loaded}
             onOpenAssistant={openAssistant}
             connection={footerConnection({
               here,
@@ -1732,6 +1742,17 @@ export default function App() {
           assistants={assistantList}
           onOpenAssistant={openAssistant}
         />
+        {settingUp && (
+          <SetUpDialog
+            defaultAgent={assistantList.defaultAgent ?? ""}
+            onClose={() => setSettingUp(false)}
+            onDone={() => {
+              setSettingUp(false);
+              setSettingsOpen(false);
+              openAssistant("main");
+            }}
+          />
+        )}
         {routineDraft && (
           <RoutineDialog
             draft={routineDraft}

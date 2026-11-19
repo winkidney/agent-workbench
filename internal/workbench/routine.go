@@ -629,6 +629,7 @@ func errFileRoutine(v Routine) error {
 func (m *Manager) RunRoutines(ctx context.Context) {
 	m.loadRoutines()
 	m.endOpenChanges()
+	m.ensureShared()
 	timer := time.NewTimer(0)
 	defer timer.Stop()
 	for {

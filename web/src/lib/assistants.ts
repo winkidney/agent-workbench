@@ -16,7 +16,14 @@ export type Assistant = {
   previous?: string[];
 };
 
-export type Assistants = { root: string; assistants: Assistant[] };
+export type Assistants = {
+  root: string;
+  assistants: Assistant[];
+  // The agent setting up would choose ("" when neither is installed).
+  defaultAgent?: "claude" | "codex" | "";
+  // The page has heard from the server (until then root is unknown).
+  loaded?: boolean;
+};
 
 // What opening an assistant shows: its ongoing topic, or a new message
 // (fresh), with the session it continues from.
@@ -33,7 +40,7 @@ export function useAssistants(enabled: boolean) {
   const [value, setValue] = useState<Assistants>({ root: "", assistants: [] });
   const load = useCallback(async () => {
     try {
-      setValue(await api<Assistants>("assistants"));
+      setValue({ ...(await api<Assistants>("assistants")), loaded: true });
     } catch {
       // Kept as it was; the next change reads it again.
     }
@@ -50,6 +57,15 @@ export function useAssistants(enabled: boolean) {
 
 export const assistantsChanged = () =>
   window.dispatchEvent(new CustomEvent("workbench:assistants"));
+
+// Asks App.tsx to show the set-up dialog (assistants/SetUpDialog.tsx): the
+// first use of assistants before they are set up.
+export const SET_UP_EVENT = "workbench:set-up-assistants";
+export const setUpAssistants = () =>
+  window.dispatchEvent(new CustomEvent(SET_UP_EVENT));
+
+// What the personal assistant is called before the user names it.
+export const MAIN_NAME = "Moss";
 
 // The assistant a session belongs to: the one whose folder it started in.
 export function assistantOf(

@@ -121,3 +121,25 @@ func captureStdout(t *testing.T, f func() error) string {
 	}
 	return string(b)
 }
+
+func TestAssistantNewSendsItsFlags(t *testing.T) {
+	var got map[string]any
+	var path string
+	dir := agentServer(t, func(r *http.Request, body map[string]any) any {
+		got, path = body, r.Method+" "+r.URL.Path
+		return workbench.Assistant{Name: "Weekly report", Agent: "codex", Sessions: "per-task", Path: "/a/weekly-report"}
+	})
+	t.Setenv(workbench.EnvDataDir, dir)
+	out := captureStdout(t, func() error {
+		return agentCommand("assistant", []string{"new", "--name", "Weekly report", "--agent", "codex", "--from", "mail"})
+	})
+	if path != "POST /api/local/assistants" || got["name"] != "Weekly report" || got["agent"] != "codex" || got["kind"] != "mail" || got["sessions"] != "" {
+		t.Fatalf("%s %v", path, got)
+	}
+	if !strings.Contains(out, "Made the assistant Weekly report (codex, per-task) in /a/weekly-report.") {
+		t.Fatalf("out: %q", out)
+	}
+	if err := agentCommand("assistant", []string{"new", "--name", "A", "stray"}); err == nil {
+		t.Fatal("a stray argument was accepted")
+	}
+}
