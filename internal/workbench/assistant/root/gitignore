@@ -4,3 +4,16 @@ raw/mail/
 .venv/
 __pycache__/
 .DS_Store
+# Credentials never go in this repository (they live in
+# ~/.config/assistant/secrets/); the pre-commit check refuses them too.
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+credentials*.json
+*token*.json
+secrets/

@@ -46,6 +46,14 @@ For a while the plan was to ship built-in assistants: code review, release watch
 
 8. **Memory less often.** The wiki is updated from a conversation when its topic ends (about once a day, or when the context fills, or on New topic) and only if it has new turns, or when the user asks: "remember …" (Moss changes the page at once), "update your memory" (Moss runs `assistant memory`), or ⋯ → Update memory now. A conversation going to sleep no longer starts an ingest, and Moss no longer changes the wiki on its own during a conversation.
 
+9. **Credentials stay out of the repository.** Assistants keep credentials only in the user's home (`~/.config/assistant/secrets/`, mode 600) or use a tool's existing sign-in (`gh`, git, a CLI's login). That includes private URLs that work like passwords. A git pre-commit check, installed by setup and `ensureShared` but never over a hook of the user's own, refuses commits that carry them:
+   - credential file names;
+   - private keys and common token shapes;
+   - OAuth fields;
+   - URLs with a password.
+
+   It names files and lines but never the values. It guards every commit: an assistant's, the workbench's, the user's. The root `.gitignore` leaves out the usual credential files. Only on the user's explicit request does a commit set `ASSISTANTS_ALLOW_SECRETS=1`.
+
 ## Consequences
 
 - Agent Workbench keeps no assistant logic. The user's assistants are plain folders in their repository, where they can change them; they sync to other computers through the repository.

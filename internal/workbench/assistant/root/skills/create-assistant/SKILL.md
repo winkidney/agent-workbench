@@ -60,7 +60,7 @@ It makes the folder from the template, commits it and prints its path. It never 
 - a `command` and a `message`: the script's output is handed to the assistant, only when there is some;
 - `background = true` as well, when the output is outside content (mail, release notes): a run that can only edit files sums it up into `state/`.
 
-**Secrets:** only in `~/.config/assistant/secrets/<file>`, mode 600. Scripts read them when they run and refuse a file others can read. `config.toml` names the file. Tell the user how to save it (`(umask 077; cat > ~/.config/assistant/secrets/<file>)`); never ask for the secret, never read that folder yourself.
+**Credentials:** never in the repository, unless the user explicitly asks. Use a tool's existing sign-in where there is one (`gh`, git, a CLI's login); otherwise a file in `~/.config/assistant/secrets/<file>`, mode 600, that scripts read when they run (refusing a file others can read). `config.toml` names the file, never holds the value; that includes private URLs that work like passwords (a calendar's secret iCal address, a webhook URL, `user:password@` in a URL). Tell the user how to save it (`(umask 077; cat > ~/.config/assistant/secrets/<file>)`); never ask for the secret, never read that folder yourself. A pre-commit check refuses commits that carry credentials.
 
 **Base capabilities**, to be named in its `AGENTS.md`:
 

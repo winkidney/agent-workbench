@@ -1201,3 +1201,12 @@ These are maintainer notes on how each feature of Agent Workbench was verified, 
   - A session going to sleep no longer starts an ingest.
   - Asking an assistant without the wiki is refused.
   - `go test -race`, Vitest and typecheck passed.
+- Credentials check (same day):
+  - `TestCredentialsAreRefusedAtCommit`:
+    - Refused: a GitHub token in a file (the hook does not print it), a `*token*.json` file, a URL with a password, and the workbench's own commit of the token.
+    - Passes: the commit with `ASSISTANTS_ALLOW_SECRETS=1`, and ordinary text naming the secrets folder. A hook of the user's own is kept.
+  - The user's repository:
+    - A scan of its tree and full history found nothing.
+    - The hook and `.gitignore` lines were installed.
+    - Calendar's private iCal address moved to a secret file, and `caldav_url` with a user or password is refused.
+    - Its first commit was refused for a test's fake `me:password@` URL; the test now builds it from parts.

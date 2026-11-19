@@ -135,3 +135,69 @@ func TestCommitsArePushedToTheRemote(t *testing.T) {
 		t.Fatalf("back up with a remote: %v", err)
 	}
 }
+
+func TestCredentialsAreRefusedAtCommit(t *testing.T) {
+	m, root := assistantsWithGit(t)
+	_ = m
+	hook, err := os.ReadFile(filepath.Join(root, ".git", "hooks", "pre-commit"))
+	if err != nil || !strings.Contains(string(hook), hookMarker) {
+		t.Fatalf("hook: %v", err)
+	}
+	ignore, _ := os.ReadFile(filepath.Join(root, ".gitignore"))
+	for _, want := range []string{".env", "*.pem", "*token*.json", "secrets/"} {
+		if !strings.Contains(string(ignore), "\n"+want+"\n") {
+			t.Errorf(".gitignore lacks %s", want)
+		}
+	}
+	commit := func(env ...string) error {
+		cmd := exec.Command("git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "x")
+		cmd.Dir = root
+		cmd.Env = append(os.Environ(), env...)
+		out, err := cmd.CombinedOutput()
+		if err != nil && !strings.Contains(string(out), "Commit refused") {
+			t.Fatalf("unexpected failure: %s", out)
+		}
+		if strings.Contains(string(out), "ghp_") {
+			t.Fatal("the hook printed the token")
+		}
+		return err
+	}
+	token := "ghp_" + strings.Repeat("a1B2", 9)
+	writeToml(t, filepath.Join(root, "main", "config.toml"), "token = \""+token+"\"\n")
+	gitRun(root, "add", "-A")
+	if commit() == nil {
+		t.Fatal("a GitHub token was committed")
+	}
+	// The workbench's own commits are checked too.
+	if c, _, err := gitCommit(root, "chore: x"); err == nil || c != "" {
+		t.Fatalf("gitCommit with a token: %q %v", c, err)
+	}
+	// Only on the user's explicit request.
+	if err := commit("ASSISTANTS_ALLOW_SECRETS=1"); err != nil {
+		t.Fatal("refused with the user's permission")
+	}
+	// A credential file by its name, and a URL with a password.
+	writeToml(t, filepath.Join(root, "main", "google-token.json"), "{}\n")
+	gitRun(root, "add", "-f", "main/google-token.json")
+	if commit() == nil {
+		t.Fatal("a token file was committed")
+	}
+	gitRun(root, "reset", "-q")
+	os.Remove(filepath.Join(root, "main", "google-token.json"))
+	writeToml(t, filepath.Join(root, "main", "notes.md"), "see https://me:hunter22@example.com/cal\n")
+	gitRun(root, "add", "-A")
+	if commit() == nil {
+		t.Fatal("a URL with a password was committed")
+	}
+	// Ordinary text passes.
+	writeToml(t, filepath.Join(root, "main", "notes.md"), "the password is in ~/.config/assistant/secrets/mail-password\n")
+	gitRun(root, "add", "-A")
+	if err := commit(); err != nil {
+		t.Fatal("refused ordinary text")
+	}
+	// A hook of the user's own is kept.
+	os.WriteFile(filepath.Join(root, ".git", "hooks", "pre-commit"), []byte("#!/bin/sh\nexit 0\n"), 0o755)
+	if wrote, _ := installHook(root); wrote {
+		t.Fatal("replaced the user's hook")
+	}
+}

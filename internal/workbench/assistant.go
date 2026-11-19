@@ -542,7 +542,15 @@ func writeShared(root, lang string) (bool, error) {
 	if _, err := os.Lstat(filepath.Join(root, ".claude", "skills")); err != nil {
 		wrote = true
 	}
-	return wrote, skillsLink(root)
+	ignored, err := ensureIgnored(root)
+	if err != nil {
+		return wrote, err
+	}
+	// The hook is not part of the repository: no commit for it.
+	if _, err := installHook(root); err != nil {
+		return wrote, err
+	}
+	return wrote || ignored, skillsLink(root)
 }
 
 // ensureShared brings a repository set up by an earlier version up to the
@@ -630,6 +638,10 @@ func (m *Manager) setUp(root, agent, name, lang string) (bool, error) {
 	}
 	if abs, err = filepath.EvalSymlinks(abs); err != nil {
 		return false, err
+	}
+	// A repository first, so the secret check guards the first commit.
+	if _, err := os.Stat(filepath.Join(abs, ".git")); err != nil {
+		_, _ = gitRun(abs, "init", "-q")
 	}
 	if _, err := writeShared(abs, lang); err != nil {
 		return false, err
