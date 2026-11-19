@@ -505,6 +505,7 @@ var sharedFiles = map[string]string{
 	"shared/wiki/index.md":    "root/wiki/index.md",
 	"shared/wiki/overview.md": "root/wiki/overview.md",
 	".agents/skills/create-assistant/SKILL.md": "root/skills/create-assistant/SKILL.md",
+	".agents/skills/help/SKILL.md":             "root/skills/help/SKILL.md",
 }
 
 // writeShared writes the shared files root lacks and links its skills; it

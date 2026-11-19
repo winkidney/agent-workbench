@@ -506,8 +506,8 @@ describe("assistants", () => {
       "codex:r",
     ]);
     expect(model.projects.map((p) => p.path)).toEqual(["/w/app"]);
-    // A running assistant session is still in Active.
-    expect(model.active.map((n) => n.session.id)).toContain("claude:m2");
+    // A running assistant session is listed under its assistant only.
+    expect(model.active.map((n) => n.session.id)).not.toContain("claude:m2");
     // Without the folder they are projects like any other.
     expect(buildSidebar(list, emptyPrefs()).assistants).toEqual([]);
   });

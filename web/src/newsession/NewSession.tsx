@@ -17,7 +17,8 @@ import {
   useFileDrop,
 } from "../composer/AttachmentStrip";
 import type { ViewItem } from "../transcript/media";
-import type { Assistant } from "../lib/assistants";
+import { MAIN_STARTERS, type Assistant } from "../lib/assistants";
+import { QuickStart } from "../assistants/QuickStart";
 
 type Agent = "claude" | "codex";
 const STORE = "workbench-new";
@@ -152,6 +153,18 @@ export function NewSession({
           </>
         )}
       </div>
+      {assistant?.dir === "main" && !text && (
+        <QuickStart
+          starters={MAIN_STARTERS}
+          onPick={(t) => {
+            setText(t);
+            requestAnimationFrame(() => {
+              input.current?.focus();
+              input.current?.setSelectionRange(t.length, t.length);
+            });
+          }}
+        />
+      )}
       <form
         className={
           "composer new-composer" +

@@ -42,6 +42,7 @@ import {
   assistantsChanged,
   changesChanged,
   latestFor,
+  MAIN_STARTERS,
   SET_UP_EVENT,
   useAssistants,
   useChanges,
@@ -1587,6 +1588,7 @@ export default function App() {
               )}
               <Composer
                 key={current.id}
+                starters={topicOf?.dir === "main" ? MAIN_STARTERS : undefined}
                 session={
                   transcript.recordMissing
                     ? { ...current, readOnly: true, recordMissing: true }

@@ -1159,3 +1159,15 @@ These are maintainer notes on how each feature of Agent Workbench was verified, 
   - Against the same workbench, `assistant new --name "Weekly report"` made a Codex per-task assistant, and a second one into the same folder was refused.
   - No page errors, and no overflow on the phone.
 - Not exercised: Moss making an assistant with a real agent.
+
+## Assistants apart, quick start (2026-11-19)
+
+- Web:
+  - `tree.test.ts`: a running assistant session is listed under its assistant and not in Active.
+  - `lib/assistants.test.ts`: the quick-start labels are distinct, short and include New assistant.
+  - 374 Vitest tests, typecheck and Prettier passed.
+- Go: setting up also writes the shared `help` skill. `go test ./...` passed.
+- Browser (isolated workbench, Moss set up with an empty request, a Claude transcript in `main`, Playwright, 1280 px and dark 390 px):
+  - Opening Moss shows its new topic with "Remind me · Schedule a routine · New assistant · Sort my mail · What can you do?". Remind me filled "Remind me in 2 hours to " and the row went away.
+  - The Moss conversation, under Assistants only (no Active section), shows the same row above its empty composer. New assistant filled "I'd like an assistant for a job I keep doing: ".
+  - No overflow and no page errors.

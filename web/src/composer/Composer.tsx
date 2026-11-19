@@ -23,6 +23,8 @@ import { shownSuggestion } from "./suggestion";
 import { pastedImages, useAttachments, type Attachment } from "./attachments";
 import { AddFiles, AttachmentStrip, useFileDrop } from "./AttachmentStrip";
 import { useComposerInbox } from "./inbox";
+import { QuickStart } from "../assistants/QuickStart";
+import type { Starter } from "../lib/assistants";
 import type { ViewItem } from "../transcript/media";
 
 export type SendMode = "send" | "steer" | "queue";
@@ -78,6 +80,7 @@ export function Composer({
   onInterrupt,
   onBackground,
   onView,
+  starters,
 }: {
   session: ComposerSession;
   running: boolean;
@@ -100,6 +103,8 @@ export function Composer({
   onBackground?: () => void;
   // Opens added images in the viewer.
   onView?: (items: ViewItem[], index: number) => void;
+  // Ways to start, shown while nothing is written (the personal assistant).
+  starters?: Starter[];
 }) {
   const ctl = useAgentControls({ session });
   const [prompt, setPromptState] = useState(() => drafts.get(session.id) ?? "");
@@ -240,6 +245,9 @@ export function Composer({
   };
   return (
     <div className="composer-wrap" ref={wrap}>
+      {starters && !prompt && !running && !readOnly && (
+        <QuickStart starters={starters} onPick={startWith} />
+      )}
       {open && t && (
         <CommandMenu
           kind={t.kind}

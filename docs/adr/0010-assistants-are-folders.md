@@ -22,7 +22,7 @@ The CLIs already have most of what this needs. Both read instruction files from 
 ## Consequences
 
 - An assistant's behavior is in files anyone can read and diff; the workbench has no assistant logic to keep in step with the CLIs.
-- The sidebar lists assistants above Pinned and keeps sessions in their folders out of Projects; a session waiting for you still shows in Active.
+- The sidebar lists assistants above Pinned and keeps sessions in their folders out of Projects (and, since ADR 0013, out of Active).
 - A `continuous` assistant's new topic forgets the conversation, not the work: only what the procedure wrote down carries over, so the procedure must write it down.
 - Claude Code reads `.claude/skills` through a link; where links cannot be made (Windows without the right), a note says to copy the folder.
 - Codex assistants approve in prose until Codex asks questions in Default mode.

@@ -18,7 +18,8 @@ ADR 0010 left setting up assistants to a form in Settings → Assistants. That f
    - propose the assistant (name, agent, topics, procedure, scripts, routines, steps needing approval) and wait for approval;
    - create it with `agent-workbench assistant new` (`POST /api/local/assistants`, under ADR 0012's rules), which never replaces a folder;
    - write its procedure and scripts, and commit.
-6. **Older repositories catch up.** When the scheduler starts, `ensureShared` writes the shared files a repository lacks (such as this skill) and commits them as "chore: add shared files from Agent Workbench". It never changes a file that is there.
+6. **Apart from other sessions, with a way to start.** An assistant's sessions are listed only under it, not in Active with the other sessions; its row and the section carry the state and the needs-you badge. Moss's conversation shows quick starts above the empty composer (a reminder, a routine, a new assistant, mail, what it can do); one fills in the start of a message, nothing is sent. A shared `help` skill tells the assistant what to offer and to ask for what a half sentence leaves out.
+7. **Older repositories catch up.** When the scheduler starts, `ensureShared` writes the shared files a repository lacks (such as this skill) and commits them as "chore: add shared files from Agent Workbench". It never changes a file that is there.
 
 ## Consequences
 

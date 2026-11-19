@@ -455,7 +455,10 @@ export function buildSidebar(
     n.children
       .map(latestOf)
       .reduce((a, b) => (b > a ? b : a), n.session.updated);
+  // Assistants' sessions are listed under their assistant only, never with
+  // the other sessions here; the Assistants section shows their state.
   const active = roots
+    .filter((n) => !assistantOf(n))
     .map((n) => family(n))
     .filter((n): n is Node => !!n)
     .sort(

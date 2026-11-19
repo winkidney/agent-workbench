@@ -302,8 +302,10 @@ func TestSettingUpTakesDefaults(t *testing.T) {
 	if want, _ := filepath.EvalSymlinks(filepath.Join(home, "assistants")); m.assistantsRoot() != want {
 		t.Fatalf("root %q", m.assistantsRoot())
 	}
-	if _, err := os.Stat(filepath.Join(m.assistantsRoot(), ".agents", "skills", "create-assistant", "SKILL.md")); err != nil {
-		t.Fatal("no create-assistant skill")
+	for _, skill := range []string{"create-assistant", "help"} {
+		if _, err := os.Stat(filepath.Join(m.assistantsRoot(), ".agents", "skills", skill, "SKILL.md")); err != nil {
+			t.Fatalf("no %s skill", skill)
+		}
 	}
 	if b, _ := os.ReadFile(filepath.Join(list[0].Path, "AGENTS.md")); !strings.Contains(string(b), "(Moss unless the user changed it)") {
 		t.Fatalf("main's AGENTS.md:\n%s", b)

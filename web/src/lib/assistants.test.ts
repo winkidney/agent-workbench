@@ -5,6 +5,7 @@ import {
   folderFor,
   latestFor,
   MAIN_NAME,
+  MAIN_STARTERS,
   SET_UP_EVENT,
   setUpAssistants,
   type Assistant,
@@ -69,5 +70,17 @@ describe("setting up", () => {
     g.window = before;
     expect(asked).toBe(1);
     expect(MAIN_NAME).toBe("Moss");
+  });
+});
+
+describe("quick start", () => {
+  it("offers short, distinct starts for the personal assistant", () => {
+    const labels = MAIN_STARTERS.map((s) => s.label);
+    expect(new Set(labels).size).toBe(labels.length);
+    for (const s of MAIN_STARTERS) {
+      expect(s.label.length).toBeLessThanOrEqual(20);
+      expect(s.text.trim()).not.toBe("");
+    }
+    expect(labels).toContain("New assistant");
   });
 });

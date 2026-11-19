@@ -156,3 +156,20 @@ export function latestFor(
   if (!session) return undefined;
   return list.find((c) => c.kind === "ingest" && c.session === session);
 }
+
+// Ways to start with the personal assistant (assistants/QuickStart.tsx):
+// each puts the start of a message in the composer, to finish and send.
+export type Starter = { label: string; text: string };
+export const MAIN_STARTERS: Starter[] = [
+  { label: "Remind me", text: "Remind me in 2 hours to " },
+  { label: "Schedule a routine", text: "Every weekday at 9:00, " },
+  {
+    label: "New assistant",
+    text: "I'd like an assistant for a job I keep doing: ",
+  },
+  { label: "Sort my mail", text: "Set up mail triage for me." },
+  {
+    label: "What can you do?",
+    text: "What can you do for me? Give me a few examples.",
+  },
+];
