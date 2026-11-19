@@ -96,6 +96,16 @@ export function AssistantHome({
           </ul>
         </>
       )}
+      {!!a.requires?.length && (
+        <>
+          <h3>What it needs</h3>
+          <ul className="assistant-home-list">
+            {a.requires.map((r) => (
+              <li key={r}>{r}</li>
+            ))}
+          </ul>
+        </>
+      )}
       {!!a.examples?.length && (
         <>
           <h3>Try</h3>

@@ -22,6 +22,9 @@ ready = true
 description = ""
 capabilities = []
 examples = []
+# What it needs from you: a signed-in CLI (gh), an MCP server, an API token,
+# an account. The page shows it; setup asks for it, one step at a time.
+requires = []
 # false until its setup is done: the page offers to set it up.
 ready = false
 {{- end}}

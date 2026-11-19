@@ -41,6 +41,9 @@ type AssistantFile struct {
 	Description  string   `toml:"description"`
 	Capabilities []string `toml:"capabilities"`
 	Examples     []string `toml:"examples"`
+	// What it needs from the user: a signed-in CLI, an MCP server, an API
+	// token, an account.
+	Requires []string `toml:"requires"`
 	// false until set up; missing (older files) means set up.
 	Ready    *bool         `toml:"ready"`
 	Agent    string        `toml:"agent"`
@@ -82,6 +85,7 @@ type Assistant struct {
 	Description  string   `json:"description,omitempty"`
 	Capabilities []string `json:"capabilities,omitempty"`
 	Examples     []string `json:"examples,omitempty"`
+	Requires     []string `json:"requires,omitempty"`
 	Ready        bool     `json:"ready"`
 	// What is wrong with its assistant.toml; it is then not used.
 	Error string `json:"error,omitempty"`
@@ -260,7 +264,7 @@ func readAssistant(path string) (AssistantFile, error) {
 	if err := oneLine("description", f.Description); err != nil {
 		return f, err
 	}
-	for key, list := range map[string][]string{"capabilities": f.Capabilities, "examples": f.Examples} {
+	for key, list := range map[string][]string{"capabilities": f.Capabilities, "examples": f.Examples, "requires": f.Requires} {
 		if len(list) > metaItems {
 			return f, fmt.Errorf("%s: at most %d", key, metaItems)
 		}
@@ -398,7 +402,7 @@ func (m *Manager) Assistants() []Assistant {
 		} else {
 			a.Name, a.Agent, a.Sessions, a.Memory, a.Routines, a.file = f.Name, f.Agent, f.Sessions, f.Memory, len(f.Routines), f
 			a.Enabled = f.Enabled == nil || *f.Enabled || a.Dir == "main"
-			a.Description, a.Capabilities, a.Examples = f.Description, f.Capabilities, f.Examples
+			a.Description, a.Capabilities, a.Examples, a.Requires = f.Description, f.Capabilities, f.Examples, f.Requires
 			a.Ready = f.Ready == nil || *f.Ready
 		}
 		list = append(list, a)
@@ -624,6 +628,8 @@ var sharedFiles = map[string]string{
 	"shared/wiki/index.md":    "root/wiki/index.md",
 	"shared/wiki/overview.md": "root/wiki/overview.md",
 	".agents/skills/create-assistant/SKILL.md": "root/skills/create-assistant/SKILL.md",
+	"shared/tools/secret.py":                   "root/tools/secret.py",
+	"shared/tools/test_secret.py":              "root/tools/test_secret.py",
 	".agents/skills/help/SKILL.md":             "root/skills/help/SKILL.md",
 }
 
@@ -1012,6 +1018,7 @@ type AssistantPatch struct {
 	Description           *string
 	Capabilities          *[]string
 	Examples              *[]string
+	Requires              *[]string
 	Enabled, Ready        *bool
 }
 
@@ -1083,7 +1090,7 @@ func (m *Manager) PatchAssistant(dir string, p AssistantPatch) (Assistant, error
 	for _, f := range []struct {
 		key  string
 		list *[]string
-	}{{"capabilities", p.Capabilities}, {"examples", p.Examples}} {
+	}{{"capabilities", p.Capabilities}, {"examples", p.Examples}, {"requires", p.Requires}} {
 		if f.list == nil {
 			continue
 		}

@@ -37,6 +37,16 @@ Opening a new assistant showed a name and an empty box. Nothing said what the as
 
    A row says "set up" until its assistant is ready. The highlighted row is the assistant open now, whether its new request or one of its sessions.
 
+5. **What it needs, and sign-ins outside the conversation.**
+   - `requires` lists what an assistant needs from the user, each item with the ways it can be given (a signed-in CLI, an MCP server, an API token, an account). The card shows it.
+   - Setup is a wizard: one question at a time, with the choices offered (AskUserQuestion for Claude, a numbered list for Codex).
+   - Every sign-in or secret is done by the user outside the conversation:
+     - `uv run ../shared/tools/secret.py set <name>` asks with hidden input and saves with mode 600;
+     - the tool's own login (`gh auth login`, `tools/<x>.py auth`) opens the page and records the result;
+     - `secret.py open <url>` opens a sign-in page.
+
+     The assistant checks with `secret.py check`, which never prints a value. It never asks for, repeats or stores a secret, code or callback URL in the conversation. `shared/tools/secret.py` is a shared file, so older repositories get it.
+
 ## Consequences
 
 - An assistant tells the user what to do with it, and its card is a plain file the user or the assistant can change.

@@ -481,3 +481,23 @@ func TestAssistantsDescribeThemselves(t *testing.T) {
 		t.Fatal("the set-up message does not say to set ready")
 	}
 }
+
+func TestAssistantsSayWhatTheyNeed(t *testing.T) {
+	m, _ := fixture(t)
+	root := t.TempDir()
+	_ = m.store.setting("assistants", assistantsSetting{Root: root})
+	writeToml(t, filepath.Join(root, "cr", "assistant.toml"), "name = \"CR\"\nagent = \"claude\"\nrequires = [\"GitHub: gh signed in, or the GitHub MCP server\"]\n")
+	a, err := m.assistant("cr")
+	if err != nil || len(a.Requires) != 1 {
+		t.Fatalf("requires: %+v %v", a, err)
+	}
+	need := []string{"GitHub: gh signed in", "Linear: the Linear MCP server or an API key"}
+	if a, err = m.PatchAssistant("cr", AssistantPatch{Requires: &need}); err != nil || len(a.Requires) != 2 {
+		t.Fatalf("patched: %+v %v", a, err)
+	}
+	for _, f := range []string{"shared/tools/secret.py", "shared/tools/test_secret.py"} {
+		if _, ok := sharedFiles[f]; !ok {
+			t.Errorf("%s is not shared", f)
+		}
+	}
+}

@@ -1246,3 +1246,8 @@ These are maintainer notes on how each feature of Agent Workbench was verified, 
   - The card of a continuous assistant explains when fresh conversations start on their own.
   - Above the composer of an ongoing conversation past 40% of its context, a note offers Start fresh.
   - Typecheck and 376 Vitest tests passed.
+- `requires` and sign-ins outside the conversation (same day):
+  - `TestAssistantsSayWhatTheyNeed`: parses and patches `requires`, and `shared/tools/secret.py` is a shared file.
+  - `test_secret.py`, run as `python3` and `uv run`, 3 tests: saves with mode 600 and checks; refuses a file others can read; never prints a value; refuses bad names, empty values and non-https pages.
+  - Its fixture tripped the repository's credentials check, which refused the commit; it is built from parts now.
+  - Vitest 376 passed, and typecheck passed.

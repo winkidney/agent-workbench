@@ -17,6 +17,8 @@ export type Assistant = {
   description?: string;
   capabilities?: string[];
   examples?: string[];
+  // What it needs from the user (a signed-in CLI, an MCP server, a token).
+  requires?: string[];
   ready: boolean;
   error?: string;
   current?: string;

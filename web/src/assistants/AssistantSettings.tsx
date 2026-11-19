@@ -39,6 +39,7 @@ export function AssistantSettings({
     (a.capabilities ?? []).join("\n"),
   );
   const [examples, setExamples] = useState((a.examples ?? []).join("\n"));
+  const [requires, setRequires] = useState((a.requires ?? []).join("\n"));
   const [agent, setAgent] = useState<Agent>(
     a.agent === "codex" ? "codex" : "claude",
   );
@@ -65,6 +66,8 @@ export function AssistantSettings({
       patch.capabilities = lines(capabilities);
     if (lines(examples).join("\n") !== (a.examples ?? []).join("\n"))
       patch.examples = lines(examples);
+    if (lines(requires).join("\n") !== (a.requires ?? []).join("\n"))
+      patch.requires = lines(requires);
     if (agent !== a.agent) patch.agent = agent;
     if (sessions !== a.sessions) patch.sessions = sessions;
     if (enabled !== (a.enabled !== false)) patch.enabled = enabled;
@@ -139,6 +142,17 @@ export function AssistantSettings({
               rows={3}
               value={examples}
               onChange={(e) => setExamples(e.target.value)}
+            />
+          </label>
+          <label className="routine-field">
+            <span className="routine-label">
+              What it needs (one per line: a signed-in CLI, an MCP server, a
+              token)
+            </span>
+            <Textarea
+              rows={2}
+              value={requires}
+              onChange={(e) => setRequires(e.target.value)}
             />
           </label>
           <div className="routine-row">
