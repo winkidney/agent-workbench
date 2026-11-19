@@ -17,3 +17,4 @@ Decisions that shape how the workbench behaves, why, and what they cost. Each re
 | [0011](0011-background-runs-commit-and-undo.md) | Background runs keep the wiki, read outside content, and commit what they change | accepted |
 | [0012](0012-agents-schedule-their-own-messages.md) | Agents schedule their own messages and hand tasks to assistants through a local command | accepted |
 | [0013](0013-assistants-set-up-on-first-use.md) | Assistants are set up on first use; each picks its agent; Moss makes new ones | accepted; amends 0010 |
+| [0014](0014-moss-welcomes-one-template.md) | Moss welcomes the user; assistants come from one template and are backed up to GitHub | accepted |

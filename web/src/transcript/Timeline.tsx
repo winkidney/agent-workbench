@@ -429,7 +429,7 @@ function UserRow({ block, open, onToggle }: RowProps) {
         {routine && (
           <span className="user-routine" title="Sent by a routine">
             <AlarmClock size={12} aria-hidden />
-            Routine · {routine.name}
+            {routine.kind} · {routine.name}
           </span>
         )}
         {replies ? (

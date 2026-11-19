@@ -36,7 +36,12 @@ import { AgentIcon, StatusIcon, statusLabel } from "../components/AgentIcon";
 import { LogoLockup } from "../components/Logo";
 import { ATTENTION_LABEL } from "../attention";
 import type { FooterConnection } from "../lib/connection";
-import { MAIN_NAME, setUpAssistants, type Assistant } from "../lib/assistants";
+import {
+  MAIN_NAME,
+  newRoutine,
+  setUpAssistants,
+  type Assistant,
+} from "../lib/assistants";
 import {
   buildSidebar,
   relativeTime,
@@ -1000,6 +1005,17 @@ export function Sidebar({
     <aside className="sidebar">
       <div className="brand">
         <LogoLockup />
+        {/* A routine in one click (lib/assistants.ts newRoutine). */}
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="New routine"
+          title="New routine"
+          className="brand-routine"
+          onClick={newRoutine}
+        >
+          <AlarmClock size={16} />
+        </Button>
         <Button
           variant="ghost"
           size="icon"

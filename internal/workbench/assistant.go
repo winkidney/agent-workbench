@@ -87,6 +87,8 @@ type assistantState struct {
 
 type assistantsSetting struct {
 	Root string `json:"root"`
+	// The language assistants write to the user in (catalog.go).
+	Language string `json:"language,omitempty"`
 }
 
 const (
@@ -113,6 +115,8 @@ type assistants struct {
 	background func(a Assistant, prompt string) (string, error)
 	// Conversations being ingested now.
 	ingesting map[string]bool
+	// The backup to GitHub (sync.go).
+	sync syncer
 }
 
 func (m *Manager) assistantsRoot() string {
@@ -442,6 +446,8 @@ func slug(name string) string {
 type scaffoldData struct {
 	Name, Agent, Sessions, Memory string
 	Main                          bool
+	// The rule naming the language, for the root AGENTS.md.
+	LanguageLine string
 }
 
 // writeNew writes a file unless it exists: setting up never overwrites.
@@ -508,16 +514,23 @@ var sharedFiles = map[string]string{
 	".agents/skills/help/SKILL.md":             "root/skills/help/SKILL.md",
 }
 
-// writeShared writes the shared files root lacks and links its skills; it
-// reports whether it wrote anything.
-func writeShared(root string) (bool, error) {
+// writeShared writes the shared files and templates root lacks and links
+// its skills; it reports whether it wrote anything. The root AGENTS.md
+// names lang.
+func writeShared(root, lang string) (bool, error) {
 	wrote := false
 	for to, from := range sharedFiles {
 		path := filepath.Join(root, filepath.FromSlash(to))
 		if _, err := os.Lstat(path); err == nil {
 			continue
 		}
-		data, err := assistantTemplates.ReadFile("assistant/" + from)
+		var data []byte
+		var err error
+		if to == "AGENTS.md" {
+			data, err = renderTemplate(from, scaffoldData{LanguageLine: languageLine(lang)})
+		} else {
+			data, err = assistantTemplates.ReadFile("assistant/" + from)
+		}
 		if err != nil {
 			return wrote, err
 		}
@@ -543,7 +556,7 @@ func (m *Manager) ensureShared() {
 	if _, err := os.Stat(root); err != nil {
 		return
 	}
-	wrote, err := writeShared(root)
+	wrote, err := writeShared(root, m.language())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "assistants: shared files:", err)
 	}
@@ -577,89 +590,70 @@ func assistantName(name string) (string, error) {
 // when git is there. Empty values take the defaults: ~/assistants, the
 // installed agent, and the name Moss.
 func (m *Manager) SetUpAssistants(root, agent, name string) error {
+	_, err := m.setUp(root, agent, name, "")
+	return err
+}
+
+// setUp sets assistants up and reports whether it made the personal
+// assistant (which then gets a welcome, welcome.go). lang "" is zh-Hans.
+func (m *Manager) setUp(root, agent, name, lang string) (bool, error) {
+	if lang == "" {
+		lang = defaultLanguage
+	}
+	if !validLanguage(lang) {
+		return false, errors.New("language: en, zh-Hans or zh-Hant")
+	}
 	if strings.TrimSpace(root) == "" {
 		root = "~/assistants"
 	}
 	if agent == "" {
 		if agent = m.defaultAgent(); agent == "" {
-			return errors.New("install Claude Code or Codex first (Settings → Agents)")
+			return false, errors.New("install Claude Code or Codex first (Settings → Agents)")
 		}
 	}
 	if agent != "claude" && agent != "codex" {
-		return errors.New("agent must be claude or codex")
+		return false, errors.New("agent must be claude or codex")
 	}
 	if strings.TrimSpace(name) == "" {
 		name = mainName
 	}
 	name, err := assistantName(name)
 	if err != nil {
-		return err
+		return false, err
 	}
 	abs, err := filepath.Abs(expandHome(strings.TrimSpace(root)))
 	if err != nil {
-		return errors.New("choose a folder")
+		return false, errors.New("choose a folder")
 	}
 	if err := os.MkdirAll(abs, 0o755); err != nil {
-		return err
+		return false, err
 	}
 	if abs, err = filepath.EvalSymlinks(abs); err != nil {
-		return err
+		return false, err
 	}
-	if _, err := writeShared(abs); err != nil {
-		return err
+	if _, err := writeShared(abs, lang); err != nil {
+		return false, err
 	}
+	created := false
 	if len(assistantFiles(abs)) == 0 {
-		if err := scaffoldAssistant(abs, "main", "", scaffoldData{Name: name, Agent: agent, Sessions: "continuous", Memory: "wiki", Main: true}); err != nil {
-			return err
+		if err := scaffoldAssistant(abs, "main", scaffoldData{Name: name, Agent: agent, Sessions: "continuous", Memory: "wiki", Main: true}); err != nil {
+			return false, err
 		}
+		created = true
 	}
-	if err := m.store.setting("assistants", assistantsSetting{Root: abs}); err != nil {
-		return err
+	if err := m.store.setting("assistants", assistantsSetting{Root: abs, Language: lang}); err != nil {
+		return false, err
 	}
 	commitAll(abs, "Set up assistants")
 	m.assistantsChanged()
-	return nil
+	return created, nil
 }
 
-// assistantKinds are the templates New assistant can start from besides an
-// empty procedure: assistant/kinds/<kind>.
-var assistantKinds = map[string]bool{"mail": true}
-
-// scaffoldKind writes a kind's files: those ending in .tmpl rendered, the
-// rest as they are; its skills/ go to .agents/skills/ (embed leaves out
-// names that start with a dot).
-func scaffoldKind(path, kind string, d scaffoldData) error {
-	base := "assistant/kinds/" + kind
-	return fs.WalkDir(assistantTemplates, base, func(p string, e fs.DirEntry, err error) error {
-		if err != nil || e.IsDir() {
-			return err
-		}
-		rel := strings.TrimPrefix(p, base+"/")
-		var data []byte
-		if strings.HasSuffix(rel, ".tmpl") {
-			rel = strings.TrimSuffix(rel, ".tmpl")
-			data, err = renderTemplate(strings.TrimPrefix(p, "assistant/"), d)
-		} else {
-			data, err = assistantTemplates.ReadFile(p)
-		}
-		if err != nil {
-			return err
-		}
-		if strings.HasPrefix(rel, "skills/") {
-			rel = ".agents/" + rel
-		}
-		return writeNew(filepath.Join(path, filepath.FromSlash(rel)), data)
-	})
-}
-
-func scaffoldAssistant(root, dir, kind string, d scaffoldData) error {
+// scaffoldAssistant writes an assistant's folder from the one template
+// (assistant/each): its settings, procedure, state and log; every other
+// assistant also keeps its fetched data (raw/) out of git.
+func scaffoldAssistant(root, dir string, d scaffoldData) error {
 	path := filepath.Join(root, dir)
-	// A kind's own files first: the general ones fill in only what it lacks.
-	if kind != "" {
-		if err := scaffoldKind(path, kind, d); err != nil {
-			return err
-		}
-	}
 	files := map[string]string{
 		"assistant.toml":   "each/assistant.toml",
 		"AGENTS.md":        "each/AGENTS.md",
@@ -679,6 +673,11 @@ func scaffoldAssistant(root, dir, kind string, d scaffoldData) error {
 	if err := writeNew(filepath.Join(path, "CLAUDE.md"), []byte("@AGENTS.md\n")); err != nil {
 		return err
 	}
+	if !d.Main {
+		if err := writeNew(filepath.Join(path, ".gitignore"), []byte("# Fetched data and scripts' bookkeeping: fetched again, never committed.\nraw/\n")); err != nil {
+			return err
+		}
+	}
 	if err := writeNew(filepath.Join(path, "tools", ".gitkeep"), nil); err != nil {
 		return err
 	}
@@ -686,7 +685,7 @@ func scaffoldAssistant(root, dir, kind string, d scaffoldData) error {
 }
 
 // NewAssistant adds an assistant folder to the repository.
-func (m *Manager) NewAssistant(name, dir, agent, sessions, kind string) (Assistant, error) {
+func (m *Manager) NewAssistant(name, dir, agent, sessions string) (Assistant, error) {
 	root := m.assistantsRoot()
 	if root == "" {
 		return Assistant{}, errors.New("set up the assistants folder first")
@@ -707,13 +706,10 @@ func (m *Manager) NewAssistant(name, dir, agent, sessions, kind string) (Assista
 	if sessions != "per-task" && sessions != "continuous" {
 		return Assistant{}, errors.New("sessions: per-task or continuous")
 	}
-	if kind != "" && !assistantKinds[kind] {
-		return Assistant{}, fmt.Errorf("no assistant template %q", kind)
-	}
 	if _, err := os.Stat(filepath.Join(root, dir)); err == nil {
 		return Assistant{}, fmt.Errorf("%s already exists", filepath.Join(root, dir))
 	}
-	if err := scaffoldAssistant(root, dir, kind, scaffoldData{Name: name, Agent: agent, Sessions: sessions, Memory: "state"}); err != nil {
+	if err := scaffoldAssistant(root, dir, scaffoldData{Name: name, Agent: agent, Sessions: sessions, Memory: "state"}); err != nil {
 		return Assistant{}, err
 	}
 	commitAll(root, "Add assistant "+dir)
@@ -998,16 +994,18 @@ func (m *Manager) AssistantMessage(dir, text string, images []string, routine st
 	return s, false, nil
 }
 
-// routineLabelOf is the routine name a routine's message starts with.
+// routineLabelOf is the name a routine's (or the workbench's) message
+// starts with, which titles the session it starts.
 func routineLabelOf(text string) string {
-	if !strings.HasPrefix(text, "[Routine: ") {
-		return ""
+	for _, prefix := range []string{"[Routine: ", "[Workbench: "} {
+		if strings.HasPrefix(text, prefix) {
+			name, _, ok := strings.Cut(strings.TrimPrefix(text, prefix), "]")
+			if ok {
+				return name
+			}
+		}
 	}
-	name, _, ok := strings.Cut(strings.TrimPrefix(text, "[Routine: "), "]")
-	if !ok {
-		return ""
-	}
-	return name
+	return ""
 }
 
 // assistantTurnEnded marks a continuous assistant's topic for a new one
@@ -1036,6 +1034,18 @@ func (m *Manager) assistantRoutineTarget(dir string) error {
 	return err
 }
 
+// afterNew starts a new assistant's first conversation, in which it asks
+// what it is for and writes its procedure, and says where it is.
+func (m *Manager) afterNew(a Assistant) map[string]any {
+	out := map[string]any{"assistant": a}
+	if s, err := m.SetUpMessage(a.Dir); err != nil {
+		out["setupError"] = err.Error()
+	} else {
+		out["session"] = s.ID
+	}
+	return out
+}
+
 // readable for tests: the templates as files.
 var _ fs.FS = assistantTemplates
 
@@ -1045,7 +1055,41 @@ func (s *Server) assistantsAPI(w http.ResponseWriter, r *http.Request, rest stri
 	parts := strings.Split(rest, "/")
 	switch {
 	case rest == "" && r.Method == "GET":
-		writeJSON(w, map[string]any{"root": m.assistantsRoot(), "assistants": m.Assistants(), "defaultAgent": m.defaultAgent()})
+		writeJSON(w, map[string]any{"root": m.assistantsRoot(), "assistants": m.Assistants(), "defaultAgent": m.defaultAgent(), "language": m.language(), "sync": m.syncState()})
+	case rest == "github" && r.Method == "POST":
+		var v struct{ Name string }
+		if err := decode(w, r, &v); err != nil {
+			bad(w, err)
+			return
+		}
+		st, err := m.BackUpToGitHub(v.Name)
+		if err != nil {
+			bad(w, err)
+			return
+		}
+		writeJSON(w, st)
+	case rest == "sync" && r.Method == "POST":
+		m.syncAssistants(true)
+		writeJSON(w, m.syncState())
+	case rest == "settings" && r.Method == "PATCH":
+		var v struct{ Language string }
+		if err := decode(w, r, &v); err != nil {
+			bad(w, err)
+			return
+		}
+		if err := m.SetLanguage(v.Language); err != nil {
+			bad(w, err)
+			return
+		}
+		m.assistantsChanged()
+		writeJSON(w, map[string]any{"language": m.language()})
+	case rest == "main/welcome" && r.Method == "POST":
+		s, err := m.Welcome()
+		if err != nil {
+			bad(w, err)
+			return
+		}
+		writeJSON(w, map[string]any{"session": s.ID})
 	case rest == "changes" && r.Method == "GET":
 		list, err := m.AssistantChanges()
 		if err != nil {
@@ -1067,28 +1111,39 @@ func (s *Server) assistantsAPI(w http.ResponseWriter, r *http.Request, rest stri
 		}
 		writeJSON(w, v)
 	case rest == "setup" && r.Method == "POST":
-		var v struct{ Root, Agent, Name string }
+		var v struct{ Root, Agent, Name, Language string }
 		if err := decode(w, r, &v); err != nil {
 			bad(w, err)
 			return
 		}
-		if err := m.SetUpAssistants(v.Root, v.Agent, v.Name); err != nil {
-			bad(w, err)
-			return
-		}
-		writeJSON(w, map[string]any{"root": m.assistantsRoot(), "assistants": m.Assistants()})
-	case rest == "" && r.Method == "POST":
-		var v struct{ Name, Dir, Agent, Sessions, Kind string }
-		if err := decode(w, r, &v); err != nil {
-			bad(w, err)
-			return
-		}
-		a, err := m.NewAssistant(v.Name, v.Dir, v.Agent, v.Sessions, v.Kind)
+		created, err := m.setUp(v.Root, v.Agent, v.Name, v.Language)
 		if err != nil {
 			bad(w, err)
 			return
 		}
-		writeJSON(w, a)
+		out := map[string]any{"root": m.assistantsRoot(), "assistants": m.Assistants()}
+		// A new personal assistant greets the user first.
+		if created {
+			if s, err := m.Welcome(); err != nil {
+				out["welcomeError"] = err.Error()
+			} else {
+				out["session"] = s.ID
+			}
+		}
+		writeJSON(w, out)
+	case rest == "" && r.Method == "POST":
+		var v struct{ Name, Dir, Agent, Sessions string }
+		if err := decode(w, r, &v); err != nil {
+			bad(w, err)
+			return
+		}
+		a, err := m.NewAssistant(v.Name, v.Dir, v.Agent, v.Sessions)
+		if err != nil {
+			bad(w, err)
+			return
+		}
+		// Made in the page: it asks the user what it is for.
+		writeJSON(w, m.afterNew(a))
 	case len(parts) == 1 && parts[0] != "" && r.Method == "PATCH":
 		var v struct{ Name, Agent string }
 		if err := decode(w, r, &v); err != nil {

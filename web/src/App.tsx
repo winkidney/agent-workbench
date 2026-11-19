@@ -43,6 +43,8 @@ import {
   changesChanged,
   latestFor,
   MAIN_STARTERS,
+  NEW_ROUTINE_EVENT,
+  OPEN_SESSION_EVENT,
   SET_UP_EVENT,
   useAssistants,
   useChanges,
@@ -633,6 +635,32 @@ export default function App() {
     window.addEventListener(SET_UP_EVENT, ask);
     return () => window.removeEventListener(SET_UP_EVENT, ask);
   }, []);
+  // Settings and quick starts open a session or the routine dialog.
+  const hasAssistants = assistantList.assistants.some(
+    (a) => a.dir === "main" && !a.error,
+  );
+  useEffect(() => {
+    // (Event here is the workbench's own type; this one is the DOM's.)
+    const show = ((e: CustomEvent<string>) => {
+      setSettingsOpen(false);
+      setComposing(null);
+      selectSession(e.detail);
+    }) as EventListener;
+    const routine = () => {
+      const d = newDraft(undefined, recent[0]?.path ?? "");
+      if (hasAssistants) {
+        d.target = "assistant";
+        d.assistant = "main";
+      }
+      setRoutineDraft(d);
+    };
+    window.addEventListener(OPEN_SESSION_EVENT, show);
+    window.addEventListener(NEW_ROUTINE_EVENT, routine);
+    return () => {
+      window.removeEventListener(OPEN_SESSION_EVENT, show);
+      window.removeEventListener(NEW_ROUTINE_EVENT, routine);
+    };
+  });
   // An assistant opens on its ongoing topic, or on a new message for it.
   const openAssistant = (dir: string) =>
     void api<Opened>(`assistants/${dir}/open`, "POST")
@@ -1748,10 +1776,14 @@ export default function App() {
           <SetUpDialog
             defaultAgent={assistantList.defaultAgent ?? ""}
             onClose={() => setSettingUp(false)}
-            onDone={() => {
+            onDone={(session) => {
               setSettingUp(false);
               setSettingsOpen(false);
-              openAssistant("main");
+              // Moss greets the user first; without a welcome, a new topic.
+              if (session) {
+                setComposing(null);
+                selectSession(session);
+              } else openAssistant("main");
             }}
           />
         )}

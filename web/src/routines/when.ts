@@ -251,12 +251,18 @@ export function routineOf(
 
 // A message a routine sent starts with "[Routine: name]" and a blank line
 // (routineText in routine.go); the transcript shows that as a label.
+// Agent Workbench's own messages (a welcome, setting an assistant up) start
+// "[Workbench: name]" (welcome.go).
 export function routineLabel(
   text: string,
-): { name: string; rest: string } | undefined {
-  const m = /^\[Routine: ([^\]\n]*)\]\n\n?/.exec(text);
+): { kind: "Routine" | "Workbench"; name: string; rest: string } | undefined {
+  const m = /^\[(Routine|Workbench): ([^\]\n]*)\]\n\n?/.exec(text);
   if (!m) return undefined;
-  return { name: m[1], rest: text.slice(m[0].length) };
+  return {
+    kind: m[1] as "Routine" | "Workbench",
+    name: m[2],
+    rest: text.slice(m[0].length),
+  };
 }
 
 // What a run did, in a few words.

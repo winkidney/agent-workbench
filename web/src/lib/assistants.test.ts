@@ -79,8 +79,11 @@ describe("quick start", () => {
     expect(new Set(labels).size).toBe(labels.length);
     for (const s of MAIN_STARTERS) {
       expect(s.label.length).toBeLessThanOrEqual(20);
-      expect(s.text.trim()).not.toBe("");
+      expect(!!s.action || s.text.trim() !== "").toBe(true);
     }
+    expect(
+      MAIN_STARTERS.find((s) => s.label === "Schedule a routine")?.action,
+    ).toBe("routine");
     expect(labels).toContain("New assistant");
   });
 });

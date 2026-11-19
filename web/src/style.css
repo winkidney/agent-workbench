@@ -6322,3 +6322,6 @@ body.resizing iframe {
 .quick-start-chip:hover {
   background: var(--muted);
 }
+.brand-routine {
+  margin-left: auto;
+}

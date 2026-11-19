@@ -641,6 +641,8 @@ func (m *Manager) RunRoutines(ctx context.Context) {
 		}
 		// Routines from assistant.toml files follow their edits.
 		m.Assistants()
+		// Commits go to the repository's remote shortly after (sync.go).
+		m.syncAssistants(false)
 		wait := m.dueRoutines(m.rt.now())
 		if !timer.Stop() {
 			select {

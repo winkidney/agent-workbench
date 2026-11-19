@@ -1171,3 +1171,28 @@ These are maintainer notes on how each feature of Agent Workbench was verified, 
   - Opening Moss shows its new topic with "Remind me · Schedule a routine · New assistant · Sort my mail · What can you do?". Remind me filled "Remind me in 2 hours to " and the row went away.
   - The Moss conversation, under Assistants only (no Active section), shows the same row above its empty composer. New assistant filled "I'd like an assistant for a job I keep doing: ".
   - No overflow and no page errors.
+
+## Welcome, language, one template, backup (2026-11-19)
+
+- Go:
+  - `welcome_test.go`:
+    - An unknown language is refused, and zh-Hant is stored and named in the root `AGENTS.md` (no template marks left).
+    - Switching to English rewrites that line, and older rules get the line under their heading.
+    - Setting up again does not make another main.
+    - The welcome names the language, the assistants present, the quick starts, the clock button and new assistants, and offers no built-ins. The set-up message points to the create-assistant skill and never asks for a password. Both labels name their session.
+    - The welcome reaches Moss's ongoing topic as `[Workbench: Welcome]` in English.
+    - Commits are pushed to a bare remote: the first push with `-u`, then a new commit only at the next look (forced or after two minutes). A missing remote shows its error.
+    - Backing up is refused when a remote exists.
+  - A new assistant gets a `.gitignore` for `raw/`; main does not.
+  - Minimal-environment `go test ./...`, `-race`, and Windows and macOS vet passed.
+- Web: `routineLabel` with `[Workbench: Welcome]`; quick starts (Schedule a routine opens the dialog). 374 Vitest tests, typecheck, Prettier and build passed.
+- Browser (isolated workbench, only a stand-in `codex`, Playwright):
+  - The setup dialog's Language defaults to 简体中文, and 繁體中文 was kept.
+  - The welcome could not start without a real agent, so the page opened Moss's new topic instead.
+  - The sidebar's New routine button and Moss's "Schedule a routine" open the routine dialog aimed at Moss.
+  - Settings → Assistants:
+    - no template choice; Welcome on Moss's row;
+    - Language switched to English, and the root rule followed;
+    - Backup offers a private GitHub repository.
+  - No page errors, and no overflow on the phone.
+- Not exercised: Moss's real welcome, the push under the systemd service, and Create private repository from the page. The user's own repository was made with `gh` by hand: private, pushed.

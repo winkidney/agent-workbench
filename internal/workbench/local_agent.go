@@ -181,9 +181,10 @@ func (m *Manager) AgentSend(caller, dir, text string) (Session, error) {
 }
 
 // AgentNewAssistant makes an assistant an agent proposed and the user
-// approved (the create-assistant skill): the agent setup would choose and
-// a session per request unless given. It never replaces a folder.
-func (m *Manager) AgentNewAssistant(name, dir, agent, sessions, kind string) (Assistant, error) {
+// approved (the create-assistant skill): the agent setup would choose and a
+// session per request unless given. It never replaces a folder; the agent
+// writes its procedure next.
+func (m *Manager) AgentNewAssistant(name, dir, agent, sessions string) (Assistant, error) {
 	if agent == "" {
 		if agent = m.defaultAgent(); agent == "" {
 			return Assistant{}, errors.New("no agent is installed")
@@ -192,7 +193,7 @@ func (m *Manager) AgentNewAssistant(name, dir, agent, sessions, kind string) (As
 	if sessions == "" {
 		sessions = "per-task"
 	}
-	return m.NewAssistant(name, dir, agent, sessions, kind)
+	return m.NewAssistant(name, dir, agent, sessions)
 }
 
 // localAgentAPI serves /api/local/(routines[/{id}] | assistants/{dir}/send)
@@ -237,17 +238,22 @@ func (s *Server) localAgentAPI(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, map[string]any{"ok": true})
 	case rest == "assistants" && r.Method == "POST":
-		var v struct{ Name, Dir, Agent, Sessions, Kind string }
+		var v struct{ Name, Dir, Agent, Sessions string }
 		if err := decode(w, r, &v); err != nil {
 			bad(w, err)
 			return
 		}
-		a, err := m.AgentNewAssistant(v.Name, v.Dir, v.Agent, v.Sessions, v.Kind)
+		a, err := m.AgentNewAssistant(v.Name, v.Dir, v.Agent, v.Sessions)
 		if err != nil {
 			bad(w, err)
 			return
 		}
-		writeJSON(w, a)
+		writeJSON(w, map[string]any{"assistant": a})
+	case rest == "assistants/reload" && r.Method == "POST":
+		// An agent changed an assistant.toml: apply it now (ADR 0014).
+		m.assistantsChanged()
+		m.rt.poke()
+		writeJSON(w, map[string]any{"assistants": len(m.Assistants())})
 	case len(parts) == 3 && parts[0] == "assistants" && parts[2] == "send" && r.Method == "POST":
 		var v struct{ Caller, Text string }
 		if err := decode(w, r, &v); err != nil {

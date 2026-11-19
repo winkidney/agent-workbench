@@ -101,8 +101,14 @@ describe("routines", () => {
 
   it("finds the label a routine put on its message", () => {
     expect(routineLabel("[Routine: Morning]\n\nCheck mail")).toEqual({
+      kind: "Routine",
       name: "Morning",
       rest: "Check mail",
+    });
+    expect(routineLabel("[Workbench: Welcome]\n\nGreet them")).toEqual({
+      kind: "Workbench",
+      name: "Welcome",
+      rest: "Greet them",
     });
     expect(routineLabel("[Routine: x] typed by hand")).toBeUndefined();
   });

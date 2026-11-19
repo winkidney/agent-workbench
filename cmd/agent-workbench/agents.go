@@ -30,7 +30,8 @@ const agentUsage = `usage:
   agent-workbench routine rm ID
   agent-workbench assistant send ASSISTANT TEXT
   agent-workbench assistant new --name NAME [--folder DIR] [--agent claude|codex]
-                                [--sessions per-task|continuous] [--from mail]
+                                [--sessions per-task|continuous]
+  agent-workbench assistant reload
 
 --to this (the default) is the session the command runs in; in a
 continuous assistant's folder it is that assistant, whose topic changes
@@ -108,13 +109,12 @@ func agentCommand(group string, args []string) error {
 	flags.StringVar(&dataDir, "data-dir", dataDir, "the workbench's data directory")
 	var req workbench.AgentRoutineRequest
 	var days, in string
-	var made struct{ name, dir, agent, sessions, kind string }
+	var made struct{ name, dir, agent, sessions string }
 	if group == "assistant" && verb == "new" {
 		flags.StringVar(&made.name, "name", "", "its name")
 		flags.StringVar(&made.dir, "folder", "", "its folder (default: from the name)")
 		flags.StringVar(&made.agent, "agent", "", "claude or codex (default: the installed one)")
 		flags.StringVar(&made.sessions, "sessions", "", "per-task (default) or continuous")
-		flags.StringVar(&made.kind, "from", "", "a template: mail")
 	}
 	if group == "routine" && verb == "add" {
 		flags.StringVar(&req.Daily, "daily", "", "every day at HH:MM")
@@ -191,11 +191,20 @@ func agentCommand(group string, args []string) error {
 		if len(rest) > 0 {
 			return fmt.Errorf("unexpected argument %q (quote the name: --name \"…\")", rest[0])
 		}
-		var a workbench.Assistant
-		if err := c.call("POST", "assistants", map[string]string{"name": made.name, "dir": made.dir, "agent": made.agent, "sessions": made.sessions, "kind": made.kind}, &a); err != nil {
+		var out struct {
+			Assistant workbench.Assistant `json:"assistant"`
+		}
+		if err := c.call("POST", "assistants", map[string]string{"name": made.name, "dir": made.dir, "agent": made.agent, "sessions": made.sessions}, &out); err != nil {
 			return err
 		}
-		fmt.Printf("Made the assistant %s (%s, %s) in %s.\nIt is in the sidebar under Assistants. Write its procedure in AGENTS.md there.\n", a.Name, a.Agent, a.Sessions, a.Path)
+		a := out.Assistant
+		fmt.Printf("Made the assistant %s (%s, %s) in %s.\nIt is in the sidebar under Assistants. Write its procedure in AGENTS.md there, as the create-assistant skill says.\n", a.Name, a.Agent, a.Sessions, a.Path)
+		return nil
+	case "assistant reload":
+		if err := c.call("POST", "assistants/reload", nil, nil); err != nil {
+			return err
+		}
+		fmt.Println("Reloaded: changes to assistant.toml files apply now.")
 		return nil
 	case "assistant send":
 		if len(rest) < 2 {

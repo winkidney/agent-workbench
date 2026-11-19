@@ -5,12 +5,17 @@ import { ChangeList } from "../../assistants/Changes";
 import {
   assistantsChanged,
   folderFor,
+  LANGUAGES,
   MAIN_NAME,
+  openSessionLater,
   setUpAssistants,
   useChanges,
   type Assistant,
   type Assistants,
+  type Language,
+  type SyncState,
 } from "../../lib/assistants";
+import { shortTime } from "../../routines/when";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 
@@ -55,8 +60,6 @@ export function AssistantsTab({
   const [name, setName] = useState("");
   const [folder, setFolder] = useState("");
   const [sessions, setSessions] = useState<Assistant["sessions"]>("per-task");
-  // An empty procedure, or a template (internal/workbench/assistant/kinds).
-  const [kind, setKind] = useState<"" | "mail">("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [adding, setAdding] = useState(false);
@@ -110,61 +113,24 @@ export function AssistantsTab({
             className="assistant-form"
             onSubmit={(e) => {
               e.preventDefault();
-              void run(() =>
-                api("assistants", "POST", {
-                  name,
-                  dir: folder || folderFor(name),
-                  agent,
-                  sessions: kind === "mail" ? "per-task" : sessions,
-                  kind,
-                }),
-              ).then((ok) => {
+              let session = "";
+              void run(async () => {
+                const out = await api<{ session?: string }>(
+                  "assistants",
+                  "POST",
+                  { name, dir: folder || folderFor(name), agent, sessions },
+                );
+                session = out.session ?? "";
+              }).then((ok) => {
                 if (!ok) return;
                 setAdding(false);
                 setName("");
                 setFolder("");
-                setKind("");
+                // Its first conversation asks what it is for.
+                if (session) openSessionLater(session);
               });
             }}
           >
-            <div className="routine-row">
-              <span className="routine-label">Start from</span>
-              <div
-                className="agent-switch"
-                role="radiogroup"
-                aria-label="Start from"
-              >
-                {(
-                  [
-                    ["", "An empty procedure"],
-                    ["mail", "Mail triage"],
-                  ] as ["" | "mail", string][]
-                ).map(([v, label]) => (
-                  <button
-                    type="button"
-                    role="radio"
-                    aria-checked={kind === v}
-                    key={v || "empty"}
-                    className={kind === v ? "on" : ""}
-                    onClick={() => {
-                      setKind(v);
-                      if (v === "mail" && !name.trim()) setName("Mail");
-                    }}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            {kind === "mail" && (
-              <p className="subtle">
-                Reads new mail over IMAP every 30 minutes, without marking it
-                read, and sorts it into <code>state/inbox.md</code> in the
-                background. It cannot send. Its routine starts off: fill in{" "}
-                <code>config.toml</code> and the password as its{" "}
-                <code>AGENTS.md</code> says, then switch it on.
-              </p>
-            )}
             <label className="routine-field">
               <span className="routine-label">Name</span>
               <Input
@@ -187,34 +153,32 @@ export function AssistantsTab({
               <span className="routine-label">Agent</span>
               <AgentChoice value={agent} onChange={setAgent} />
             </div>
-            {kind !== "mail" && (
-              <div className="routine-row">
-                <span className="routine-label">Topics</span>
-                <div
-                  className="agent-switch"
-                  role="radiogroup"
-                  aria-label="Topics"
-                >
-                  {(
-                    [
-                      ["per-task", "A session per request"],
-                      ["continuous", "One ongoing conversation"],
-                    ] as [Assistant["sessions"], string][]
-                  ).map(([v, label]) => (
-                    <button
-                      type="button"
-                      role="radio"
-                      aria-checked={sessions === v}
-                      key={v}
-                      className={sessions === v ? "on" : ""}
-                      onClick={() => setSessions(v)}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
+            <div className="routine-row">
+              <span className="routine-label">Topics</span>
+              <div
+                className="agent-switch"
+                role="radiogroup"
+                aria-label="Topics"
+              >
+                {(
+                  [
+                    ["per-task", "A session per request"],
+                    ["continuous", "One ongoing conversation"],
+                  ] as [Assistant["sessions"], string][]
+                ).map(([v, label]) => (
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={sessions === v}
+                    key={v}
+                    className={sessions === v ? "on" : ""}
+                    onClick={() => setSessions(v)}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
-            )}
+            </div>
             {error && (
               <p className="error-text" role="alert">
                 {error}
@@ -244,6 +208,8 @@ export function AssistantsTab({
           <AssistantItem key={a.dir} assistant={a} onOpen={onOpen} />
         ))}
       </ul>
+      <LanguageSection value={value.language ?? "zh-Hans"} />
+      <BackupSection root={value.root} sync={value.sync} />
       <ChangeList list={changes} />
     </>
   );
@@ -306,6 +272,26 @@ function AssistantItem({
           </form>
         )}
         <span className="change-actions">
+          {a.dir === "main" && naming === null && !a.error && (
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={busy}
+              title="Send the welcome again"
+              onClick={() => {
+                setBusy(true);
+                setError("");
+                api<{ session: string }>("assistants/main/welcome", "POST")
+                  .then((out) => openSessionLater(out.session))
+                  .catch((e) =>
+                    setError(e instanceof Error ? e.message : String(e)),
+                  )
+                  .finally(() => setBusy(false));
+              }}
+            >
+              Welcome
+            </Button>
+          )}
           {naming === null && !a.error && (
             <Button
               variant="ghost"
@@ -347,5 +333,116 @@ function AssistantItem({
         <p className="routine-meta error-text">assistant.toml: {a.error}</p>
       )}
     </li>
+  );
+}
+
+// The language assistants write to the user in (PATCH settings).
+function LanguageSection({ value }: { value: Language }) {
+  const [error, setError] = useState("");
+  return (
+    <section className="settings-section">
+      <h3>Language</h3>
+      <p className="subtle">
+        What assistants write to you in, unless you write in another; also the
+        language of the welcome.
+      </p>
+      <div className="agent-switch" role="radiogroup" aria-label="Language">
+        {LANGUAGES.map(([v, label]) => (
+          <button
+            type="button"
+            role="radio"
+            aria-checked={value === v}
+            key={v}
+            className={value === v ? "on" : ""}
+            onClick={() =>
+              api("assistants/settings", "PATCH", { language: v })
+                .then(() => {
+                  setError("");
+                  assistantsChanged();
+                })
+                .catch((e) =>
+                  setError(e instanceof Error ? e.message : String(e)),
+                )
+            }
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {error && <p className="error-text">{error}</p>}
+    </section>
+  );
+}
+
+// Where the repository of assistants is backed up: its remote, what is not
+// pushed yet; a private GitHub repository made with gh when there is none.
+function BackupSection({ root, sync }: { root: string; sync?: SyncState }) {
+  const [name, setName] = useState(() => root.split("/").pop() || "assistants");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const act = (path: string, body?: unknown) => {
+    setBusy(true);
+    setError("");
+    api(path, "POST", body)
+      .then(assistantsChanged)
+      .catch((e) => setError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setBusy(false));
+  };
+  return (
+    <section className="settings-section">
+      <h3>Backup</h3>
+      {sync?.remote ? (
+        <>
+          <p className="subtle">
+            Changes are pushed to <code>{sync.remote}</code> within a few
+            minutes of each commit.{" "}
+            {sync.ahead > 0
+              ? `${sync.ahead} commit${sync.ahead === 1 ? "" : "s"} not pushed yet.`
+              : sync.ahead === 0
+                ? "Up to date."
+                : "Not pushed yet."}
+            {sync.pushed && ` Last push ${shortTime(sync.pushed)}.`}
+          </p>
+          {sync.error && <p className="error-text">{sync.error}</p>}
+          <div>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={busy}
+              onClick={() => act("assistants/sync")}
+            >
+              {busy && <Loader2 size={14} className="spin" />}
+              Push now
+            </Button>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="subtle">
+            Back the repository up to a private GitHub repository, to keep it
+            safe and use it on other computers. Uses the GitHub CLI (gh), signed
+            in as you.
+          </p>
+          <form
+            className="assistant-rename"
+            onSubmit={(e) => {
+              e.preventDefault();
+              act("assistants/github", { name });
+            }}
+          >
+            <Input
+              value={name}
+              aria-label="Repository name"
+              onChange={(e) => setName(e.target.value)}
+            />
+            <Button type="submit" size="sm" disabled={busy || !name.trim()}>
+              {busy && <Loader2 size={14} className="spin" />}
+              Create private repository
+            </Button>
+          </form>
+        </>
+      )}
+      {error && <p className="error-text">{error}</p>}
+    </section>
   );
 }

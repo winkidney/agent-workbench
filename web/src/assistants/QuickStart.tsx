@@ -1,8 +1,9 @@
 import { Sparkles } from "lucide-react";
-import type { Starter } from "../lib/assistants";
+import { pickStarter, type Starter } from "../lib/assistants";
 
 // A row of ways to start (lib/assistants.ts MAIN_STARTERS): a click puts the
-// start of the message in the composer, nothing is sent.
+// start of the message in the composer (nothing is sent), or opens the
+// routine dialog.
 export function QuickStart({
   starters,
   onPick,
@@ -18,7 +19,7 @@ export function QuickStart({
           key={s.label}
           type="button"
           className="quick-start-chip"
-          onClick={() => onPick(s.text)}
+          onClick={() => pickStarter(s, onPick)}
         >
           {s.label}
         </button>

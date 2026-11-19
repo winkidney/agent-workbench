@@ -23,7 +23,38 @@ export type Assistants = {
   defaultAgent?: "claude" | "codex" | "";
   // The page has heard from the server (until then root is unknown).
   loaded?: boolean;
+  // The language assistants write to the user in.
+  language?: Language;
+  // The backup of the repository to its remote (sync.go).
+  sync?: SyncState;
 };
+
+export type Language = "en" | "zh-Hans" | "zh-Hant";
+export const LANGUAGES: [Language, string][] = [
+  ["en", "English"],
+  ["zh-Hans", "简体中文"],
+  ["zh-Hant", "繁體中文"],
+];
+
+export type SyncState = {
+  remote?: string;
+  // Commits not on the remote yet; -1 before the first push.
+  ahead: number;
+  pushed?: string;
+  error?: string;
+};
+
+// Asks App.tsx to show a session (from Settings, after a welcome or a new
+// assistant's first message).
+export const OPEN_SESSION_EVENT = "workbench:open-session";
+export const openSessionLater = (id: string) =>
+  window.dispatchEvent(new CustomEvent(OPEN_SESSION_EVENT, { detail: id }));
+
+// Asks App.tsx to open the routine dialog, aimed at the personal assistant
+// when there is one.
+export const NEW_ROUTINE_EVENT = "workbench:new-routine";
+export const newRoutine = () =>
+  window.dispatchEvent(new CustomEvent(NEW_ROUTINE_EVENT));
 
 // What opening an assistant shows: its ongoing topic, or a new message
 // (fresh), with the session it continues from.
@@ -159,17 +190,27 @@ export function latestFor(
 
 // Ways to start with the personal assistant (assistants/QuickStart.tsx):
 // each puts the start of a message in the composer, to finish and send.
-export type Starter = { label: string; text: string };
+// A start either fills in text, or (action) opens something.
+export type Starter = { label: string; text: string; action?: "routine" };
 export const MAIN_STARTERS: Starter[] = [
   { label: "Remind me", text: "Remind me in 2 hours to " },
-  { label: "Schedule a routine", text: "Every weekday at 9:00, " },
+  { label: "Schedule a routine", text: "", action: "routine" },
   {
     label: "New assistant",
     text: "I'd like an assistant for a job I keep doing: ",
   },
-  { label: "Sort my mail", text: "Set up mail triage for me." },
+  {
+    label: "My assistants",
+    text: "Which assistants do I have, and what does each do?",
+  },
   {
     label: "What can you do?",
     text: "What can you do for me? Give me a few examples.",
   },
 ];
+
+// Carries out a start: opens what it names, or hands its text on.
+export function pickStarter(s: Starter, fill: (text: string) => void) {
+  if (s.action === "routine") newRoutine();
+  else fill(s.text);
+}

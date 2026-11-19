@@ -127,13 +127,13 @@ func TestAssistantNewSendsItsFlags(t *testing.T) {
 	var path string
 	dir := agentServer(t, func(r *http.Request, body map[string]any) any {
 		got, path = body, r.Method+" "+r.URL.Path
-		return workbench.Assistant{Name: "Weekly report", Agent: "codex", Sessions: "per-task", Path: "/a/weekly-report"}
+		return map[string]any{"assistant": workbench.Assistant{Name: "Weekly report", Agent: "codex", Sessions: "per-task", Path: "/a/weekly-report"}}
 	})
 	t.Setenv(workbench.EnvDataDir, dir)
 	out := captureStdout(t, func() error {
-		return agentCommand("assistant", []string{"new", "--name", "Weekly report", "--agent", "codex", "--from", "mail"})
+		return agentCommand("assistant", []string{"new", "--name", "Weekly report", "--agent", "codex"})
 	})
-	if path != "POST /api/local/assistants" || got["name"] != "Weekly report" || got["agent"] != "codex" || got["kind"] != "mail" || got["sessions"] != "" {
+	if path != "POST /api/local/assistants" || got["name"] != "Weekly report" || got["agent"] != "codex" || got["sessions"] != "" {
 		t.Fatalf("%s %v", path, got)
 	}
 	if !strings.Contains(out, "Made the assistant Weekly report (codex, per-task) in /a/weekly-report.") {

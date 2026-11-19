@@ -4,7 +4,12 @@ import { Dialog, DialogContent, DialogTitle } from "../components/ui/dialog";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { api } from "../lib/api";
-import { assistantsChanged, MAIN_NAME } from "../lib/assistants";
+import {
+  assistantsChanged,
+  LANGUAGES,
+  MAIN_NAME,
+  type Language,
+} from "../lib/assistants";
 
 type Agent = "claude" | "codex";
 
@@ -18,11 +23,13 @@ export function SetUpDialog({
 }: {
   defaultAgent: Agent | "";
   onClose: () => void;
-  onDone: () => void;
+  // The session the welcome went to, if it started.
+  onDone: (session?: string) => void;
 }) {
   const [name, setName] = useState(MAIN_NAME);
   const [agent, setAgent] = useState<Agent>(defaultAgent || "claude");
   const [root, setRoot] = useState("~/assistants");
+  const [language, setLanguage] = useState<Language>("zh-Hans");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const shown = name.trim() || MAIN_NAME;
@@ -30,9 +37,14 @@ export function SetUpDialog({
     setBusy(true);
     setError("");
     try {
-      await api("assistants/setup", "POST", { root, agent, name: shown });
+      const out = await api<{ session?: string }>("assistants/setup", "POST", {
+        root,
+        agent,
+        name: shown,
+        language,
+      });
       assistantsChanged();
-      onDone();
+      onDone(out.session);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -67,9 +79,10 @@ export function SetUpDialog({
               open items every morning.
             </li>
             <li>
-              Ask {shown} to make an assistant for a job you repeat (a weekly
-              report, sorting mail): it proposes one, and makes it when you
-              approve.
+              Ask {shown} to make an assistant for a job you repeat (reviewing
+              pull requests, watching releases, a calendar): it proposes one,
+              and makes it when you approve. Each keeps its own code and data in
+              its own folder.
             </li>
             <li>
               Everything is plain files in a git repository on this computer:
@@ -103,6 +116,27 @@ export function SetUpDialog({
                   onClick={() => setAgent(a)}
                 >
                   {a === "claude" ? "Claude" : "Codex"}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="routine-row">
+            <span className="routine-label">Language</span>
+            <div
+              className="agent-switch"
+              role="radiogroup"
+              aria-label="Language"
+            >
+              {LANGUAGES.map(([v, label]) => (
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={language === v}
+                  key={v}
+                  className={language === v ? "on" : ""}
+                  onClick={() => setLanguage(v)}
+                >
+                  {label}
                 </button>
               ))}
             </div>
