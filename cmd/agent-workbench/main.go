@@ -40,6 +40,8 @@ Commands:
   serve       run in the foreground
   doctor      check the agents and the platform
   version     print the version
+  routine     add, list or remove routines (agent-workbench routine help)
+  assistant   send an assistant a message (agent-workbench assistant help)
 
 Flags:
   --data-dir PATH      private state directory
@@ -79,6 +81,10 @@ func run() error {
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		action = args[0]
 		args = args[1:]
+	}
+	// The agents' commands take their own flags (agents.go).
+	if action == "routine" || action == "assistant" {
+		return agentCommand(action, args)
 	}
 	var c config
 	flags := flag.NewFlagSet(action, flag.ContinueOnError)

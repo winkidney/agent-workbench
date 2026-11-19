@@ -325,6 +325,8 @@ func (m *Manager) Start(id string) error {
 	if run, err := m.cli(launched.Agent); err == nil {
 		launched.run = run
 	}
+	// The agent-workbench command finds this workbench and session.
+	launched.run.Env = m.engineEnv(launched.run.Env, r.session.ID)
 	proc, err := m.launch(launched, func(v map[string]any) { m.receive(id, generation, v) }, func(err error) { m.exited(id, generation, err) })
 	if err != nil {
 		m.emit(r.session.ID, "error", map[string]any{"message": err.Error()})

@@ -217,7 +217,9 @@ A routine sends a message to a session, runs a command, or runs a command and ha
 - **When it runs:** while the workbench runs. A run it misses (the workbench was stopped, the computer asleep) is skipped, not made up. A command has 10 minutes by default (at most 60); a run whose command is still running skips the next one.
 - **Notifications:** a failed run always notifies, and a message's run notifies when the agent has answered, while the page is in the background and desktop notifications are on. Clicking it opens the session.
 
-Commands run with your user's rights, like a terminal tab; any signed-in device can make routines. See [ADR 0009](adr/0009-routines-run-on-a-schedule.md).
+- **Agents' own routines:** an agent in a workbench session can schedule a message with `"$AGENT_WORKBENCH_BIN" routine add --in 2h --message "…"` (or `--at "YYYY-MM-DD HH:MM"`, `--daily 09:00 --days mon,fri`, `--every 1d`). The target is `--to this` (the default), `--to <assistant>` or `--to <session id>`. `routine list` and `routine rm <id>` show and remove them, and `assistant send <folder> "…"` hands a task to an assistant. The assistants' shared rules tell them how. These routines only send messages, at most every 15 minutes, at most 20 per session; Settings → Routines shows the session that made each one. The same commands work from a terminal on this computer.
+
+Commands run with your user's rights, like a terminal tab; any signed-in device can make routines. See [ADR 0009](adr/0009-routines-run-on-a-schedule.md) and [ADR 0012](adr/0012-agents-schedule-their-own-messages.md).
 
 ## Assistants
 

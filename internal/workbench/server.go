@@ -57,7 +57,9 @@ type Server struct {
 	build string
 	// stopToken and stop serve the command's local shutdown (control.go).
 	stopToken string
-	stop      func()
+	// agentToken authorizes the agents' commands (local_agent.go).
+	agentToken string
+	stop       func()
 	// Where and how this workbench runs, for the About tab (about.go).
 	listen, mode string
 	started      time.Time
@@ -184,6 +186,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/api/local/shutdown" {
 		// Before the host and origin rules: the command is not a page.
 		s.localShutdown(w, r)
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, "/api/local/") {
+		s.localAgentAPI(w, r)
 		return
 	}
 	if strings.HasPrefix(r.Host, "p-") && strings.HasSuffix(r.Host, ".agent.localhost:"+strings.Split(s.Host, ":")[1]) {
@@ -1476,6 +1482,9 @@ func Run(ctx context.Context, m *Manager, assets fs.FS, addr, code string) error
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	handler.stopToken, handler.stop = token(), cancel
+	if err := handler.writeAgentToken(); err != nil {
+		return err
+	}
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
 		return err

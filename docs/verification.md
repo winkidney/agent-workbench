@@ -1091,3 +1091,22 @@ These are maintainer notes on how each feature of Agent Workbench was verified, 
   - The conversation shows "Memory updated: … · 1 file · Undo" above the composer, and Undo turns it into "Memory update undone".
   - No page errors, and no sideways overflow on desktop or phone.
 - Not exercised: an ingest by a real agent, and a session that goes to sleep after idling.
+
+## Agents' commands (2026-11-19)
+
+- Agents' commands ([ADR 0012](adr/0012-agents-schedule-their-own-messages.md)) were tested in Go.
+  - `local_agent_test.go`:
+    - Refused: another computer, no token, a wrong token, the stop token, a `Cf-Connecting-Ip`, `X-Forwarded-For` or `Origin` header. The token file is mode 0600.
+    - Agent routines: 10-minute intervals, empty messages, `this` outside a session and unknown targets are refused. `this` resolves to the session, to a continuous assistant from its folder, and to the task's session in a per-task one. Each routine is marked `agent:<session>` and has no command. The 21st routine switched on for a session is refused while another session still has room. `rm` removes an agent's routine but not the user's.
+    - `assistant send` reaches the ongoing topic as `[From another session: Main: Today]`.
+    - The engine environment carries the three variables.
+  - `cmd/agent-workbench/agents_test.go`, against a stub workbench:
+    - `routine add` sends the caller, schedule, target and message with the token, and prints the result. `--in 2h` becomes a time two hours on.
+    - Bad `--in` values and stray arguments are refused, and flags may follow the arguments.
+    - `assistant send` and `routine rm` call their paths. With no workbench running, the command says so.
+- Isolated workbench (scratch HOME and data directory, a stand-in `claude` that records its environment):
+  - From a terminal, `--to this` was refused outside a session, and `--every 5m` was refused.
+  - `routine add --daily 09:00 --days mon,fri --to main` listed "Mon, Fri at 09:00 to the assistant main, next 2026-11-20 09:00; by agent:cli".
+  - `rm` removed it and refused main's file routine. A request with the tunnel header, and one without the token, got 403.
+  - `assistant send main` started an engine whose environment had `AGENT_WORKBENCH_BIN`, `_DATA_DIR` and `_SESSION`.
+- Not exercised: a live agent running the command from inside its session.

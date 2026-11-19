@@ -154,7 +154,10 @@ export function RoutinesTab({
                 )}
                 {" · "}
                 {target(r)}
-                {r.createdBy.startsWith("agent:") && " · made by an agent"}
+                {r.createdBy === "agent:cli" && " · made from a terminal"}
+                {r.createdBy.startsWith("agent:") &&
+                  r.createdBy !== "agent:cli" &&
+                  ` · made by the agent in ${sessionTitle(r.createdBy.slice(6))}`}
                 {r.createdBy.startsWith("file:") &&
                   ` · from ${r.createdBy.slice(5)}/assistant.toml`}
               </p>
