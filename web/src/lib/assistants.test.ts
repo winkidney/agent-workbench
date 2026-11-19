@@ -6,6 +6,7 @@ import {
   latestFor,
   MAIN_NAME,
   MAIN_STARTERS,
+  moved,
   SET_UP_EVENT,
   setUpAssistants,
   type Assistant,
@@ -85,5 +86,17 @@ describe("quick start", () => {
       MAIN_STARTERS.find((s) => s.label === "Schedule a routine")?.action,
     ).toBe("routine");
     expect(labels).toContain("New assistant");
+  });
+});
+
+describe("order", () => {
+  const dirs = ["main", "a", "b", "c"];
+  it("moves an assistant to where another is, Moss staying first", () => {
+    expect(moved(dirs, "c", "a")).toEqual(["main", "c", "a", "b"]);
+    expect(moved(dirs, "a", "c")).toEqual(["main", "b", "c", "a"]);
+    expect(moved(dirs, "a", "b")).toEqual(["main", "b", "a", "c"]);
+    expect(moved(dirs, "c", "main")).toEqual(["main", "c", "a", "b"]);
+    expect(moved(dirs, "main", "c")).toEqual(dirs);
+    expect(moved(dirs, "x", "a")).toEqual(dirs);
   });
 });

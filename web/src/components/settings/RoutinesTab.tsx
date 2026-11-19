@@ -162,7 +162,11 @@ export function RoutinesTab({
                   ` · from ${r.createdBy.slice(5)}/assistant.toml`}
               </p>
               <p className="routine-meta">
-                {r.enabled && r.next ? `Next ${shortTime(r.next)}` : "Off"}
+                {r.assistantOff
+                  ? "Waiting: its assistant is turned off"
+                  : r.enabled && r.next
+                    ? `Next ${shortTime(r.next)}`
+                    : "Off"}
                 {r.last &&
                   ` · Last ${shortTime(r.last.started)}: ${runSummary(r.last)}`}
               </p>

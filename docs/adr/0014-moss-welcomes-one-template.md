@@ -54,6 +54,13 @@ For a while the plan was to ship built-in assistants: code review, release watch
 
    It names files and lines but never the values. It guards every commit: an assistant's, the workbench's, the user's. The root `.gitignore` leaves out the usual credential files. Only on the user's explicit request does a commit set `ASSISTANTS_ALLOW_SECRETS=1`.
 
+10. **Order and on/off.**
+    - Moss is always first.
+    - The order the user drags the others into, by pointer (touch needs a long press) or Move up/down, is kept in the `assistants` setting.
+    - `enabled = false` in an `assistant.toml` turns that assistant off: it is listed under Show more, its routines wait (a once routine records why it skipped), and messages to it are refused.
+    - Moss cannot be turned off.
+11. **The ⋯ menu is grouped:** this conversation's actions, then the workbench's.
+
 ## Consequences
 
 - Agent Workbench keeps no assistant logic. The user's assistants are plain folders in their repository, where they can change them; they sync to other computers through the repository.

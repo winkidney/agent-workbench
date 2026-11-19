@@ -47,6 +47,8 @@ export type Routine = {
   created: string;
   next?: string;
   last?: RoutineRun;
+  // Its assistant is turned off: it waits.
+  assistantOff?: boolean;
 };
 
 export const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];

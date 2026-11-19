@@ -77,8 +77,10 @@ type Routine struct {
 	FileEnabled *bool `json:"fileEnabled,omitempty"`
 
 	// Computed for the page.
-	Next string      `json:"next,omitempty"`
-	Last *RoutineRun `json:"last,omitempty"`
+	Next string `json:"next,omitempty"`
+	// Its assistant is turned off: it does not run (computed, not kept).
+	AssistantOff bool        `json:"assistantOff,omitempty"`
+	Last         *RoutineRun `json:"last,omitempty"`
 }
 
 // RoutineRun is one time a routine was due.
@@ -479,6 +481,11 @@ func (m *Manager) Routines() ([]Routine, error) {
 	}
 	m.rt.mu.Unlock()
 	for i := range list {
+		if _, off := m.assistantOff(list[i]); off {
+			list[i].AssistantOff, list[i].Next = true, ""
+		}
+	}
+	for i := range list {
 		if runs, _ := m.store.runs(list[i].ID, 1); len(runs) > 0 {
 			last := runs[0]
 			last.Output = ""
@@ -570,8 +577,31 @@ func (m *Manager) RunRoutine(id string) (RoutineRun, error) {
 	if err != nil {
 		return RoutineRun{}, err
 	}
+	if name, off := m.assistantOff(v); off {
+		return RoutineRun{}, fmt.Errorf("%s is turned off", name)
+	}
 	now := m.rt.now()
 	return m.startRun(v, now, false), nil
+}
+
+// assistantOff names the turned-off assistant a routine belongs to or sends
+// to; its runs wait until it is on again.
+func (m *Manager) assistantOff(v Routine) (string, bool) {
+	dir := strings.TrimPrefix(v.CreatedBy, "file:")
+	if dir == v.CreatedBy {
+		dir = ""
+	}
+	if dir == "" && v.Target != nil && v.Target.Kind == "assistant" {
+		dir = v.Target.Assistant
+	}
+	if dir == "" {
+		return "", false
+	}
+	a, err := m.assistant(dir)
+	if err != nil || a.Enabled {
+		return "", false
+	}
+	return a.Name, true
 }
 
 // routineChanged tells every page a routine or one of its runs changed.
@@ -680,7 +710,13 @@ func (m *Manager) dueRoutines(now time.Time) time.Duration {
 			m.rt.mu.Unlock()
 			continue
 		}
-		if now.Sub(d.at) > routineLate {
+		if name, off := m.assistantOff(v); off {
+			// Paused with its assistant: no run. A once routine says why it
+			// did not run; the others simply wait for their next time.
+			if v.When.Kind == "once" {
+				m.recordRun(RoutineRun{ID: token()[:16], Routine: v.ID, Name: v.Name, Due: d.at.UTC().Format(time.RFC3339), Started: nowStamp(), Finished: nowStamp(), Status: "skipped", Error: name + " is turned off"})
+			}
+		} else if now.Sub(d.at) > routineLate {
 			m.recordRun(RoutineRun{ID: token()[:16], Routine: v.ID, Name: v.Name, Due: d.at.UTC().Format(time.RFC3339), Started: nowStamp(), Finished: nowStamp(), Status: "skipped", Error: "missed: the workbench was not running or the computer was asleep"})
 		} else {
 			m.startRun(v, d.at, true)

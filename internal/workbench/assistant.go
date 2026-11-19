@@ -34,7 +34,9 @@ var assistantTemplates embed.FS
 
 // AssistantFile is what an assistant.toml holds.
 type AssistantFile struct {
-	Name     string        `toml:"name"`
+	Name string `toml:"name"`
+	// false: turned off (hidden under Show more, routines paused).
+	Enabled  *bool         `toml:"enabled"`
 	Agent    string        `toml:"agent"`
 	Sessions string        `toml:"sessions"`
 	Memory   string        `toml:"memory"`
@@ -68,6 +70,8 @@ type Assistant struct {
 	Sessions string `json:"sessions"`
 	Memory   string `json:"memory"`
 	Routines int    `json:"routines"`
+	// Turned on (the personal assistant always is).
+	Enabled bool `json:"enabled"`
 	// What is wrong with its assistant.toml; it is then not used.
 	Error string `json:"error,omitempty"`
 	// continuous: the session of the ongoing topic, and earlier ones.
@@ -87,8 +91,11 @@ type assistantState struct {
 
 type assistantsSetting struct {
 	Root string `json:"root"`
-	// The language assistants write to the user in (catalog.go).
+	// The language assistants write to the user in (language.go).
 	Language string `json:"language,omitempty"`
+	// The order the user dragged the assistants into (folders); the
+	// personal assistant is first whatever it says.
+	Order []string `json:"order,omitempty"`
 }
 
 const (
@@ -261,6 +268,58 @@ func assistantFiles(root string) []string {
 
 // Assistants reads the assistants (again only when a file changed) and
 // brings their routines in line with their files.
+// sortAssistants puts the personal assistant first, then the order the user
+// dragged them into, then the rest by folder.
+func (m *Manager) sortAssistants(list []Assistant) {
+	var v assistantsSetting
+	m.store.readSetting("assistants", &v)
+	rank := map[string]int{}
+	for i, d := range v.Order {
+		rank[d] = i + 1
+	}
+	key := func(a Assistant) (int, int, string) {
+		if a.Dir == "main" {
+			return 0, 0, ""
+		}
+		r, ok := rank[a.Dir]
+		if !ok {
+			r = len(v.Order) + 1
+		}
+		return 1, r, a.Dir
+	}
+	sort.SliceStable(list, func(i, j int) bool {
+		a1, b1, c1 := key(list[i])
+		a2, b2, c2 := key(list[j])
+		if a1 != a2 {
+			return a1 < a2
+		}
+		if b1 != b2 {
+			return b1 < b2
+		}
+		return c1 < c2
+	})
+}
+
+// SetAssistantOrder keeps the order the user dragged the assistants into.
+func (m *Manager) SetAssistantOrder(order []string) error {
+	if len(order) > 500 {
+		return errors.New("too many assistants")
+	}
+	for _, d := range order {
+		if !folderName.MatchString(d) {
+			return fmt.Errorf("order: %q is not an assistant's folder", d)
+		}
+	}
+	var v assistantsSetting
+	m.store.readSetting("assistants", &v)
+	v.Order = order
+	if err := m.store.setting("assistants", v); err != nil {
+		return err
+	}
+	m.assistantsChanged()
+	return nil
+}
+
 func (m *Manager) Assistants() []Assistant {
 	root := m.assistantsRoot()
 	files := []string{}
@@ -287,13 +346,16 @@ func (m *Manager) Assistants() []Assistant {
 		dir := filepath.Dir(p)
 		a := Assistant{Dir: filepath.Base(dir), Path: dir}
 		f, err := readAssistant(p)
+		a.Enabled = true
 		if err != nil {
 			a.Name, a.Error = a.Dir, err.Error()
 		} else {
 			a.Name, a.Agent, a.Sessions, a.Memory, a.Routines, a.file = f.Name, f.Agent, f.Sessions, f.Memory, len(f.Routines), f
+			a.Enabled = f.Enabled == nil || *f.Enabled || a.Dir == "main"
 		}
 		list = append(list, a)
 	}
+	m.sortAssistants(list)
 	m.syncFileRoutines(list)
 	m.as.mu.Lock()
 	m.as.seen, m.as.list = sig.String(), list
@@ -828,7 +890,13 @@ func (m *Manager) newTopic(a Assistant, st assistantState) {
 // first table ([[routines]] has name lines of its own); false when there
 // is none.
 func setTopLevel(text, key, value string) (string, bool) {
-	line := regexp.MustCompile(`(?m)^` + key + `[ \t]*=[ \t]*"(?:[^"\\\n]|\\.)*"[ \t]*\r?$`)
+	return setTopLevelRaw(text, key, strconv.Quote(value))
+}
+
+// setTopLevelRaw replaces the first top-level `key = …` line with raw as
+// its value; false when there is none.
+func setTopLevelRaw(text, key, raw string) (string, bool) {
+	line := regexp.MustCompile(`(?m)^` + key + `[ \t]*=[^\n]*$`)
 	head, tail := text, ""
 	if loc := regexp.MustCompile(`(?m)^[ \t]*\[`).FindStringIndex(text); loc != nil {
 		head, tail = text[:loc[0]], text[loc[0]:]
@@ -841,14 +909,29 @@ func setTopLevel(text, key, value string) (string, bool) {
 	if strings.HasSuffix(head[loc[0]:end], "\r") {
 		end--
 	}
-	return head[:loc[0]] + key + " = " + strconv.Quote(value) + head[end:] + tail, true
+	return head[:loc[0]] + key + " = " + raw + head[end:] + tail, true
+}
+
+// insertTopLevel adds `key = raw` after the agent line (else at the end of
+// the top-level keys, before the first table).
+func insertTopLevel(text, key, raw string) string {
+	add := key + " = " + raw + "\n"
+	if loc := regexp.MustCompile(`(?m)^agent[ \t]*=[^\n]*\n`).FindStringIndex(text); loc != nil {
+		if first := regexp.MustCompile(`(?m)^[ \t]*\[`).FindStringIndex(text); first == nil || loc[0] < first[0] {
+			return text[:loc[1]] + add + text[loc[1]:]
+		}
+	}
+	if first := regexp.MustCompile(`(?m)^[ \t]*\[`).FindStringIndex(text); first != nil {
+		return text[:first[0]] + add + "\n" + text[first[0]:]
+	}
+	return strings.TrimRight(text, "\n") + "\n" + add
 }
 
 // UpdateAssistant renames an assistant or switches its agent, changing only
 // those lines of its assistant.toml (comments and routines stay). A
 // continuous assistant that changes agent starts a new topic: the ongoing
 // session belongs to the old one.
-func (m *Manager) UpdateAssistant(dir, name, agent string) (Assistant, error) {
+func (m *Manager) UpdateAssistant(dir, name, agent string, enabled *bool) (Assistant, error) {
 	a, err := m.assistant(dir)
 	if err != nil {
 		return a, err
@@ -880,6 +963,22 @@ func (m *Manager) UpdateAssistant(dir, name, agent string) (Assistant, error) {
 			return a, errors.New(`assistant.toml has no agent = "…" line to change`)
 		}
 		did, switched = append(did, "switch to "+agent), true
+	}
+	if enabled != nil && *enabled != a.Enabled {
+		if dir == "main" {
+			return a, errors.New("the personal assistant cannot be turned off")
+		}
+		raw := strconv.FormatBool(*enabled)
+		if t, ok := setTopLevelRaw(text, "enabled", raw); ok {
+			text = t
+		} else {
+			text = insertTopLevel(text, "enabled", raw)
+		}
+		if *enabled {
+			did = append(did, "turn on")
+		} else {
+			did = append(did, "turn off")
+		}
 	}
 	if len(did) == 0 {
 		return a, nil
@@ -976,6 +1075,9 @@ func (m *Manager) AssistantMessage(dir, text string, images []string, routine st
 	a, err := m.assistant(dir)
 	if err != nil {
 		return Session{}, false, err
+	}
+	if !a.Enabled {
+		return Session{}, false, fmt.Errorf("%s is turned off: turn it on from its menu in the sidebar", a.Name)
 	}
 	if a.Sessions == "continuous" {
 		m.as.topic.Lock()
@@ -1084,14 +1186,25 @@ func (s *Server) assistantsAPI(w http.ResponseWriter, r *http.Request, rest stri
 		m.syncAssistants(true)
 		writeJSON(w, m.syncState())
 	case rest == "settings" && r.Method == "PATCH":
-		var v struct{ Language string }
+		var v struct {
+			Language string
+			Order    *[]string
+		}
 		if err := decode(w, r, &v); err != nil {
 			bad(w, err)
 			return
 		}
-		if err := m.SetLanguage(v.Language); err != nil {
-			bad(w, err)
-			return
+		if v.Language != "" {
+			if err := m.SetLanguage(v.Language); err != nil {
+				bad(w, err)
+				return
+			}
+		}
+		if v.Order != nil {
+			if err := m.SetAssistantOrder(*v.Order); err != nil {
+				bad(w, err)
+				return
+			}
 		}
 		m.assistantsChanged()
 		writeJSON(w, map[string]any{"language": m.language()})
@@ -1157,12 +1270,15 @@ func (s *Server) assistantsAPI(w http.ResponseWriter, r *http.Request, rest stri
 		// Made in the page: it asks the user what it is for.
 		writeJSON(w, m.afterNew(a))
 	case len(parts) == 1 && parts[0] != "" && r.Method == "PATCH":
-		var v struct{ Name, Agent string }
+		var v struct {
+			Name, Agent string
+			Enabled     *bool
+		}
 		if err := decode(w, r, &v); err != nil {
 			bad(w, err)
 			return
 		}
-		a, err := m.UpdateAssistant(parts[0], v.Name, v.Agent)
+		a, err := m.UpdateAssistant(parts[0], v.Name, v.Agent, v.Enabled)
 		if err != nil {
 			bad(w, err)
 			return

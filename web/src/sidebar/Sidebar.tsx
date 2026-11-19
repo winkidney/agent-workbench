@@ -10,6 +10,11 @@ import { createPortal } from "react-dom";
 import {
   AlarmClock,
   Archive,
+  ArrowDown,
+  ArrowUp,
+  MessageSquarePlus,
+  Power,
+  PowerOff,
   TriangleAlert,
   ArchiveRestore,
   ChevronRight,
@@ -37,11 +42,15 @@ import { LogoLockup } from "../components/Logo";
 import { ATTENTION_LABEL } from "../attention";
 import type { FooterConnection } from "../lib/connection";
 import {
+  assistantsChanged,
   MAIN_NAME,
+  moved,
   newRoutine,
+  saveOrder,
   setUpAssistants,
   type Assistant,
 } from "../lib/assistants";
+import { api } from "../lib/api";
 import {
   buildSidebar,
   relativeTime,
@@ -727,27 +736,220 @@ function OtherGroup({
 // How many of a section's sessions wait for the user, as its header says.
 // One assistant (lib/assistants.ts): opening it shows its ongoing topic or
 // a new message for it; it unfolds to its sessions, newest first.
+// A small menu by a row's ⋯ button, kept inside the window.
+function PopMenu({
+  anchor,
+  onClose,
+  label,
+  children,
+}: {
+  anchor: DOMRect;
+  onClose: () => void;
+  label: string;
+  children: React.ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const close = useRef(onClose);
+  close.current = onClose;
+  const [pos, setPos] = useState({
+    top: anchor.bottom + 4,
+    left: anchor.right - 220,
+  });
+  useLayoutEffect(() => {
+    const h = ref.current?.offsetHeight ?? 0;
+    setPos({
+      top:
+        anchor.bottom + 4 + h > innerHeight - 8
+          ? Math.max(8, anchor.top - h - 4)
+          : anchor.bottom + 4,
+      left: Math.max(8, Math.min(anchor.right - 220, innerWidth - 228)),
+    });
+  }, [anchor]);
+  useEffect(() => {
+    const down = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as globalThis.Node)) close.current();
+    };
+    const key = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        close.current();
+      }
+    };
+    document.addEventListener("mousedown", down);
+    document.addEventListener("keydown", key);
+    ref.current?.querySelector("button")?.focus();
+    return () => {
+      document.removeEventListener("mousedown", down);
+      document.removeEventListener("keydown", key);
+    };
+  }, []);
+  return createPortal(
+    <div
+      ref={ref}
+      className="row-menu"
+      role="menu"
+      aria-label={label}
+      style={{ top: pos.top, left: pos.left }}
+    >
+      {children}
+    </div>,
+    document.body,
+  );
+}
+
+// Dragging an assistant onto another moves it there (lib/assistants.ts),
+// with pointer events: native drag and drop does not start from the row's
+// buttons in every browser, and touch needs a long press so scrolling still
+// works.
+type AssistantDrag = {
+  dragging: string;
+  over: string;
+  handlers: (dir: string) => React.HTMLAttributes<HTMLDivElement>;
+};
+
+function useAssistantDrag(onDrop: (dir: string, to: string) => void) {
+  const [state, setState] = useState({ dragging: "", over: "" });
+  const ref = useRef<{
+    dir: string;
+    id: number;
+    x: number;
+    y: number;
+    active: boolean;
+    timer?: number;
+    moved: boolean;
+  } | null>(null);
+  const end = () => {
+    const r = ref.current;
+    if (r?.timer) clearTimeout(r.timer);
+    ref.current = null;
+    setState({ dragging: "", over: "" });
+  };
+  const under = (x: number, y: number) =>
+    (
+      document
+        .elementFromPoint(x, y)
+        ?.closest("[data-assistant]") as HTMLElement | null
+    )?.dataset.assistant ?? "";
+  const handlers = (dir: string): React.HTMLAttributes<HTMLDivElement> => ({
+    onPointerDown: (e) => {
+      if (e.button !== 0 || (e.target as HTMLElement).closest(".side-actions"))
+        return;
+      const r = {
+        dir,
+        id: e.pointerId,
+        x: e.clientX,
+        y: e.clientY,
+        active: false,
+        moved: false,
+        timer: undefined as number | undefined,
+      };
+      ref.current = r;
+      if (e.pointerType === "touch") {
+        // A long press starts the drag; moving first scrolls.
+        r.timer = window.setTimeout(() => {
+          if (ref.current !== r || r.moved) return;
+          r.active = true;
+          setState({ dragging: dir, over: dir });
+        }, 350);
+      }
+    },
+    onPointerMove: (e) => {
+      const r = ref.current;
+      if (!r || r.id !== e.pointerId) return;
+      const far = Math.abs(e.clientY - r.y) + Math.abs(e.clientX - r.x) > 6;
+      if (!r.active) {
+        if (!far) return;
+        if (e.pointerType === "touch") {
+          r.moved = true;
+          return end();
+        }
+        r.active = true;
+        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+      }
+      e.preventDefault();
+      const over = under(e.clientX, e.clientY);
+      setState({ dragging: r.dir, over: over || r.dir });
+    },
+    onPointerUp: (e) => {
+      const r = ref.current;
+      if (!r || r.id !== e.pointerId) return;
+      if (r.active) {
+        const to = under(e.clientX, e.clientY);
+        if (to && to !== r.dir) onDrop(r.dir, to);
+        // The click that ends a drag opens nothing.
+        const stop = (c: MouseEvent) => {
+          c.stopPropagation();
+          c.preventDefault();
+        };
+        window.addEventListener("click", stop, { capture: true, once: true });
+        setTimeout(() => window.removeEventListener("click", stop, true), 0);
+      }
+      end();
+    },
+    onPointerCancel: end,
+  });
+  return { ...state, handlers };
+}
+
 function AssistantRow({
   assistant: a,
   nodes,
   actions,
   onOpen,
+  order,
+  drag,
 }: {
   assistant: Assistant;
   nodes: Node[];
   actions: Actions;
   onOpen: (dir: string) => void;
+  // Every assistant's folder, in order: for moving.
+  order: string[];
+  drag: AssistantDrag;
 }) {
   const [open, setOpen] = useState(false);
+  const [anchor, setAnchor] = useState<DOMRect | null>(null);
+  const menuKey = "assistant:" + a.dir;
   const latest = nodes[0]?.session;
   const waiting = nodes.find((n) => needsYou(n))?.session;
   const shown = waiting ?? latest;
   const selected = !!actions.activeId && a.current === actions.activeId;
+  const movable = a.dir !== "main";
+  const at = order.indexOf(a.dir);
+  const close = () => actions.setMenu(null);
+  const item = (icon: React.ReactNode, label: string, run: () => void) => (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={() => {
+        close();
+        run();
+      }}
+    >
+      {icon}
+      <span>{label}</span>
+    </button>
+  );
+  const move = (to: string) => void saveOrder(moved(order, a.dir, to));
+  const toggle = (enabled: boolean) =>
+    void api(`assistants/${a.dir}`, "PATCH", { enabled }).then(
+      assistantsChanged,
+    );
   return (
     <>
       <div
-        className={"session-row assistant-row" + (selected ? " selected" : "")}
+        className={
+          "session-row assistant-row" +
+          (selected ? " selected" : "") +
+          (a.enabled === false ? " assistant-off" : "") +
+          (drag.over === a.dir && drag.dragging && drag.dragging !== a.dir
+            ? " drop-target"
+            : "")
+        }
         style={{ paddingLeft: 6 }}
+        data-assistant={a.dir}
+        data-movable={movable || undefined}
+        {...(movable ? drag.handlers(a.dir) : {})}
       >
         {nodes.length > 0 ? (
           <button
@@ -770,7 +972,9 @@ function AssistantRow({
           title={
             a.error
               ? `${a.dir}/assistant.toml: ${a.error}`
-              : `${a.name} · ${a.sessions === "continuous" ? "one ongoing conversation" : "a new session for each request"}`
+              : a.enabled === false
+                ? `${a.name} · turned off`
+                : `${a.name} · ${a.sessions === "continuous" ? "one ongoing conversation" : "a new session for each request"}`
           }
           onClick={() => onOpen(a.dir)}
         >
@@ -782,8 +986,12 @@ function AssistantRow({
           <span className="session-name">
             <Highlight text={a.name} query={actions.query} />
           </span>
-          {shown &&
-          (statusLabel[shown.status] || shown.attention || shown.background) ? (
+          {a.enabled === false ? (
+            <span className="session-time">off</span>
+          ) : shown &&
+            (statusLabel[shown.status] ||
+              shown.attention ||
+              shown.background) ? (
             <StatusIcon
               status={shown.status}
               attention={shown.attention}
@@ -799,7 +1007,62 @@ function AssistantRow({
             </span>
           )}
         </button>
+        <div className="side-actions">
+          <button
+            type="button"
+            className="row-more"
+            aria-label={`${a.name} actions`}
+            aria-haspopup="menu"
+            aria-expanded={actions.menu === menuKey}
+            onClick={(e) => {
+              setAnchor(e.currentTarget.getBoundingClientRect());
+              actions.setMenu(actions.menu === menuKey ? null : menuKey);
+            }}
+          >
+            <MoreHorizontal size={14} />
+          </button>
+        </div>
       </div>
+      {actions.menu === menuKey && anchor && (
+        <PopMenu anchor={anchor} onClose={close} label={`${a.name} actions`}>
+          {a.enabled !== false &&
+            !a.error &&
+            item(<FolderOpen size={14} />, "Open", () => onOpen(a.dir))}
+          {a.enabled !== false &&
+            a.sessions === "continuous" &&
+            item(
+              <MessageSquarePlus size={14} />,
+              "New topic",
+              () =>
+                void api(`assistants/${a.dir}/topic`, "POST").then(() =>
+                  onOpen(a.dir),
+                ),
+            )}
+          {a.enabled !== false &&
+            !a.error &&
+            item(<AlarmClock size={14} />, "New routine for it…", () =>
+              newRoutine(a.dir),
+            )}
+          {movable && (
+            <>
+              <div className="row-menu-sep" />
+              {at > 1 &&
+                item(<ArrowUp size={14} />, "Move up", () =>
+                  move(order[at - 1]),
+                )}
+              {at >= 0 &&
+                at < order.length - 1 &&
+                item(<ArrowDown size={14} />, "Move down", () =>
+                  move(order[at + 1]),
+                )}
+              <div className="row-menu-sep" />
+              {a.enabled === false
+                ? item(<Power size={14} />, "Turn on", () => toggle(true))
+                : item(<PowerOff size={14} />, "Turn off", () => toggle(false))}
+            </>
+          )}
+        </PopMenu>
+      )}
       {open &&
         nodes
           .slice(0, 12)
@@ -909,6 +1172,13 @@ export function Sidebar({
   const [showHidden, setShowHidden] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [menu, setMenu] = useState<string | null>(null);
+  // Assistants: those turned off are under Show more; dragging reorders.
+  const [showOff, setShowOff] = useState(false);
+  const assistantOrder = assistants.map((a) => a.dir);
+  const assistantDrag: AssistantDrag = useAssistantDrag(
+    (dir, to) => void saveOrder(moved(assistantOrder, dir, to)),
+  );
+  const offCount = assistants.filter((a) => a.enabled === false).length;
   const [editing, setEditing] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const search = useRef<HTMLInputElement>(null);
@@ -1012,7 +1282,7 @@ export function Sidebar({
           aria-label="New routine"
           title="New routine"
           className="brand-routine"
-          onClick={newRoutine}
+          onClick={() => newRoutine()}
         >
           <AlarmClock size={16} />
         </Button>
@@ -1080,19 +1350,34 @@ export function Sidebar({
           <Section
             id="assistants"
             title="Assistants"
-            count={assistants.length}
+            count={assistants.length - offCount}
             badge={needsYouBadge(model.assistants)}
             forceOpen={false}
           >
-            {assistants.map((a) => (
-              <AssistantRow
-                key={a.dir}
-                assistant={a}
-                nodes={model.assistants.filter((n) => n.session.cwd === a.path)}
-                actions={actions}
-                onOpen={onOpenAssistant}
-              />
-            ))}
+            {assistants
+              .filter((a) => a.enabled !== false || showOff)
+              .map((a) => (
+                <AssistantRow
+                  key={a.dir}
+                  assistant={a}
+                  nodes={model.assistants.filter(
+                    (n) => n.session.cwd === a.path,
+                  )}
+                  actions={actions}
+                  onOpen={onOpenAssistant}
+                  order={assistantOrder}
+                  drag={assistantDrag}
+                />
+              ))}
+            {offCount > 0 && (
+              <button
+                type="button"
+                className="show-more"
+                onClick={() => setShowOff(!showOff)}
+              >
+                {showOff ? "Show less" : `Show ${offCount} more (off)`}
+              </button>
+            )}
           </Section>
         )}
         {model.pinned.length > 0 && (

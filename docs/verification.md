@@ -1210,3 +1210,17 @@ These are maintainer notes on how each feature of Agent Workbench was verified, 
     - The hook and `.gitignore` lines were installed.
     - Calendar's private iCal address moved to a secret file, and `caldav_url` with a user or password is refused.
     - Its first commit was refused for a test's fake `me:password@` URL; the test now builds it from parts.
+- Order, on/off, grouped menu (same day):
+  - Go `TestAssistantsOrderAndTurningOff`:
+    - Moss is first, then the dragged order, then the rest by folder. A bad folder in the order is refused.
+    - Turning an assistant off writes `enabled = false` after its agent line. Its routine waits and cannot be run, and a message to it is refused.
+    - Moss cannot be turned off. Turning back on works.
+    - An assistant without an agent line gets the key before its first table.
+  - Web: `moved()` tests; 375 Vitest tests and typecheck passed.
+  - Browser (isolated workbench, Playwright):
+    - Moss is first; a turned-off assistant shows under "Show 1 more (off)".
+    - Dragging Code Reviewer onto Calendar moved it above. Native drag and drop did not start from the row's buttons, so dragging is now done with pointer events.
+    - The menu offers Open, New routine for it, Move down and Turn off, but no Move up for the row just under Moss. Moss's menu has no move or turn off.
+    - Turn on brings an assistant back, and Show more goes away.
+    - The ⋯ menu shows "This conversation" (with its status) above "Workbench".
+    - No page errors.

@@ -227,7 +227,11 @@ function AssistantItem({
   const [naming, setNaming] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const update = async (change: { name?: string; agent?: Agent }) => {
+  const update = async (change: {
+    name?: string;
+    agent?: Agent;
+    enabled?: boolean;
+  }) => {
     setBusy(true);
     setError("");
     try {
@@ -318,6 +322,19 @@ function AssistantItem({
             value={a.agent}
             onChange={(agent) => !busy && void update({ agent })}
           />
+        )}
+        {a.dir !== "main" && !a.error && (
+          <button
+            type="button"
+            role="switch"
+            aria-checked={a.enabled !== false}
+            aria-label={a.enabled === false ? "Turn on" : "Turn off"}
+            className="routine-switch"
+            disabled={busy}
+            onClick={() => void update({ enabled: a.enabled === false })}
+          >
+            {a.enabled === false ? "Off" : "On"}
+          </button>
         )}
         <span className="routine-meta">
           <code>{a.dir}/</code>

@@ -43,6 +43,7 @@ import {
   changesChanged,
   latestFor,
   MAIN_STARTERS,
+  newRoutine,
   NEW_ROUTINE_EVENT,
   OPEN_SESSION_EVENT,
   SET_UP_EVENT,
@@ -637,9 +638,6 @@ export default function App() {
     return () => window.removeEventListener(SET_UP_EVENT, ask);
   }, []);
   // Settings and quick starts open a session or the routine dialog.
-  const hasAssistants = assistantList.assistants.some(
-    (a) => a.dir === "main" && !a.error,
-  );
   useEffect(() => {
     // (Event here is the workbench's own type; this one is the DOM's.)
     const show = ((e: CustomEvent<string>) => {
@@ -647,14 +645,20 @@ export default function App() {
       setComposing(null);
       selectSession(e.detail);
     }) as EventListener;
-    const routine = () => {
+    // Aimed at the assistant named (Moss by default), when it is there.
+    const routine = ((e: CustomEvent<string>) => {
+      const dir = e.detail || "main";
       const d = newDraft(undefined, recent[0]?.path ?? "");
-      if (hasAssistants) {
+      if (
+        assistantList.assistants.some(
+          (a) => a.dir === dir && !a.error && a.enabled !== false,
+        )
+      ) {
         d.target = "assistant";
-        d.assistant = "main";
+        d.assistant = dir;
       }
       setRoutineDraft(d);
-    };
+    }) as EventListener;
     window.addEventListener(OPEN_SESSION_EVENT, show);
     window.addEventListener(NEW_ROUTINE_EVENT, routine);
     return () => {
@@ -1312,118 +1316,157 @@ export default function App() {
                 <MoreHorizontal size={18} />
               </summary>
               <div className="conversation-menu-content">
-                <Appearance />
-                <NotifyToggle />
-                <SuggestToggle />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={(e) => {
-                    e.currentTarget.closest("details")?.removeAttribute("open");
-                    openSettings();
-                  }}
-                >
-                  <Settings size={14} />
-                  Settings
-                </Button>
-                {current && !current.readOnly && !current.archived && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={(e) => {
-                      e.currentTarget
-                        .closest("details")
-                        ?.removeAttribute("open");
-                      scheduleFor(current);
-                    }}
+                {/* What applies to the open conversation, then the
+                    workbench's own settings (grouped). */}
+                {current && !composing && (
+                  <div
+                    className="menu-group"
+                    role="group"
+                    aria-label="This conversation"
                   >
-                    <AlarmClock size={14} />
-                    Schedule message…
-                  </Button>
-                )}
-                {ongoing && !composing && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={(e) => {
-                      e.currentTarget
-                        .closest("details")
-                        ?.removeAttribute("open");
-                      void api(`assistants/${ongoing.dir}/topic`, "POST")
-                        .then(() => openAssistant(ongoing.dir))
-                        .catch(catchError);
-                    }}
-                  >
-                    <MessageSquarePlus size={14} />
-                    New topic
-                  </Button>
-                )}
-                {topicOf?.memory === "wiki" && current && !composing && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={(e) => {
-                      e.currentTarget
-                        .closest("details")
-                        ?.removeAttribute("open");
-                      void api<{ started: boolean }>(
-                        `assistants/${topicOf.dir}/memory`,
-                        "POST",
-                      )
-                        .then((o) =>
-                          setMemoryNote(
-                            o.started
-                              ? "Updating memory from this conversation…"
-                              : "Nothing new to remember since the last update.",
-                          ),
-                        )
-                        .catch(catchError);
-                    }}
-                  >
-                    <BookOpen size={14} />
-                    Update memory now
-                  </Button>
-                )}
-                {current && (
-                  <>
-                    <span className="menu-status">
-                      {labels[current.status] ?? current.status}
-                    </span>
-                    {[
-                      { label: "Resume engine", action: "resume", icon: Play },
-                      {
-                        label: "Interrupt turn",
-                        action: "interrupt",
-                        icon: Square,
-                      },
-                      { label: "Sleep", action: "sleep", icon: Moon },
-                      { label: "End session", action: "stop", icon: X },
-                    ].map(({ label, action, icon: Icon }) => (
+                    <div className="menu-group-title">
+                      <span>This conversation</span>
+                      <span className="menu-status">
+                        {labels[current.status] ?? current.status}
+                      </span>
+                    </div>
+                    {current && !current.readOnly && !current.archived && (
                       <Button
-                        key={action}
                         variant="ghost"
                         size="sm"
-                        disabled={busy || current.readOnly || current.archived}
                         onClick={(e) => {
                           e.currentTarget
                             .closest("details")
                             ?.removeAttribute("open");
-                          // Sleeping would stop the background work: ask.
-                          if (
-                            action === "sleep" &&
-                            (current.background ?? 0) > 0
-                          )
-                            return setSleepAsk(true);
-                          void act(action).catch(() => {});
+                          scheduleFor(current);
                         }}
                       >
-                        <Icon size={14} />
-                        {label}
+                        <AlarmClock size={14} />
+                        Schedule message…
                       </Button>
-                    ))}
+                    )}
+                    {ongoing && !composing && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                          e.currentTarget
+                            .closest("details")
+                            ?.removeAttribute("open");
+                          void api(`assistants/${ongoing.dir}/topic`, "POST")
+                            .then(() => openAssistant(ongoing.dir))
+                            .catch(catchError);
+                        }}
+                      >
+                        <MessageSquarePlus size={14} />
+                        New topic
+                      </Button>
+                    )}
+                    {topicOf?.memory === "wiki" && current && !composing && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                          e.currentTarget
+                            .closest("details")
+                            ?.removeAttribute("open");
+                          void api<{ started: boolean }>(
+                            `assistants/${topicOf.dir}/memory`,
+                            "POST",
+                          )
+                            .then((o) =>
+                              setMemoryNote(
+                                o.started
+                                  ? "Updating memory from this conversation…"
+                                  : "Nothing new to remember since the last update.",
+                              ),
+                            )
+                            .catch(catchError);
+                        }}
+                      >
+                        <BookOpen size={14} />
+                        Update memory now
+                      </Button>
+                    )}
+                    {current && (
+                      <>
+                        {[
+                          {
+                            label: "Resume engine",
+                            action: "resume",
+                            icon: Play,
+                          },
+                          {
+                            label: "Interrupt turn",
+                            action: "interrupt",
+                            icon: Square,
+                          },
+                          { label: "Sleep", action: "sleep", icon: Moon },
+                          { label: "End session", action: "stop", icon: X },
+                        ].map(({ label, action, icon: Icon }) => (
+                          <Button
+                            key={action}
+                            variant="ghost"
+                            size="sm"
+                            disabled={
+                              busy || current.readOnly || current.archived
+                            }
+                            onClick={(e) => {
+                              e.currentTarget
+                                .closest("details")
+                                ?.removeAttribute("open");
+                              // Sleeping would stop the background work: ask.
+                              if (
+                                action === "sleep" &&
+                                (current.background ?? 0) > 0
+                              )
+                                return setSleepAsk(true);
+                              void act(action).catch(() => {});
+                            }}
+                          >
+                            <Icon size={14} />
+                            {label}
+                          </Button>
+                        ))}
+                      </>
+                    )}
                     <span className="menu-path">{current.cwd}</span>
-                  </>
+                  </div>
                 )}
+                <div className="menu-group" role="group" aria-label="Workbench">
+                  <div className="menu-group-title">
+                    <span>Workbench</span>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={(e) => {
+                      e.currentTarget
+                        .closest("details")
+                        ?.removeAttribute("open");
+                      newRoutine();
+                    }}
+                  >
+                    <AlarmClock size={14} />
+                    New routine…
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={(e) => {
+                      e.currentTarget
+                        .closest("details")
+                        ?.removeAttribute("open");
+                      openSettings();
+                    }}
+                  >
+                    <Settings size={14} />
+                    Settings
+                  </Button>
+                  <Appearance />
+                  <NotifyToggle />
+                  <SuggestToggle />
+                </div>
               </div>
             </details>
             {current &&

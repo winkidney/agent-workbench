@@ -11,6 +11,8 @@ export type Assistant = {
   sessions: "per-task" | "continuous" | "";
   memory: "state" | "wiki" | "";
   routines: number;
+  // Turned on; a turned-off one is under Show more and its routines wait.
+  enabled: boolean;
   error?: string;
   current?: string;
   previous?: string[];
@@ -53,8 +55,31 @@ export const openSessionLater = (id: string) =>
 // Asks App.tsx to open the routine dialog, aimed at the personal assistant
 // when there is one.
 export const NEW_ROUTINE_EVENT = "workbench:new-routine";
-export const newRoutine = () =>
-  window.dispatchEvent(new CustomEvent(NEW_ROUTINE_EVENT));
+export const newRoutine = (assistant = "main") =>
+  window.dispatchEvent(
+    new CustomEvent(NEW_ROUTINE_EVENT, { detail: assistant }),
+  );
+
+// The folders in their new order after moving one to where another is
+// (before it, or after when moving down); the personal assistant stays first.
+export function moved(dirs: string[], dir: string, to: string): string[] {
+  if (dir === to || dir === "main" || !dirs.includes(dir)) return dirs;
+  const from = dirs.indexOf(dir);
+  const rest = dirs.filter((d) => d !== dir);
+  let at = rest.indexOf(to);
+  if (at < 0) return dirs;
+  if (from < dirs.indexOf(to)) at += 1;
+  rest.splice(at, 0, dir);
+  return ["main", ...rest.filter((d) => d !== "main")].filter(
+    (d) => d !== "main" || dirs.includes("main"),
+  );
+}
+
+// Keeps the order the user chose (PATCH settings).
+export const saveOrder = (dirs: string[]) =>
+  api("assistants/settings", "PATCH", {
+    order: dirs.filter((d) => d !== "main"),
+  }).then(assistantsChanged);
 
 // What opening an assistant shows: its ongoing topic, or a new message
 // (fresh), with the session it continues from.

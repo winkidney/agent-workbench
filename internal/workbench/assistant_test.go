@@ -278,7 +278,7 @@ func TestAssistantsAreRenamedAndSwitchAgents(t *testing.T) {
 	before, _ := os.ReadFile(path)
 	m.saveTopic("main", assistantState{Current: "claude:a"})
 
-	a, err := m.UpdateAssistant("main", "Mo", "")
+	a, err := m.UpdateAssistant("main", "Mo", "", nil)
 	if err != nil || a.Name != "Mo" || a.Agent != "claude" {
 		t.Fatalf("rename: %+v %v", a, err)
 	}
@@ -291,7 +291,7 @@ func TestAssistantsAreRenamedAndSwitchAgents(t *testing.T) {
 		t.Fatalf("a rename started a new topic: %+v", st)
 	}
 	// Switching agent starts a new topic: the ongoing one is the old agent's.
-	if a, err = m.UpdateAssistant("main", "", "codex"); err != nil || a.Agent != "codex" || a.Name != "Mo" {
+	if a, err = m.UpdateAssistant("main", "", "codex", nil); err != nil || a.Agent != "codex" || a.Name != "Mo" {
 		t.Fatalf("switch: %+v %v", a, err)
 	}
 	if st := m.topicState("main"); st.Current != "" || st.Previous[len(st.Previous)-1] != "claude:a" {
@@ -301,20 +301,25 @@ func TestAssistantsAreRenamedAndSwitchAgents(t *testing.T) {
 		t.Fatalf("routine: %+v", v)
 	}
 	for _, bad := range [][2]string{{"", "gpt"}, {"two\nlines", ""}, {strings.Repeat("x", 61), ""}} {
-		if _, err := m.UpdateAssistant("main", bad[0], bad[1]); err == nil {
+		if _, err := m.UpdateAssistant("main", bad[0], bad[1], nil); err == nil {
 			t.Errorf("accepted %q", bad)
 		}
 	}
-	if _, err := m.UpdateAssistant("nobody", "x", ""); err == nil {
+	if _, err := m.UpdateAssistant("nobody", "x", "", nil); err == nil {
 		t.Fatal("an unknown assistant was accepted")
 	}
-	// A file without a top-level name line is refused, not broken.
+	// A name in single quotes is a name too; the result is checked TOML.
 	writeToml(t, filepath.Join(root, "odd", "assistant.toml"), "agent = \"claude\"\nname = 'Odd'\n")
-	if _, err := m.UpdateAssistant("odd", "Even", ""); err == nil {
+	if a, err := m.UpdateAssistant("odd", "Even", "", nil); err != nil || a.Name != "Even" {
+		t.Fatalf("single quotes: %+v %v", a, err)
+	}
+	// A file without a top-level name line is refused, not broken.
+	writeToml(t, filepath.Join(root, "odder", "assistant.toml"), "agent = \"claude\"\n[x]\nname = 'Odd'\n")
+	if _, err := m.UpdateAssistant("odder", "Even", "", nil); err == nil {
 		t.Fatal("changed a name it could not find")
 	}
 	if _, err := exec.LookPath("git"); err == nil {
-		if out, _ := gitRun(root, "log", "--format=%s", "-2"); out != "main: switch to codex\nmain: rename to Mo\n" {
+		if out, _ := gitRun(root, "log", "--format=%s", "-3"); out != "odd: rename to Even\nmain: switch to codex\nmain: rename to Mo\n" {
 			t.Fatalf("log:\n%s", out)
 		}
 	}
@@ -349,5 +354,77 @@ func TestOlderRepositoriesGetNewSharedFiles(t *testing.T) {
 		if !strings.HasPrefix(log1, "chore: add shared files from Agent Workbench\n") || log1 != log2 {
 			t.Fatalf("log:\n%s\nthen:\n%s", log1, log2)
 		}
+	}
+}
+
+func TestAssistantsOrderAndTurningOff(t *testing.T) {
+	m, _ := fixture(t)
+	root := t.TempDir()
+	_ = m.store.setting("assistants", assistantsSetting{Root: root})
+	for _, d := range []string{"calendar", "main", "zeta", "code-reviewer"} {
+		body := "name = \"" + d + "\"\nagent = \"claude\"\n"
+		if d == "calendar" {
+			body += "\n[[routines]]\nname = \"Agenda\"\nevery = \"1h\"\nmessage = \"x\"\n"
+		}
+		writeToml(t, filepath.Join(root, d, "assistant.toml"), body)
+	}
+	dirs := func() string {
+		var out []string
+		for _, a := range m.Assistants() {
+			out = append(out, a.Dir)
+		}
+		return strings.Join(out, ",")
+	}
+	// Moss first, then by folder.
+	if got := dirs(); got != "main,calendar,code-reviewer,zeta" {
+		t.Fatalf("order: %s", got)
+	}
+	// The dragged order; Moss stays first whatever it says.
+	if err := m.SetAssistantOrder([]string{"zeta", "main", "calendar"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := dirs(); got != "main,zeta,calendar,code-reviewer" {
+		t.Fatalf("dragged: %s", got)
+	}
+	if err := m.SetAssistantOrder([]string{"../x"}); err == nil {
+		t.Fatal("a bad folder was accepted")
+	}
+
+	// Turning off writes enabled = false after the agent line, pauses its
+	// routines and refuses messages; Moss cannot be turned off.
+	off, on := false, true
+	a, err := m.UpdateAssistant("calendar", "", "", &off)
+	if err != nil || a.Enabled {
+		t.Fatalf("off: %+v %v", a, err)
+	}
+	b, _ := os.ReadFile(filepath.Join(root, "calendar", "assistant.toml"))
+	if !strings.Contains(string(b), "agent = \"claude\"\nenabled = false\n") || !strings.Contains(string(b), "[[routines]]\nname = \"Agenda\"") {
+		t.Fatalf("assistant.toml:\n%s", b)
+	}
+	list, _ := m.Routines()
+	if len(list) != 1 || !list[0].AssistantOff || list[0].Next != "" {
+		t.Fatalf("routine: %+v", list)
+	}
+	if _, err := m.RunRoutine(list[0].ID); err == nil {
+		t.Fatal("ran a routine of an assistant that is off")
+	}
+	if _, _, err := m.AssistantMessage("calendar", "hi", nil, ""); err == nil || !strings.Contains(err.Error(), "turned off") {
+		t.Fatalf("message: %v", err)
+	}
+	if _, err := m.UpdateAssistant("main", "", "", &off); err == nil {
+		t.Fatal("turned Moss off")
+	}
+	if a, err := m.UpdateAssistant("calendar", "", "", &on); err != nil || !a.Enabled {
+		t.Fatalf("on: %+v %v", a, err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(root, "calendar", "assistant.toml")); !strings.Contains(string(b), "enabled = true\n") {
+		t.Fatalf("back on:\n%s", b)
+	}
+	if list, _ := m.Routines(); list[0].AssistantOff {
+		t.Fatal("still paused")
+	}
+	// A file without an agent line gets the key before its first table.
+	if got := insertTopLevel("name = \"x\"\n\n[[routines]]\nname = \"r\"\n", "enabled", "false"); got != "name = \"x\"\n\nenabled = false\n\n[[routines]]\nname = \"r\"\n" {
+		t.Fatalf("insert: %q", got)
 	}
 }
