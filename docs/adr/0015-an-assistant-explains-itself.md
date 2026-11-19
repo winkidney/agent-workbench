@@ -47,6 +47,14 @@ Opening a new assistant showed a name and an empty box. Nothing said what the as
 
      The assistant checks with `secret.py check`, which never prints a value. It never asks for, repeats or stores a secret, code or callback URL in the conversation. `shared/tools/secret.py` is a shared file, so older repositories get it.
 
+6. **Files are read on reload only.** `assistant.toml` files are read at start and again only when something says they changed:
+   - a page load or refresh (`POST /api/assistants/reload`);
+   - a change made in the page;
+   - `assistant new`, or `assistant reload` (which assistants run after editing their own file);
+   - **Reload assistants** in Moss's menu or in Settings → Assistants.
+
+   This replaces checking every file's size and time on every scheduler wake and API call (ADR 0014's "within a minute").
+
 ## Consequences
 
 - An assistant tells the user what to do with it, and its card is a plain file the user or the assistant can change.

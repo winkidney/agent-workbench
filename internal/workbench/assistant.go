@@ -372,24 +372,21 @@ func (m *Manager) SetAssistantOrder(order []string) error {
 
 func (m *Manager) Assistants() []Assistant {
 	root := m.assistantsRoot()
-	files := []string{}
-	if root != "" {
-		files = assistantFiles(root)
-	}
-	var sig strings.Builder
-	sig.WriteString(root)
-	for _, p := range files {
-		if info, err := os.Stat(p); err == nil {
-			fmt.Fprintf(&sig, "\x00%s\x00%d\x00%d", p, info.Size(), info.ModTime().UnixNano())
-		}
-	}
+	// The files are read once, and again only when something says they
+	// changed (assistantsChanged: the page, `assistant reload`, Reload
+	// assistants): no polling the disk (ADR 0015).
+	sig := "loaded:" + root
 	m.as.mu.Lock()
-	if m.as.seen == sig.String() && m.as.list != nil {
+	if m.as.seen == sig && m.as.list != nil {
 		list := m.withTopics(m.as.list)
 		m.as.mu.Unlock()
 		return list
 	}
 	m.as.mu.Unlock()
+	files := []string{}
+	if root != "" {
+		files = assistantFiles(root)
+	}
 
 	list := []Assistant{}
 	for _, p := range files {
@@ -410,7 +407,7 @@ func (m *Manager) Assistants() []Assistant {
 	m.sortAssistants(list)
 	m.syncFileRoutines(list)
 	m.as.mu.Lock()
-	m.as.seen, m.as.list = sig.String(), list
+	m.as.seen, m.as.list = sig, list
 	out := m.withTopics(list)
 	m.as.mu.Unlock()
 	return out
@@ -1342,6 +1339,11 @@ func (s *Server) assistantsAPI(w http.ResponseWriter, r *http.Request, rest stri
 			return
 		}
 		writeJSON(w, map[string]any{"session": s.ID})
+	case rest == "reload" && r.Method == "POST":
+		// Read the assistant.toml files again (they are not watched).
+		m.assistantsChanged()
+		m.rt.poke()
+		writeJSON(w, map[string]any{"root": m.assistantsRoot(), "assistants": m.Assistants()})
 	case rest == "changes" && r.Method == "GET":
 		list, err := m.AssistantChanges()
 		if err != nil {

@@ -19,7 +19,7 @@ import {
 import type { ViewItem } from "../transcript/media";
 import { MAIN_STARTERS, type Assistant } from "../lib/assistants";
 import { QuickStart } from "../assistants/QuickStart";
-import { AssistantHome } from "../assistants/AssistantHome";
+import { AssistantHome } from "../assistants/lazy";
 
 type Agent = "claude" | "codex";
 const STORE = "workbench-new";

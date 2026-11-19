@@ -34,7 +34,6 @@ import { Appearance } from "./components/Appearance";
 import { NotifyToggle } from "./components/NotifyToggle";
 import { SuggestToggle } from "./components/SuggestToggle";
 import { notifyChange, notifyRun, useAttention } from "./attention";
-import { RoutineDialog } from "./routines/RoutineDialog";
 import { newDraft, type Draft, type RoutineRun } from "./routines/when";
 import { recentProjects } from "./newsession/recent";
 import {
@@ -54,10 +53,13 @@ import {
   type AssistantChange,
   type Opened,
 } from "./lib/assistants";
-import { ChangeBanner } from "./assistants/Changes";
-import { SetUpDialog } from "./assistants/SetUpDialog";
-import { AssistantHome } from "./assistants/AssistantHome";
-import { AssistantSettings } from "./assistants/AssistantSettings";
+import {
+  AssistantHome,
+  AssistantSettings,
+  ChangeBanner,
+  RoutineDialog,
+  SetUpDialog,
+} from "./assistants/lazy";
 import {
   Dialog as AboutDialog,
   DialogContent as AboutContent,

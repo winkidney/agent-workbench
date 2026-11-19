@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Loader2, Pencil, Plus } from "lucide-react";
 import { api } from "../../lib/api";
-import { ChangeList } from "../../assistants/Changes";
+import { ChangeList } from "../../assistants/lazy";
 import {
   assistantsChanged,
   folderFor,
@@ -9,6 +9,7 @@ import {
   MAIN_NAME,
   openAssistantSettings,
   openSessionLater,
+  reloadAssistants,
   setUpAssistants,
   useChanges,
   type Assistant,
@@ -107,6 +108,16 @@ export function AssistantsTab({
           <Button variant="outline" size="sm" onClick={() => setAdding(true)}>
             <Plus size={14} />
             New assistant
+          </Button>
+        )}
+        {!adding && (
+          <Button
+            variant="ghost"
+            size="sm"
+            title="Read the assistant.toml files again, after editing them by hand"
+            onClick={() => void reloadAssistants()}
+          >
+            Reload assistants
           </Button>
         )}
         {adding && (

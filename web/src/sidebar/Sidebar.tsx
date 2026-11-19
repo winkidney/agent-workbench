@@ -16,6 +16,7 @@ import {
   Power,
   PowerOff,
   Check,
+  RefreshCw,
   Settings,
   Wrench,
   TriangleAlert,
@@ -50,6 +51,7 @@ import {
   moved,
   newRoutine,
   openAssistantSettings,
+  reloadAssistants,
   saveOrder,
   setUpAssistant,
   setUpAssistants,
@@ -1066,6 +1068,12 @@ function AssistantRow({
           {!a.error &&
             item(<Settings size={14} />, "Settings…", () =>
               openAssistantSettings(a.dir),
+            )}
+          {a.dir === "main" &&
+            item(
+              <RefreshCw size={14} />,
+              "Reload assistants",
+              () => void reloadAssistants(),
             )}
           {!a.error && (
             <>

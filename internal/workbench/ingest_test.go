@@ -257,6 +257,7 @@ command = "echo 'From: a@example.com Subject: hi'"
 message = "Sort these into state/inbox.md."
 background = true
 `)
+	m.assistantsChanged()
 	var got string
 	m.as.background = func(a Assistant, prompt string) (string, error) {
 		got = prompt
@@ -305,6 +306,7 @@ func TestTopicFollowsTheSessionsNativeID(t *testing.T) {
 	root := t.TempDir()
 	_ = m.store.setting("assistants", assistantsSetting{Root: root})
 	writeToml(t, filepath.Join(root, "main", "assistant.toml"), "name = \"A\"\nagent = \"claude\"\nsessions = \"continuous\"")
+	m.assistantsChanged()
 	m.saveTopic("main", assistantState{Current: "tok", Previous: []string{"old", "tok"}})
 	m.topicMoved("tok", "claude:n")
 	if st := m.topicState("main"); st.Current != "claude:n" || st.Previous[1] != "claude:n" || st.Previous[0] != "old" {

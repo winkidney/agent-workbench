@@ -1,4 +1,5 @@
-# {{.Name}}: settings Agent Workbench reads. Changes apply within a minute.
+# {{.Name}}: settings Agent Workbench reads. After editing, run
+# `agent-workbench assistant reload` (or Reload assistants in Moss's menu).
 name = {{printf "%q" .Name}}
 # claude or codex
 agent = {{printf "%q" .Agent}}

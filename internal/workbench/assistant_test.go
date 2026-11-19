@@ -114,7 +114,8 @@ func TestAssistantRoutinesFollowTheirFile(t *testing.T) {
 	_ = m.store.setting("assistants", assistantsSetting{Root: root})
 	path := filepath.Join(root, "mail", "assistant.toml")
 	writeToml(t, path, "name = \"Mail\"\nagent = \"codex\"\n[[routines]]\nname = \"Fetch\"\nevery = \"30m\"\ncommand = \"uv run tools/fetch.py\"\nmessage = \"Sort these\"\n[[routines]]\nname = \"Digest\"\ndaily = \"18:00\"\nmessage = \"Summarize the day\"")
-	m.Assistants()
+	m.assistantsChanged()
+	m.assistantsChanged()
 	byName := func() map[string]Routine {
 		list, _ := m.store.routines()
 		out := map[string]Routine{}
@@ -141,13 +142,15 @@ func TestAssistantRoutinesFollowTheirFile(t *testing.T) {
 	// An edit keeps the switch and the id; a routine left out goes.
 	time.Sleep(10 * time.Millisecond)
 	writeToml(t, path, "name = \"Mail\"\nagent = \"codex\"\n[[routines]]\nname = \"Fetch\"\nevery = \"15m\"\ncommand = \"uv run tools/fetch.py --all\"\nmessage = \"Sort these\"")
-	m.Assistants()
+	m.assistantsChanged()
+	m.assistantsChanged()
 	got = byName()
 	if len(got) != 1 || got["Fetch"].ID != fetch.ID || got["Fetch"].Enabled || got["Fetch"].When.Minutes != 15 {
 		t.Fatalf("after the edit: %+v", got)
 	}
 	// A broken file keeps its routines until it is fixed.
 	writeToml(t, path, "name = \"Mail\"\nagent = \"nobody\"")
+	m.assistantsChanged()
 	if list := m.Assistants(); len(list) != 1 || list[0].Error == "" {
 		t.Fatalf("broken file: %+v", list)
 	}
@@ -156,7 +159,7 @@ func TestAssistantRoutinesFollowTheirFile(t *testing.T) {
 	}
 	// No root: no file routines.
 	_ = m.store.setting("assistants", assistantsSetting{})
-	m.Assistants()
+	m.assistantsChanged()
 	if len(byName()) != 0 {
 		t.Fatal("file routines kept without their files")
 	}
@@ -167,6 +170,7 @@ func TestContinuousAssistantStartsNewTopics(t *testing.T) {
 	root := t.TempDir()
 	_ = m.store.setting("assistants", assistantsSetting{Root: root})
 	writeToml(t, filepath.Join(root, "main", "assistant.toml"), "name = \"Assistant\"\nagent = \"claude\"\nsessions = \"continuous\"\nmemory = \"wiki\"")
+	m.assistantsChanged()
 	// Starting a topic ingests the last one in the background, which reads
 	// the session too.
 	var mu sync.Mutex
@@ -310,11 +314,13 @@ func TestAssistantsAreRenamedAndSwitchAgents(t *testing.T) {
 	}
 	// A name in single quotes is a name too; the result is checked TOML.
 	writeToml(t, filepath.Join(root, "odd", "assistant.toml"), "agent = \"claude\"\nname = 'Odd'\n")
+	m.assistantsChanged()
 	if a, err := m.UpdateAssistant("odd", "Even", "", nil); err != nil || a.Name != "Even" {
 		t.Fatalf("single quotes: %+v %v", a, err)
 	}
 	// A file without a top-level name line is refused, not broken.
 	writeToml(t, filepath.Join(root, "odder", "assistant.toml"), "agent = \"claude\"\n[x]\nname = 'Odd'\n")
+	m.assistantsChanged()
 	if _, err := m.UpdateAssistant("odder", "Even", "", nil); err == nil {
 		t.Fatal("changed a name it could not find")
 	}
@@ -367,6 +373,7 @@ func TestAssistantsOrderAndTurningOff(t *testing.T) {
 			body += "\n[[routines]]\nname = \"Agenda\"\nevery = \"1h\"\nmessage = \"x\"\n"
 		}
 		writeToml(t, filepath.Join(root, d, "assistant.toml"), body)
+		m.assistantsChanged()
 	}
 	dirs := func() string {
 		var out []string
@@ -456,6 +463,7 @@ func TestAssistantsDescribeThemselves(t *testing.T) {
 	}
 	// Missing keys are added; bad values are refused and leave the file.
 	writeToml(t, filepath.Join(root, "old", "assistant.toml"), "name = \"Old\"\nagent = \"codex\"\n")
+	m.assistantsChanged()
 	if a, err := m.PatchAssistant("old", AssistantPatch{Description: &desc}); err != nil || a.Description != desc || !a.Ready {
 		t.Fatalf("old: %+v %v", a, err)
 	}
@@ -487,6 +495,7 @@ func TestAssistantsSayWhatTheyNeed(t *testing.T) {
 	root := t.TempDir()
 	_ = m.store.setting("assistants", assistantsSetting{Root: root})
 	writeToml(t, filepath.Join(root, "cr", "assistant.toml"), "name = \"CR\"\nagent = \"claude\"\nrequires = [\"GitHub: gh signed in, or the GitHub MCP server\"]\n")
+	m.assistantsChanged()
 	a, err := m.assistant("cr")
 	if err != nil || len(a.Requires) != 1 {
 		t.Fatalf("requires: %+v %v", a, err)
@@ -499,5 +508,26 @@ func TestAssistantsSayWhatTheyNeed(t *testing.T) {
 		if _, ok := sharedFiles[f]; !ok {
 			t.Errorf("%s is not shared", f)
 		}
+	}
+}
+
+func TestAssistantFilesAreReadOnReloadOnly(t *testing.T) {
+	m, _ := fixture(t)
+	root := t.TempDir()
+	_ = m.store.setting("assistants", assistantsSetting{Root: root})
+	p := filepath.Join(root, "a", "assistant.toml")
+	writeToml(t, p, "name = \"A\"\nagent = \"claude\"")
+	if l := m.Assistants(); len(l) != 1 || l[0].Name != "A" {
+		t.Fatalf("first read: %+v", l)
+	}
+	// Edited behind the workbench's back: not seen until a reload.
+	writeToml(t, p, "name = \"B\"\nagent = \"claude\"")
+	writeToml(t, filepath.Join(root, "c", "assistant.toml"), "name = \"C\"\nagent = \"codex\"")
+	if l := m.Assistants(); len(l) != 1 || l[0].Name != "A" {
+		t.Fatalf("read without a reload: %+v", l)
+	}
+	m.assistantsChanged()
+	if l := m.Assistants(); len(l) != 2 || l[0].Name != "B" {
+		t.Fatalf("after the reload: %+v", l)
 	}
 }

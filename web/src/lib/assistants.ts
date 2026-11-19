@@ -1,6 +1,6 @@
 // Assistants (internal/workbench/assistant.go, ADR 0010): folders in one
 // repository, each with an assistant.toml.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api";
 
 export type Assistant = {
@@ -130,9 +130,19 @@ export type Opened = {
 // ("assistants" events, App.tsx) or Settings changed them.
 export function useAssistants(enabled: boolean) {
   const [value, setValue] = useState<Assistants>({ root: "", assistants: [] });
+  // The first load of the page reads the files again (they are not
+  // watched); later ones use what the server has.
+  const first = useRef(true);
   const load = useCallback(async () => {
     try {
-      setValue({ ...(await api<Assistants>("assistants")), loaded: true });
+      const fresh = first.current;
+      first.current = false;
+      setValue({
+        ...(await (fresh
+          ? api<Assistants>("assistants/reload", "POST")
+          : api<Assistants>("assistants"))),
+        loaded: true,
+      });
     } catch {
       // Kept as it was; the next change reads it again.
     }
@@ -149,6 +159,10 @@ export function useAssistants(enabled: boolean) {
 
 export const assistantsChanged = () =>
   window.dispatchEvent(new CustomEvent("workbench:assistants"));
+
+// Reads the assistant.toml files again: after editing them by hand.
+export const reloadAssistants = () =>
+  api("assistants/reload", "POST").then(assistantsChanged);
 
 // Asks App.tsx to show the set-up dialog (assistants/SetUpDialog.tsx): the
 // first use of assistants before they are set up.

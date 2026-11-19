@@ -6,7 +6,7 @@ import { AboutTab } from "./AboutTab";
 import { AgentsTab } from "./AgentsTab";
 import { GeneralTab } from "./GeneralTab";
 import { RoutinesTab } from "./RoutinesTab";
-import { AssistantsTab } from "./AssistantsTab";
+import { AssistantsTab } from "../../assistants/lazy";
 import type { Assistants } from "../../lib/assistants";
 import { UsageTab } from "./UsageTab";
 import type { Draft } from "../../routines/when";
