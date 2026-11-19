@@ -711,6 +711,30 @@ export default function App() {
     topicOf?.sessions === "continuous" && topicOf.current === current?.id
       ? topicOf
       : undefined;
+  // A continuous assistant's conversation that is getting long: offer a
+  // fresh one (a new topic; ADR 0010), which also happens on its own each
+  // morning and at 60% of the context.
+  const startFresh = (dir: string) =>
+    void api(`assistants/${dir}/topic`, "POST")
+      .then(() => openAssistant(dir))
+      .catch(catchError);
+  const [topicFull, setTopicFull] = useState(0);
+  useEffect(() => {
+    setTopicFull(0);
+    if (!ongoing || !current || current.status === "running") return;
+    let live = true;
+    api<{ context?: { used?: number; window?: number } }>(
+      `sessions/${encodeURIComponent(current.id)}/telemetry`,
+    )
+      .then((t) => {
+        if (live && t.context?.window)
+          setTopicFull((t.context.used ?? 0) / t.context.window);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [ongoing?.dir, current?.id, current?.status]);
   // What the open conversation last added to the wiki.
   const changes = useChanges(topicOf?.memory === "wiki");
   const memory = latestFor(changes, current?.id);
@@ -1384,13 +1408,12 @@ export default function App() {
                           e.currentTarget
                             .closest("details")
                             ?.removeAttribute("open");
-                          void api(`assistants/${ongoing.dir}/topic`, "POST")
-                            .then(() => openAssistant(ongoing.dir))
-                            .catch(catchError);
+                          startFresh(ongoing.dir);
                         }}
+                        title="Starts a new conversation. What matters is kept in memory and open items carry over; do this when you change to an unrelated subject."
                       >
                         <MessageSquarePlus size={14} />
-                        New topic
+                        Start fresh
                       </Button>
                     )}
                     {topicOf?.memory === "wiki" && current && !composing && (
@@ -1690,6 +1713,23 @@ export default function App() {
                   }
                 />
               </div>
+              {ongoing && topicFull >= 0.4 && !composing && (
+                <div className="archived-banner" role="note">
+                  <MessageSquarePlus size={14} />
+                  <span>
+                    This conversation is getting long (
+                    {Math.round(topicFull * 100)}% of its context). A fresh one
+                    keeps what matters.
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => startFresh(ongoing.dir)}
+                  >
+                    Start fresh
+                  </Button>
+                </div>
+              )}
               {memoryNote && (
                 <div className="archived-banner" role="status">
                   <BookOpen size={14} />

@@ -55,6 +55,13 @@ export function AssistantHome({
           </p>
         </div>
       </header>
+      {a.sessions === "continuous" && (
+        <p className="subtle assistant-home-note">
+          One ongoing conversation: a fresh one starts each morning or when it
+          gets long, and what matters carries over. Start fresh yourself (⋯
+          menu) only when you change to an unrelated subject.
+        </p>
+      )}
       {!a.ready && (
         <div className="assistant-home-setup" role="status">
           <Wrench size={14} />

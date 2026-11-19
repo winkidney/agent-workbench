@@ -1044,7 +1044,7 @@ function AssistantRow({
             a.sessions === "continuous" &&
             item(
               <MessageSquarePlus size={14} />,
-              "New topic",
+              "Start fresh",
               () =>
                 void api(`assistants/${a.dir}/topic`, "POST").then(() =>
                   onOpen(a.dir),

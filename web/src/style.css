@@ -6469,3 +6469,7 @@ body.resizing iframe {
   width: min(100%, 760px);
   flex-shrink: 0;
 }
+.assistant-home-note {
+  margin: 0;
+  font-size: 12px;
+}

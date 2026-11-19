@@ -1241,3 +1241,8 @@ These are maintainer notes on how each feature of Agent Workbench was verified, 
   - Moss's card shows its 简体中文 description and capabilities, and only Moss is highlighted.
   - The row menu offers Open, New routine for it, Set up…, Settings…, Agent (Claude marked not installed and disabled, Codex) and Turn off.
   - No page errors.
+- "Start fresh" (same day):
+  - "New topic" is now "Start fresh", with a tooltip, in the ⋯ menu and the assistant menu. A fresh topic's screen says "A fresh conversation · picks up from …".
+  - The card of a continuous assistant explains when fresh conversations start on their own.
+  - Above the composer of an ongoing conversation past 40% of its context, a note offers Start fresh.
+  - Typecheck and 376 Vitest tests passed.

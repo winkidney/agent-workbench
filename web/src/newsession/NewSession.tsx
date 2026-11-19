@@ -132,8 +132,8 @@ export function NewSession({
             <p>
               {assistant.sessions === "continuous"
                 ? continues
-                  ? `New topic · continues from ${continues}`
-                  : "New topic"
+                  ? `A fresh conversation · picks up from ${continues}`
+                  : "A fresh conversation"
                 : "A new request"}
               {" · "}
               {agentName}
