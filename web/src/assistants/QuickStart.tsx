@@ -12,7 +12,20 @@ export function QuickStart({
   onPick: (text: string) => void;
 }) {
   return (
-    <div className="quick-start" role="group" aria-label="Quick start">
+    <div
+      className="quick-start"
+      role="group"
+      aria-label="Quick start"
+      // One line that scrolls sideways: a mouse wheel scrolls it too.
+      onWheel={(e) => {
+        const el = e.currentTarget;
+        if (
+          el.scrollWidth > el.clientWidth &&
+          Math.abs(e.deltaY) > Math.abs(e.deltaX)
+        )
+          el.scrollLeft += e.deltaY;
+      }}
+    >
       <Sparkles size={13} aria-hidden className="quick-start-icon" />
       {starters.map((s) => (
         <button

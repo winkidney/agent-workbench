@@ -6482,3 +6482,36 @@ body.resizing iframe {
   font-size: 12px;
   font-weight: 600;
 }
+/* Quick starts: one line that scrolls sideways (swipe on a phone, wheel or
+   trackpad on a computer), faded at the edges, never wrapping. */
+.quick-start {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 12px,
+    #000 calc(100% - 24px),
+    transparent 100%
+  );
+  padding: 2px 20px 2px 0;
+}
+.quick-start::-webkit-scrollbar {
+  display: none;
+}
+.quick-start-chip,
+.quick-start-icon {
+  flex-shrink: 0;
+  white-space: nowrap;
+  scroll-snap-align: start;
+}
+@media (pointer: coarse) {
+  .quick-start-chip {
+    padding: 6px 12px;
+    font-size: 13px;
+  }
+}

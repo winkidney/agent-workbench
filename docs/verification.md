@@ -1267,3 +1267,4 @@ These are maintainer notes on how each feature of Agent Workbench was verified, 
   - The language rule goes back to `{{.LanguageLine}}`.
   - A token in a skill stops the export, and a folder that is not a checkout is refused.
 - The user's Moss procedure equals the shipped one, so upgrading offers nothing.
+- Quick starts in one line (2026-11-20): Moss gets a "summarize this and add it to the wiki" example in all three languages. The quick start rows (the card's Try, and above the composer) stay on one line and scroll sideways, by swipe or by wheel, with faded edges. In the browser at 1280 px and 390 px, the row was 30/38 px high, scrollable and scrolled, with no page overflow and no errors.
