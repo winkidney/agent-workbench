@@ -116,6 +116,7 @@ import {
   MessagesSquare,
   AlarmClock,
   MessageSquarePlus,
+  BookOpen,
 } from "lucide-react";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
@@ -691,6 +692,13 @@ export default function App() {
   // What the open conversation last added to the wiki.
   const changes = useChanges(topicOf?.memory === "wiki");
   const memory = latestFor(changes, current?.id);
+  // The answer to "Update memory now", for a few seconds.
+  const [memoryNote, setMemoryNote] = useState("");
+  useEffect(() => {
+    if (!memoryNote) return;
+    const t = setTimeout(() => setMemoryNote(""), 6000);
+    return () => clearTimeout(t);
+  }, [memoryNote]);
   const waitingElsewhere = waiting.some((s) => s.id !== active);
   // The Claude command or subagent a running turn waits on, which Ctrl+B or
   // the status line's button moves to the background.
@@ -1350,6 +1358,32 @@ export default function App() {
                     New topic
                   </Button>
                 )}
+                {topicOf?.memory === "wiki" && current && !composing && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={(e) => {
+                      e.currentTarget
+                        .closest("details")
+                        ?.removeAttribute("open");
+                      void api<{ started: boolean }>(
+                        `assistants/${topicOf.dir}/memory`,
+                        "POST",
+                      )
+                        .then((o) =>
+                          setMemoryNote(
+                            o.started
+                              ? "Updating memory from this conversation…"
+                              : "Nothing new to remember since the last update.",
+                          ),
+                        )
+                        .catch(catchError);
+                    }}
+                  >
+                    <BookOpen size={14} />
+                    Update memory now
+                  </Button>
+                )}
                 {current && (
                   <>
                     <span className="menu-status">
@@ -1582,6 +1616,12 @@ export default function App() {
                   }
                 />
               </div>
+              {memoryNote && (
+                <div className="archived-banner" role="status">
+                  <BookOpen size={14} />
+                  <span>{memoryNote}</span>
+                </div>
+              )}
               {memory && <ChangeBanner key={memory.id} change={memory} />}
               {parentSession && (
                 <div className="archived-banner parent-banner" role="note">

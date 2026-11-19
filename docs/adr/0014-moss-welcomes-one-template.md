@@ -44,6 +44,8 @@ For a while the plan was to ship built-in assistants: code review, release watch
    - Settings → Assistants shows the remote, unpushed commits, the last push or its error, and a Push now button.
    - Without a remote it offers to make a private GitHub repository with `gh repo create --private --source … --push`.
 
+8. **Memory less often.** The wiki is updated from a conversation when its topic ends (about once a day, or when the context fills, or on New topic) and only if it has new turns, or when the user asks: "remember …" (Moss changes the page at once), "update your memory" (Moss runs `assistant memory`), or ⋯ → Update memory now. A conversation going to sleep no longer starts an ingest, and Moss no longer changes the wiki on its own during a conversation.
+
 ## Consequences
 
 - Agent Workbench keeps no assistant logic. The user's assistants are plain folders in their repository, where they can change them; they sync to other computers through the repository.

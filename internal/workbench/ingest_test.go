@@ -228,7 +228,7 @@ func TestIngestRecordsCommitsAndUndoes(t *testing.T) {
 }
 
 func TestIngestOnlyForTheWiki(t *testing.T) {
-	m, root := assistantsWithGit(t)
+	m, _ := assistantsWithGit(t)
 	a, err := m.NewAssistant("Report", "", "claude", "per-task")
 	if err != nil {
 		t.Fatal(err)
@@ -237,9 +237,10 @@ func TestIngestOnlyForTheWiki(t *testing.T) {
 	s := Session{ID: "claude:s2", NativeID: "s2", Agent: "claude", Cwd: a.Path, Title: "Draft", Status: "sleeping"}
 	m.as.lookup = func(id string) (Session, bool) { return s, id == s.ID }
 	m.as.background = func(Assistant, string) (string, error) { t.Fatal("ran"); return "", nil }
-	m.sessionSlept(s.ID, s.Cwd)
-	// Outside the repository: not even looked up.
-	m.sessionSlept("other", filepath.Dir(root))
+	m.maybeIngest(s.ID)
+	if _, err := m.IngestNow(a.Dir, s.ID); err == nil {
+		t.Fatal("asked an assistant without the wiki to remember")
+	}
 	if list, _ := m.AssistantChanges(); len(list) != 0 {
 		t.Fatalf("changes: %+v", list)
 	}
@@ -308,5 +309,45 @@ func TestTopicFollowsTheSessionsNativeID(t *testing.T) {
 	m.topicMoved("tok", "claude:n")
 	if st := m.topicState("main"); st.Current != "claude:n" || st.Previous[1] != "claude:n" || st.Previous[0] != "old" {
 		t.Fatalf("state: %+v", st)
+	}
+}
+
+func TestMemoryIsUpdatedWhenAsked(t *testing.T) {
+	m, root := assistantsWithGit(t)
+	main := filepath.Join(root, "main")
+	if _, err := m.IngestNow("main", ""); err == nil {
+		t.Fatal("remembered without a conversation")
+	}
+	writeTranscript(t, m, main, "s9", "I prefer green tea")
+	s := Session{ID: "claude:s9", NativeID: "s9", Agent: "claude", Cwd: main, Title: "Tea", Status: "idle"}
+	m.as.lookup = func(id string) (Session, bool) { return s, id == s.ID }
+	m.as.background = func(Assistant, string) (string, error) {
+		writeToml(t, filepath.Join(root, "shared", "wiki", "tea.md"), "green\n")
+		return "Summary: tea", nil
+	}
+	m.saveTopic("main", assistantState{Current: s.ID})
+	started, err := m.IngestNow("main", "")
+	if err != nil || !started {
+		t.Fatalf("asked: %v %v", started, err)
+	}
+	waitUntil(t, "the update", func() bool {
+		var done ingestProgress
+		m.store.readSetting(ingestKey(s.ID), &done)
+		return done.Turns == 1
+	})
+	// Nothing new since: nothing to do.
+	if started, err := m.IngestNow("main", ""); err != nil || started {
+		t.Fatalf("again: %v %v", started, err)
+	}
+	// Going to sleep no longer updates memory: only a topic's end or a request.
+	m.mu.Lock()
+	r := &runtime{session: s, pending: map[string]any{}, previews: map[string]*Preview{}}
+	m.status(r, "sleeping")
+	m.mu.Unlock()
+	writeTranscript(t, m, main, "s9", "I prefer green tea", "And oolong")
+	m.catalog.updated = time.Time{}
+	time.Sleep(100 * time.Millisecond)
+	if list, _ := m.AssistantChanges(); len(list) != 1 {
+		t.Fatalf("changes after sleeping: %d", len(list))
 	}
 }

@@ -1196,3 +1196,8 @@ These are maintainer notes on how each feature of Agent Workbench was verified, 
     - Backup offers a private GitHub repository.
   - No page errors, and no overflow on the phone.
 - Not exercised: Moss's real welcome, the push under the systemd service, and Create private repository from the page. The user's own repository was made with `gh` by hand: private, pushed.
+- Memory less often (same day): `TestMemoryIsUpdatedWhenAsked`:
+  - Asking with no conversation is refused. Asking for Moss's topic updates the wiki once; asking again with nothing new does nothing.
+  - A session going to sleep no longer starts an ingest.
+  - Asking an assistant without the wiki is refused.
+  - `go test -race`, Vitest and typecheck passed.

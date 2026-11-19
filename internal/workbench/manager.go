@@ -190,11 +190,6 @@ func (m *Manager) status(r *runtime, state string) {
 		fmt.Fprintln(os.Stderr, "save session:", err)
 	}
 	m.emit(r.session.ID, "status", r.session)
-	// A conversation with an assistant that went to sleep may have
-	// something for the wiki (ingest.go).
-	if state == "sleeping" && !m.closing {
-		go m.sessionSlept(r.session.ID, r.session.Cwd)
-	}
 }
 func (m *Manager) Create(agent, cwd, title string) (Session, error) {
 	return m.CreateSession(agent, cwd, title, "")

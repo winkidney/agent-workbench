@@ -1163,6 +1163,13 @@ func (s *Server) assistantsAPI(w http.ResponseWriter, r *http.Request, rest stri
 			return
 		}
 		writeJSON(w, out)
+	case len(parts) == 2 && parts[1] == "memory" && r.Method == "POST":
+		started, err := m.IngestNow(parts[0], "")
+		if err != nil {
+			bad(w, err)
+			return
+		}
+		writeJSON(w, map[string]any{"started": started})
 	case len(parts) == 2 && parts[1] == "topic" && r.Method == "POST":
 		if err := m.NewTopic(parts[0]); err != nil {
 			bad(w, err)

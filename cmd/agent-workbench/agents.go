@@ -32,6 +32,7 @@ const agentUsage = `usage:
   agent-workbench assistant new --name NAME [--folder DIR] [--agent claude|codex]
                                 [--sessions per-task|continuous]
   agent-workbench assistant reload
+  agent-workbench assistant memory
 
 --to this (the default) is the session the command runs in; in a
 continuous assistant's folder it is that assistant, whose topic changes
@@ -199,6 +200,19 @@ func agentCommand(group string, args []string) error {
 		}
 		a := out.Assistant
 		fmt.Printf("Made the assistant %s (%s, %s) in %s.\nIt is in the sidebar under Assistants. Write its procedure in AGENTS.md there, as the create-assistant skill says.\n", a.Name, a.Agent, a.Sessions, a.Path)
+		return nil
+	case "assistant memory":
+		var out struct {
+			Started bool `json:"started"`
+		}
+		if err := c.call("POST", "assistants/memory", map[string]string{"caller": c.caller}, &out); err != nil {
+			return err
+		}
+		if out.Started {
+			fmt.Println("Memory will be updated from this conversation once the current turn ends; the conversation shows \"Memory updated\" when it is done.")
+		} else {
+			fmt.Println("Nothing new to remember since the last update.")
+		}
 		return nil
 	case "assistant reload":
 		if err := c.call("POST", "assistants/reload", nil, nil); err != nil {

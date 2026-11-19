@@ -249,6 +249,28 @@ func (s *Server) localAgentAPI(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, map[string]any{"assistant": a})
+	case rest == "assistants/memory" && r.Method == "POST":
+		// The user asked to update memory: from this conversation when it
+		// keeps the wiki, else Moss's ongoing one.
+		var v struct{ Caller string }
+		if err := decode(w, r, &v); err != nil {
+			bad(w, err)
+			return
+		}
+		dir, session := "main", ""
+		if s, ok := m.callerSession(v.Caller); ok {
+			for _, a := range m.Assistants() {
+				if a.Path == s.Cwd && a.Memory == "wiki" {
+					dir, session = a.Dir, s.ID
+				}
+			}
+		}
+		started, err := m.IngestNow(dir, session)
+		if err != nil {
+			bad(w, err)
+			return
+		}
+		writeJSON(w, map[string]any{"started": started})
 	case rest == "assistants/reload" && r.Method == "POST":
 		// An agent changed an assistant.toml: apply it now (ADR 0014).
 		m.assistantsChanged()

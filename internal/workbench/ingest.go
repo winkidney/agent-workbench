@@ -219,14 +219,54 @@ func exportMarkdown(s Session, turns []exportTurn, from int, now time.Time) stri
 	return redact(b.String())
 }
 
-// sessionSlept starts an ingest when a conversation in the repository of
-// assistants went to sleep.
-func (m *Manager) sessionSlept(id, cwd string) {
-	root := m.assistantsRoot()
-	if root == "" || cwd == "" || !strings.HasPrefix(cwd+string(filepath.Separator), root+string(filepath.Separator)) {
-		return
+// Memory is updated at the end of a topic (newTopic), or when the user asks
+// (IngestNow): not after every pause (ADR 0014).
+
+// How long an explicit request waits for a busy conversation to rest.
+const ingestWait = 15 * time.Minute
+
+// IngestNow updates the wiki from an assistant's conversation now: the
+// session given (a caller asking from it), else the assistant's ongoing
+// topic. It reports whether there is anything new; a conversation still
+// working (the request came from its own turn) is ingested once it rests.
+func (m *Manager) IngestNow(dir, session string) (bool, error) {
+	if dir == "" {
+		dir = "main"
 	}
-	m.maybeIngest(id)
+	a, err := m.assistant(dir)
+	if err != nil {
+		return false, err
+	}
+	if a.Memory != "wiki" {
+		return false, fmt.Errorf("%s does not keep the wiki", a.Name)
+	}
+	if session == "" {
+		session = m.topicState(dir).Current
+	}
+	s, ok := m.sessionNow(session)
+	if session == "" || !ok {
+		return false, errors.New("there is no ongoing conversation to remember")
+	}
+	var done ingestProgress
+	m.store.readSetting(ingestKey(s.ID), &done)
+	turns, err := m.conversationTurns(s)
+	if err != nil {
+		return false, err
+	}
+	if len(turns) <= done.Turns && resting(s) {
+		return false, nil
+	}
+	go func() {
+		deadline := time.Now().Add(ingestWait)
+		for time.Now().Before(deadline) {
+			if now, ok := m.sessionNow(s.ID); ok && resting(now) {
+				m.maybeIngest(s.ID)
+				return
+			}
+			time.Sleep(5 * time.Second)
+		}
+	}()
+	return true, nil
 }
 
 // maybeIngest ingests a resting conversation's new turns, if its assistant
