@@ -1791,7 +1791,15 @@ export default function App() {
               )}
               <Composer
                 key={current.id}
-                starters={topicOf?.dir === "main" ? MAIN_STARTERS : undefined}
+                // The same requests to try as its card (assistant.toml);
+                // the built-in starts only when Moss has none.
+                starters={
+                  topicOf?.examples?.length
+                    ? topicOf.examples.map((e) => ({ label: e, text: e }))
+                    : topicOf?.dir === "main"
+                      ? MAIN_STARTERS
+                      : undefined
+                }
                 session={
                   transcript.recordMissing
                     ? { ...current, readOnly: true, recordMissing: true }
