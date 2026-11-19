@@ -1,6 +1,6 @@
 import { Pixels, PixelSvg } from "./pixel";
 
-// Moss, the personal assistant: a box camera in 2:1 pixel isometry, its
+// An assistant (Moss and the others alike): a box camera in 2:1 pixel isometry, its
 // moss-green lens on the front-left face and the agent it runs on shown on the
 // screen of its right face (Claude in orange on black; Codex as a light
 // screen with its prompt). Two drawings: 16×16 for the sidebar, ink within

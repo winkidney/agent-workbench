@@ -8,7 +8,6 @@ import {
   type Assistant,
 } from "../lib/assistants";
 import { describeWhen, type Routine } from "../routines/when";
-import { AgentIcon } from "../components/AgentIcon";
 import { MossIcon } from "../components/MossIcon";
 import { Button } from "../components/ui/button";
 
@@ -42,13 +41,10 @@ export function AssistantHome({
   return (
     <section className="assistant-home" aria-label={`${a.name}: about`}>
       <header className="assistant-home-head">
-        {/* Moss is drawn as itself, its agent on its screen. */}
-        {(a.agent === "claude" || a.agent === "codex") &&
-          (a.dir === "main" ? (
-            <MossIcon agent={a.agent} size={64} />
-          ) : (
-            <AgentIcon agent={a.agent} size={16} />
-          ))}
+        {/* Every assistant is the box camera, its agent on its screen. */}
+        {(a.agent === "claude" || a.agent === "codex") && (
+          <MossIcon agent={a.agent} size={64} title={a.name} />
+        )}
         <div>
           <h2>{a.name}</h2>
           <p className="subtle">

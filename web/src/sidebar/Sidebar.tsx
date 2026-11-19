@@ -991,10 +991,8 @@ function AssistantRow({
           }
           onClick={() => onOpen(a.dir)}
         >
-          {a.agent && a.dir === "main" ? (
-            <MossIcon agent={a.agent} size={16} />
-          ) : a.agent ? (
-            <AgentIcon agent={a.agent} size={16} />
+          {a.agent ? (
+            <MossIcon agent={a.agent} size={16} title={a.name} />
           ) : (
             <TriangleAlert size={14} aria-label="Has an error" />
           )}

@@ -1336,7 +1336,7 @@ export default function App() {
               </h2>
               {current && !composing && (
                 <>
-                  {topicOf?.dir === "main" ? (
+                  {topicOf ? (
                     <MossIcon agent={current.agent} size={16} />
                   ) : (
                     <AgentIcon agent={current.agent} size={16} />
