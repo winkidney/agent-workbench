@@ -42,6 +42,7 @@ import { Button } from "../components/ui/button";
 import { ManualCopyDialog } from "../components/ManualCopyDialog";
 import { copyText } from "../lib/copy";
 import { AgentIcon, StatusIcon, statusLabel } from "../components/AgentIcon";
+import { MossIcon } from "../components/MossIcon";
 import { LogoLockup } from "../components/Logo";
 import { ATTENTION_LABEL } from "../attention";
 import type { FooterConnection } from "../lib/connection";
@@ -990,7 +991,9 @@ function AssistantRow({
           }
           onClick={() => onOpen(a.dir)}
         >
-          {a.agent ? (
+          {a.agent && a.dir === "main" ? (
+            <MossIcon agent={a.agent} size={16} />
+          ) : a.agent ? (
             <AgentIcon agent={a.agent} size={16} />
           ) : (
             <TriangleAlert size={14} aria-label="Has an error" />

@@ -9,6 +9,7 @@ import {
 } from "../lib/assistants";
 import { describeWhen, type Routine } from "../routines/when";
 import { AgentIcon } from "../components/AgentIcon";
+import { MossIcon } from "../components/MossIcon";
 import { Button } from "../components/ui/button";
 
 // An assistant's home card (ADR 0015): what it does, what it can do,
@@ -41,9 +42,13 @@ export function AssistantHome({
   return (
     <section className="assistant-home" aria-label={`${a.name}: about`}>
       <header className="assistant-home-head">
-        {(a.agent === "claude" || a.agent === "codex") && (
-          <AgentIcon agent={a.agent} size={18} />
-        )}
+        {/* Moss is drawn as itself, its agent on its screen. */}
+        {(a.agent === "claude" || a.agent === "codex") &&
+          (a.dir === "main" ? (
+            <MossIcon agent={a.agent} size={64} />
+          ) : (
+            <AgentIcon agent={a.agent} size={16} />
+          ))}
         <div>
           <h2>{a.name}</h2>
           <p className="subtle">

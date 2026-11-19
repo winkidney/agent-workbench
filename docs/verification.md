@@ -1275,3 +1275,4 @@ These are maintainer notes on how each feature of Agent Workbench was verified, 
   - The request carried the chosen options.
   - In its Settings, picking Codex showed Codex's models. Setting the effort to low and saving wrote `[options.codex]` after the Claude table.
   - At 390 px in dark mode the page did not scroll sideways, and there were no page errors.
+- Moss's icon (2026-11-20): `pixel.test.tsx` checks that both 16×16 drawings keep their ink within the middle 14×14, that both 32×32 drawings are square, that each screen shows its agent, and the labels and sizes (16 → 16-pixel grid; 64 → 32-pixel grid at 2×). In the browser, on an isolated instance in light and dark: Moss's sidebar row and its 64-pixel card showed the box camera with Claude's screen, another assistant kept its agent icon, and there were no page errors.

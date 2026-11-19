@@ -1,6 +1,7 @@
 import { SidePanel, type SideChat } from "./side/SidePanel";
 import { NewSession } from "./newsession/NewSession";
 import { AgentIcon } from "./components/AgentIcon";
+import { MossIcon } from "./components/MossIcon";
 import { ResizeHandle } from "./layout/ResizeHandle";
 import {
   clampWidths,
@@ -1335,7 +1336,11 @@ export default function App() {
               </h2>
               {current && !composing && (
                 <>
-                  <AgentIcon agent={current.agent} size={16} />
+                  {topicOf?.dir === "main" ? (
+                    <MossIcon agent={current.agent} size={16} />
+                  ) : (
+                    <AgentIcon agent={current.agent} size={16} />
+                  )}
                   <span className={"status-pill " + current.status}>
                     {labels[current.status] ?? current.status}
                     {(current.background ?? 0) > 0 &&

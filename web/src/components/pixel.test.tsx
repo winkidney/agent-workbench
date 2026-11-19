@@ -17,6 +17,13 @@ import {
 } from "./pixel";
 import { AgentIcon, CLAUDE_ICON, CODEX_ICON, StatusIcon } from "./AgentIcon";
 import {
+  MossIcon,
+  MOSS_CLAUDE_16,
+  MOSS_CLAUDE_32,
+  MOSS_CODEX_16,
+  MOSS_CODEX_32,
+} from "./MossIcon";
+import {
   BENCH,
   GLYPHS,
   LogoLockup,
@@ -123,6 +130,29 @@ describe("pixel art", () => {
     expect(big).toContain('width="48"');
     expect(big).toContain('aria-hidden="true"');
     expect(big).not.toContain("aria-label");
+  });
+
+  it("draws Moss to the sidebar spec, its agent on its screen", () => {
+    for (const g of [MOSS_CLAUDE_16, MOSS_CODEX_16]) {
+      expect(square(g, 16)).toBe(true);
+      const ink = inkBounds(g);
+      // Within the middle 14×14, as the other sidebar icons.
+      expect(ink.left).toBeGreaterThanOrEqual(1);
+      expect(ink.top).toBeGreaterThanOrEqual(1);
+      expect(ink.left + ink.w).toBeLessThanOrEqual(15);
+      expect(ink.top + ink.h).toBeLessThanOrEqual(15);
+    }
+    for (const g of [MOSS_CLAUDE_32, MOSS_CODEX_32])
+      expect(square(g, 32)).toBe(true);
+    // The screen shows the agent: Claude's colour, or Codex's light screen.
+    expect(MOSS_CLAUDE_16.join("")).toContain("C");
+    expect(MOSS_CODEX_16.join("")).toContain("x");
+    const small = renderToStaticMarkup(<MossIcon agent="codex" />);
+    expect(small).toContain('aria-label="Moss · Codex"');
+    expect(small).toContain('viewBox="0 0 16 16"');
+    const big = renderToStaticMarkup(<MossIcon agent="claude" size={64} />);
+    expect(big).toContain('viewBox="0 0 32 32"');
+    expect(big).toContain('width="64"');
   });
 
   it("animates work in progress and keeps its words", () => {
