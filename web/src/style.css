@@ -6462,3 +6462,10 @@ body.resizing iframe {
 .row-menu button[aria-checked="true"] {
   font-weight: 600;
 }
+/* On the new-request screen the card and quick starts line up with the
+   composer instead of spanning the window. */
+.new-session .assistant-home,
+.new-session > .quick-start {
+  width: min(100%, 760px);
+  flex-shrink: 0;
+}
