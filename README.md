@@ -46,7 +46,7 @@ It is a single-user tool for your own machine, not a hosted service for a team.
 - Background shells, monitors and subagents in a tray above the composer, with their output and a Stop button; scheduled tasks there with their next run.
 - `/` commands and `$` skills, `/goal` with a goal bar, `/plan`, and side chats (`/side`, `/btw`) beside the main task.
 - Routines: send a session a message, run a command, or hand a command's output to an agent, once, daily or every so often.
-- Assistants: a folder per recurring job with its procedure, skills, scripts and routines, in one git repository; a personal assistant that carries on day to day.
+- Assistants: a folder per recurring job with its procedure, skills, scripts and routines, in one git repository; a personal assistant that carries on day to day and keeps a wiki from its conversations; background runs for outside content; every background change is a commit you can undo.
 
 **Files, previews and tools**
 - Paths in replies open the file: images and video in a viewer, HTML, PDF, SVG, Markdown and text in a preview panel, the rest in the file list.

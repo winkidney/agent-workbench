@@ -14,3 +14,4 @@ Decisions that shape how the workbench behaves, why, and what they cost. Each re
 | [0008](0008-media-shown-from-anywhere.md) | Images and videos a session names are shown wherever they are | accepted; amends 0004 for media |
 | [0009](0009-routines-run-on-a-schedule.md) | Routines send messages and run commands on a schedule | accepted |
 | [0010](0010-assistants-are-folders.md) | An assistant is a folder in a repository of assistants | accepted |
+| [0011](0011-background-runs-commit-and-undo.md) | Background runs keep the wiki, read outside content, and commit what they change | accepted |

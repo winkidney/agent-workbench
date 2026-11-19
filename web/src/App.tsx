@@ -33,17 +33,22 @@ import {
 import { Appearance } from "./components/Appearance";
 import { NotifyToggle } from "./components/NotifyToggle";
 import { SuggestToggle } from "./components/SuggestToggle";
-import { notifyRun, useAttention } from "./attention";
+import { notifyChange, notifyRun, useAttention } from "./attention";
 import { RoutineDialog } from "./routines/RoutineDialog";
 import { newDraft, type Draft, type RoutineRun } from "./routines/when";
 import { recentProjects } from "./newsession/recent";
 import {
   assistantOf,
   assistantsChanged,
+  changesChanged,
+  latestFor,
   useAssistants,
+  useChanges,
   type Assistant,
+  type AssistantChange,
   type Opened,
 } from "./lib/assistants";
+import { ChangeBanner } from "./assistants/Changes";
 import { SettingsDialog } from "./components/settings/SettingsDialog";
 import { LogoMark } from "./components/Logo";
 import { PreviewPanel } from "./preview/PreviewPanel";
@@ -424,6 +429,14 @@ export default function App() {
         assistantsChanged();
         return;
       }
+      if (v.kind === "assistant") {
+        // A background run started or ended (assistants/Changes.tsx).
+        changesChanged();
+        notifyChange(v.data as AssistantChange, (id) =>
+          openSession.current(id),
+        );
+        return;
+      }
       if (v.kind === "routine") {
         // Settings → Routines reloads; a run's end may notify.
         window.dispatchEvent(new CustomEvent("workbench:routines"));
@@ -637,6 +650,9 @@ export default function App() {
     topicOf?.sessions === "continuous" && topicOf.current === current?.id
       ? topicOf
       : undefined;
+  // What the open conversation last added to the wiki.
+  const changes = useChanges(topicOf?.memory === "wiki");
+  const memory = latestFor(changes, current?.id);
   const waitingElsewhere = waiting.some((s) => s.id !== active);
   // The Claude command or subagent a running turn waits on, which Ctrl+B or
   // the status line's button moves to the background.
@@ -1527,6 +1543,7 @@ export default function App() {
                   }
                 />
               </div>
+              {memory && <ChangeBanner key={memory.id} change={memory} />}
               {parentSession && (
                 <div className="archived-banner parent-banner" role="note">
                   <CornerLeftUp size={14} />

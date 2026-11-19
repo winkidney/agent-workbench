@@ -42,10 +42,12 @@ type RoutineTarget struct {
 	Kind    string `json:"kind"`
 	Session string `json:"session,omitempty"`
 	// assistant: its folder name (assistant.go).
-	Assistant string   `json:"assistant,omitempty"`
-	Agent     string   `json:"agent,omitempty"`
-	Cwd       string   `json:"cwd,omitempty"`
-	Options   *Options `json:"options,omitempty"`
+	Assistant string `json:"assistant,omitempty"`
+	// assistant: hand it to a background run (ADR 0011), not a session.
+	Background bool     `json:"background,omitempty"`
+	Agent      string   `json:"agent,omitempty"`
+	Cwd        string   `json:"cwd,omitempty"`
+	Options    *Options `json:"options,omitempty"`
 }
 
 // RoutineCommand is a command line a routine runs in a folder.
@@ -626,6 +628,7 @@ func errFileRoutine(v Routine) error {
 // RunRoutines starts what falls due until ctx ends.
 func (m *Manager) RunRoutines(ctx context.Context) {
 	m.loadRoutines()
+	m.endOpenChanges()
 	timer := time.NewTimer(0)
 	defer timer.Stop()
 	for {
@@ -792,6 +795,12 @@ func (m *Manager) sendRun(v Routine, run RoutineRun, message string) {
 		}
 		run.Session, run.Status = s.ID, "sent"
 	case "assistant":
+		if t.Background {
+			run.Status = "sent"
+			m.recordRun(run)
+			go m.backgroundRoutine(v, run, text)
+			return
+		}
 		s, queued, err := m.AssistantMessage(t.Assistant, text, nil, run.ID)
 		run.Session = s.ID
 		if err != nil {
@@ -843,6 +852,9 @@ func (m *Manager) tidyRoutines(now time.Time) {
 	}
 	if err := m.store.pruneRuns(now); err != nil {
 		fmt.Fprintln(os.Stderr, "prune routine runs:", err)
+	}
+	if err := m.store.pruneChanges(now); err != nil {
+		fmt.Fprintln(os.Stderr, "prune assistant changes:", err)
 	}
 	list, _ := m.store.routines()
 	for _, v := range list {

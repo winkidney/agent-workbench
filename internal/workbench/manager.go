@@ -190,6 +190,11 @@ func (m *Manager) status(r *runtime, state string) {
 		fmt.Fprintln(os.Stderr, "save session:", err)
 	}
 	m.emit(r.session.ID, "status", r.session)
+	// A conversation with an assistant that went to sleep may have
+	// something for the wiki (ingest.go).
+	if state == "sleeping" && !m.closing {
+		go m.sessionSlept(r.session.ID, r.session.Cwd)
+	}
 }
 func (m *Manager) Create(agent, cwd, title string) (Session, error) {
 	return m.CreateSession(agent, cwd, title, "")
@@ -1365,6 +1370,8 @@ func (m *Manager) moveSessionRows(oldID, newID string) {
 	_ = m.store.setting("options:"+newID, m.options(oldID))
 	_ = m.store.deleteSetting("options:" + oldID)
 	_, _ = m.store.db.Exec(`DELETE FROM sessions WHERE id=?`, oldID)
+	// An assistant's topic names the session by its first id.
+	go m.topicMoved(oldID, newID)
 }
 
 // Shutdown stops the engines and previews when the workbench exits. Under

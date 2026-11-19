@@ -73,7 +73,10 @@ export function RoutinesTab({
     const t = r.target;
     if (!t) return "Keeps the output";
     if (t.kind === "session") return "To " + sessionTitle(t.session);
-    if (t.kind === "assistant") return "To the assistant " + t.assistant;
+    if (t.kind === "assistant")
+      return t.background
+        ? `In the background, as ${t.assistant}`
+        : "To the assistant " + t.assistant;
     return `New ${t.agent === "claude" ? "Claude" : "Codex"} session in ${t.cwd}`;
   };
   return (

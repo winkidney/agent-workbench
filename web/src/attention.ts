@@ -154,6 +154,7 @@ export function notifyRun(
     status: string;
     session?: string;
     error?: string;
+    output?: string;
     notify?: boolean;
   },
   onOpen: (id: string) => void,
@@ -170,7 +171,9 @@ export function notifyRun(
       ? run.error || "See Settings → Routines."
       : run.session
         ? "The agent answered."
-        : "It printed something; see Settings → Routines.";
+        : run.output?.trim()
+          ? run.output.trim().slice(-200)
+          : "See Settings → Routines.";
   try {
     const n = new Notification(title, {
       body,
@@ -179,6 +182,43 @@ export function notifyRun(
     n.onclick = () => {
       window.focus();
       if (run.session) onOpen(run.session);
+      n.close();
+    };
+  } catch {
+    // Some browsers only notify from a service worker.
+  }
+}
+
+// A memory update from a conversation ended (lib/assistants.ts): what it
+// remembered, or that it failed; like notifyRun, only in the background.
+export function notifyChange(
+  c: {
+    id: string;
+    kind: string;
+    status: string;
+    title: string;
+    session?: string;
+    summary?: string;
+    error?: string;
+    files?: string[];
+  },
+  onOpen: (id: string) => void,
+) {
+  if (c.kind !== "ingest") return;
+  const failed = c.status === "failed";
+  if (!failed && !(c.status === "done" && c.files?.length)) return;
+  if (notifyState() !== "on" || !background()) return;
+  try {
+    const n = new Notification(
+      failed ? "Memory update failed" : "Memory updated",
+      {
+        body: (failed ? c.error : c.summary) || c.title,
+        tag: "workbench:change:" + c.id,
+      },
+    );
+    n.onclick = () => {
+      window.focus();
+      if (c.session) onOpen(c.session);
       n.close();
     };
   } catch {

@@ -10,7 +10,7 @@ export type When =
 
 export type RoutineTarget =
   | { kind: "session"; session: string }
-  | { kind: "assistant"; assistant: string }
+  | { kind: "assistant"; assistant: string; background?: boolean }
   | { kind: "new"; agent: "claude" | "codex"; cwd: string; options?: Options };
 
 export type RoutineCommand = {

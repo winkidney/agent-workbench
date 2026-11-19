@@ -37,4 +37,14 @@ message = "Check ../shared/wiki as AGENTS.md says under Lint, fix what you can, 
 # every = "30m"
 # command = "uv run tools/check.py"
 # message = "Sort these and tell me what needs me."
+#
+# background = true hands the message (and what the command printed) to a
+# run nobody watches, not to a session: for outside content such as mail.
+# It can only read and edit files here; the workbench commits its changes.
+# [[routines]]
+# name = "Sort new mail"
+# every = "30m"
+# command = "uv run tools/fetch.py"
+# message = "Sort these into state/inbox.md as .agents/skills says."
+# background = true
 {{end}}

@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -166,36 +167,43 @@ func TestContinuousAssistantStartsNewTopics(t *testing.T) {
 	root := t.TempDir()
 	_ = m.store.setting("assistants", assistantsSetting{Root: root})
 	writeToml(t, filepath.Join(root, "main", "assistant.toml"), "name = \"Assistant\"\nagent = \"claude\"\nsessions = \"continuous\"\nmemory = \"wiki\"")
+	// Starting a topic ingests the last one in the background, which reads
+	// the session too.
+	var mu sync.Mutex
 	session := Session{ID: "claude:a", Status: "sleeping"}
-	m.as.lookup = func(id string) (Session, bool) { return session, id == session.ID }
+	set := func(f func(s *Session)) { mu.Lock(); f(&session); mu.Unlock() }
+	m.as.lookup = func(id string) (Session, bool) { mu.Lock(); defer mu.Unlock(); return session, id == session.ID }
+	m.as.background = func(Assistant, string) (string, error) { return "", nil }
 	now := time.Date(2026, 11, 19, 10, 0, 0, 0, time.Local)
 	m.rt.now = func() time.Time { return now }
 	m.saveTopic("main", assistantState{Current: "claude:a"})
 
 	// Used today: it goes on.
-	session.Updated = now.Add(-time.Hour).UTC().Format(time.RFC3339)
+	set(func(s *Session) { s.Updated = now.Add(-time.Hour).UTC().Format(time.RFC3339) })
 	if out, _ := m.OpenAssistant("main"); out["session"] != "claude:a" {
 		t.Fatalf("today: %+v", out)
 	}
 	// Busy past its context limit: still the same topic until it rests.
 	m.assistantTurnEnded("claude:a", filepath.Join(root, "main"), 130000, 200000)
-	session.Status = "running"
+	set(func(s *Session) { s.Status = "running" })
 	if out, _ := m.OpenAssistant("main"); out["session"] != "claude:a" {
 		t.Fatalf("busy: %+v", out)
 	}
-	session.Status = "idle"
+	set(func(s *Session) { s.Status = "idle" })
 	if out, _ := m.OpenAssistant("main"); out["fresh"] != true || out["previous"] != "claude:a" {
 		t.Fatalf("context full: %+v", out)
 	}
 	// Last used before 04:00 today: a new topic.
 	m.saveTopic("main", assistantState{Current: "claude:a"})
-	session.Updated = time.Date(2026, 11, 19, 3, 0, 0, 0, time.Local).UTC().Format(time.RFC3339)
+	set(func(s *Session) {
+		s.Updated = time.Date(2026, 11, 19, 3, 0, 0, 0, time.Local).UTC().Format(time.RFC3339)
+	})
 	if out, _ := m.OpenAssistant("main"); out["fresh"] != true {
 		t.Fatalf("new day: %+v", out)
 	}
 	// New topic by hand.
 	m.saveTopic("main", assistantState{Current: "claude:a"})
-	session.Updated = now.UTC().Format(time.RFC3339)
+	set(func(s *Session) { s.Updated = now.UTC().Format(time.RFC3339) })
 	if err := m.NewTopic("main"); err != nil {
 		t.Fatal(err)
 	}

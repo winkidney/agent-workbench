@@ -11,7 +11,6 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -53,7 +52,9 @@ type FileRoutine struct {
 	Command        string   `toml:"command"`
 	Timeout        int      `toml:"timeout"`
 	NotifyOnOutput bool     `toml:"notify_on_output"`
-	Enabled        *bool    `toml:"enabled"`
+	// The message goes to a background run, not a session (ADR 0011).
+	Background bool  `toml:"background"`
+	Enabled    *bool `toml:"enabled"`
 }
 
 // Assistant is an assistant as the page sees it.
@@ -105,6 +106,12 @@ type assistants struct {
 	topic sync.Mutex
 	// Finds a session as the list shows it; replaced in tests.
 	lookup func(id string) (Session, bool)
+	// One background run at a time in the repository (background.go).
+	bg sync.Mutex
+	// Runs an assistant in the background; replaced in tests.
+	background func(a Assistant, prompt string) (string, error)
+	// Conversations being ingested now.
+	ingesting map[string]bool
 }
 
 func (m *Manager) assistantsRoot() string {
@@ -219,6 +226,9 @@ func readAssistant(path string) (AssistantFile, error) {
 		}
 		if strings.TrimSpace(r.Message) == "" && strings.TrimSpace(r.Command) == "" {
 			return f, fmt.Errorf("routine %q: give a message, a command or both", r.Name)
+		}
+		if r.Background && strings.TrimSpace(r.Message) == "" {
+			return f, fmt.Errorf("routine %q: background needs a message: what to do", r.Name)
 		}
 	}
 	return f, nil
@@ -394,7 +404,7 @@ func fileRoutine(a Assistant, f FileRoutine) Routine {
 	}
 	if strings.TrimSpace(f.Message) != "" {
 		v.Message = f.Message
-		v.Target = &RoutineTarget{Kind: "assistant", Assistant: a.Dir}
+		v.Target = &RoutineTarget{Kind: "assistant", Assistant: a.Dir, Background: f.Background}
 	}
 	return v
 }
@@ -594,32 +604,7 @@ func (m *Manager) NewAssistant(name, dir, agent, sessions string) (Assistant, er
 // commitAll commits everything in root when it is (or can become) a git
 // repository; without git the files are simply there.
 func commitAll(root, message string) {
-	git, err := exec.LookPath("git")
-	if err != nil {
-		return
-	}
-	run := func(args ...string) error {
-		cmd := exec.Command(git, args...)
-		cmd.Dir = root
-		cmd.Env = append(routineEnv(), "GIT_TERMINAL_PROMPT=0")
-		return cmd.Run()
-	}
-	if _, err := os.Stat(filepath.Join(root, ".git")); err != nil {
-		if run("init", "-q") != nil {
-			return
-		}
-	}
-	if run("add", "-A") != nil {
-		return
-	}
-	// Nothing staged: nothing to commit.
-	if run("diff", "--cached", "--quiet") == nil {
-		return
-	}
-	// A commit needs a name; a fresh account may have none.
-	if run("commit", "-q", "-m", message) != nil {
-		_ = run("-c", "user.name=Agent Workbench", "-c", "user.email=workbench@localhost", "commit", "-q", "-m", message)
-	}
+	_, _, _ = gitCommit(root, message)
 }
 
 func (m *Manager) assistantsChanged() {
@@ -699,14 +684,39 @@ func (m *Manager) currentTopic(a Assistant, now time.Time) string {
 	return st.Current
 }
 
-// newTopic ends the ongoing topic; its session joins the earlier ones.
+// newTopic ends the ongoing topic; its session joins the earlier ones,
+// and what it had for the wiki is ingested.
 func (m *Manager) newTopic(a Assistant, st assistantState) {
 	if st.Current != "" {
 		st.Previous = append(st.Previous, st.Current)
+		go m.maybeIngest(st.Current)
 	}
 	st.Current, st.RotateNext = "", false
 	m.saveTopic(a.Dir, st)
 	m.emit("", "assistants", map[string]any{"assistant": a.Dir})
+}
+
+// topicMoved follows a session from its first id (a workbench token) to its
+// native one in the topics that name it.
+func (m *Manager) topicMoved(oldID, newID string) {
+	m.as.topic.Lock()
+	defer m.as.topic.Unlock()
+	for _, a := range m.Assistants() {
+		st := m.topicState(a.Dir)
+		changed := false
+		if st.Current == oldID {
+			st.Current, changed = newID, true
+		}
+		for i, p := range st.Previous {
+			if p == oldID {
+				st.Previous[i], changed = newID, true
+			}
+		}
+		if changed {
+			m.saveTopic(a.Dir, st)
+			m.emit("", "assistants", map[string]any{"assistant": a.Dir})
+		}
+	}
 }
 
 // OpenAssistant says which session to show for an assistant: its ongoing
@@ -834,6 +844,26 @@ func (s *Server) assistantsAPI(w http.ResponseWriter, r *http.Request, rest stri
 	switch {
 	case rest == "" && r.Method == "GET":
 		writeJSON(w, map[string]any{"root": m.assistantsRoot(), "assistants": m.Assistants()})
+	case rest == "changes" && r.Method == "GET":
+		list, err := m.AssistantChanges()
+		if err != nil {
+			bad(w, err)
+			return
+		}
+		writeJSON(w, list)
+	case len(parts) == 3 && parts[0] == "changes" && r.Method == "POST" && (parts[2] == "undo" || parts[2] == "retry"):
+		var v AssistantChange
+		var err error
+		if parts[2] == "undo" {
+			v, err = m.UndoChange(parts[1])
+		} else {
+			v, err = m.RetryChange(parts[1])
+		}
+		if err != nil {
+			bad(w, err)
+			return
+		}
+		writeJSON(w, v)
 	case rest == "setup" && r.Method == "POST":
 		var v struct{ Root, Agent string }
 		if err := decode(w, r, &v); err != nil {

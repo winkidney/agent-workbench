@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { Loader2, Plus } from "lucide-react";
 import { api } from "../../lib/api";
+import { ChangeList } from "../../assistants/Changes";
 import {
   assistantsChanged,
   folderFor,
+  useChanges,
   type Assistant,
   type Assistants,
 } from "../../lib/assistants";
@@ -55,6 +57,7 @@ export function AssistantsTab({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [adding, setAdding] = useState(false);
+  const changes = useChanges(!!value.root);
   const run = async (f: () => Promise<unknown>) => {
     setBusy(true);
     setError("");
@@ -246,6 +249,7 @@ export function AssistantsTab({
           </li>
         ))}
       </ul>
+      <ChangeList list={changes} />
     </>
   );
 }
