@@ -6,6 +6,7 @@ import {
   latestFor,
   MAIN_NAME,
   MAIN_STARTERS,
+  groupRoutines,
   moved,
   routinesOf,
   SET_UP_EVENT,
@@ -120,5 +121,30 @@ describe("an assistant's routines", () => {
       { id: "5", createdBy: "agent:x", target: { kind: "session" } },
     ];
     expect(routinesOf(list, "mail").map((r) => r.id)).toEqual(["1", "2"]);
+  });
+});
+
+describe("routines by assistant", () => {
+  it("groups by owner, Moss first and taking the rest", () => {
+    const list = [
+      { id: "1", createdBy: "file:mail" },
+      { id: "2", createdBy: "page", target: { kind: "session" } },
+      {
+        id: "3",
+        createdBy: "page",
+        target: { kind: "assistant", assistant: "mail" },
+      },
+      { id: "4", createdBy: "agent:x" },
+      { id: "5", createdBy: "file:gone" },
+    ];
+    const groups = groupRoutines(list, [
+      { dir: "main", name: "Moss" },
+      { dir: "mail", name: "Mail" },
+    ]);
+    expect(groups.map((g) => [g.name, g.items.map((r) => r.id)])).toEqual([
+      ["Moss", ["2", "4"]],
+      ["Mail", ["1", "3"]],
+      ["gone", ["5"]],
+    ]);
   });
 });

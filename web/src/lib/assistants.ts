@@ -289,3 +289,44 @@ export function pickStarter(s: Starter, fill: (text: string) => void) {
   if (s.action === "routine") newRoutine();
   else fill(s.text);
 }
+
+// Routines grouped by the assistant they belong to: those in its file and
+// those sent to it; any other routine is Moss's. Groups follow the
+// assistants' order, Moss first.
+export function groupRoutines<
+  R extends {
+    createdBy: string;
+    target?: { kind: string; assistant?: string };
+  },
+>(
+  list: R[],
+  assistants: Pick<Assistant, "dir" | "name">[],
+): { dir: string; name: string; items: R[] }[] {
+  const owner = (r: R) =>
+    r.createdBy.startsWith("file:")
+      ? r.createdBy.slice(5)
+      : r.target?.kind === "assistant" && r.target.assistant
+        ? r.target.assistant
+        : "main";
+  const groups = new Map<string, R[]>();
+  for (const r of list) {
+    const d = owner(r);
+    groups.set(d, [...(groups.get(d) ?? []), r]);
+  }
+  const order = [
+    "main",
+    ...assistants.map((a) => a.dir).filter((d) => d !== "main"),
+  ];
+  const dirs = [...groups.keys()].sort((a, b) => {
+    const ia = order.indexOf(a),
+      ib = order.indexOf(b);
+    return (ia < 0 ? 1e6 : ia) - (ib < 0 ? 1e6 : ib) || a.localeCompare(b);
+  });
+  return dirs.map((dir) => ({
+    dir,
+    name:
+      assistants.find((a) => a.dir === dir)?.name ??
+      (dir === "main" ? MAIN_NAME : dir),
+    items: groups.get(dir)!,
+  }));
+}

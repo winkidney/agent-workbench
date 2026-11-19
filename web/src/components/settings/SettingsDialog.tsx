@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "../ui/dialog";
 import { AccessTab } from "./AccessTab";
@@ -103,6 +103,7 @@ export function SettingsDialog({
   onEditRoutine,
   assistants,
   onOpenAssistant,
+  openTab,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -110,8 +111,13 @@ export function SettingsDialog({
   onEditRoutine: (d: Draft) => void;
   assistants: Assistants;
   onOpenAssistant: (dir: string) => void;
+  // A tab to show when it opens (the ⋯ menu's Routines).
+  openTab?: SettingsTab;
 }) {
   const [tab, setTab] = useState<SettingsTab>(storedTab);
+  useEffect(() => {
+    if (open && openTab) setTab(openTab);
+  }, [open, openTab]);
   const [dirty, setDirty] = useState<Dirty>({});
   const [working, setWorking] = useState<Dirty>({});
   const busy = Object.values(working).some(Boolean);
@@ -183,6 +189,7 @@ export function SettingsDialog({
             open={open && tab === "routines"}
             sessionTitle={sessionTitle}
             onEdit={onEditRoutine}
+            assistants={assistants.assistants}
           />
         </div>
         <div {...panel("usage")}>

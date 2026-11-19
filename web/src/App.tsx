@@ -129,6 +129,7 @@ import {
   MessageSquarePlus,
   BookOpen,
   Info,
+  ListChecks,
 } from "lucide-react";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
@@ -369,7 +370,12 @@ export default function App() {
   useEffect(() => {
     void bootstrap();
   }, []);
-  const openSettings = () => setSettingsOpen(true);
+  // Settings, on a given tab when one is asked for.
+  const [settingsTab, setSettingsTab] = useState<"routines" | undefined>();
+  const openSettings = (tab?: "routines") => {
+    setSettingsTab(tab);
+    setSettingsOpen(true);
+  };
   useEffect(() => {
     if (!paired) return;
     const source = new EventSource(
@@ -1513,6 +1519,19 @@ export default function App() {
                       e.currentTarget
                         .closest("details")
                         ?.removeAttribute("open");
+                      openSettings("routines");
+                    }}
+                  >
+                    <ListChecks size={14} />
+                    Routines
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={(e) => {
+                      e.currentTarget
+                        .closest("details")
+                        ?.removeAttribute("open");
                       openSettings();
                     }}
                   >
@@ -1934,6 +1953,7 @@ export default function App() {
           onEditRoutine={setRoutineDraft}
           assistants={assistantList}
           onOpenAssistant={openAssistant}
+          openTab={settingsTab}
         />
         {settingsFor &&
           (() => {

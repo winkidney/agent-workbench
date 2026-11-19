@@ -6473,3 +6473,12 @@ body.resizing iframe {
   margin: 0;
   font-size: 12px;
 }
+/* Settings → Routines, by assistant. */
+.routine-group + .routine-group {
+  margin-top: 14px;
+}
+.routine-group-title {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+}

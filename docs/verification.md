@@ -1253,3 +1253,4 @@ These are maintainer notes on how each feature of Agent Workbench was verified, 
   - Vitest 376 passed, and typecheck passed.
 - Reload instead of polling (same day): `TestAssistantFilesAreReadOnReloadOnly`. An edited name and a new assistant are not seen until `assistantsChanged()`, then both are. Tests that edit files now reload. The page reloads once when it loads. `go test`, Vitest (376) and typecheck passed.
 - Loaded on demand (same day): the assistant card, settings, setup dialog, change list, routine dialog and Assistants tab are lazy chunks (3–8 KB each) that load when first shown; their data is per view and released when it closes.
+- Routines by assistant (same day): `groupRoutines` test (Moss first and taking unlinked routines, then the assistants' order, a removed assistant last). In the browser, ⋯ → Routines opened the Routines tab, grouped as "Moss 2 / Weekly report 1", with no page errors.
