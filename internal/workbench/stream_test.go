@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -153,7 +154,7 @@ func TestBoundJSONOmitsLargeImages(t *testing.T) {
 	}
 }
 
-func TestThumbServesOnlyConfinedRasterImages(t *testing.T) {
+func TestThumbServesOnlyRasterImages(t *testing.T) {
 	posixOnly(t)
 	m, _ := fixture(t)
 	root := t.TempDir()
@@ -178,9 +179,16 @@ func TestThumbServesOnlyConfinedRasterImages(t *testing.T) {
 	if r := get("missing.png"); r.StatusCode != 404 {
 		t.Fatalf("missing image: %d", r.StatusCode)
 	}
-	for _, p := range []string{"page.html", "icon.svg", "fake.png", "escape.png", "../secret.png", "/etc/passwd"} {
+	for _, p := range []string{"page.html", "icon.svg", "fake.png", "/etc/passwd"} {
 		if r := get(p); r.StatusCode == 200 {
 			t.Fatalf("%s served", p)
+		}
+	}
+	// Images outside the launch directory are shown too, to a signed-in
+	// browser (ADR 0008).
+	for _, p := range []string{"escape.png", "../" + filepath.Base(filepath.Dir(outside)) + "/secret.png", url.QueryEscape(outside)} {
+		if r := get(p); r.StatusCode != 200 {
+			t.Fatalf("%s: %d", p, r.StatusCode)
 		}
 	}
 	if r := lan(t, s, "GET", "/api/thumb?session="+session.ID+"&path=ok.png", "", nil).Result(); r.StatusCode != 401 {

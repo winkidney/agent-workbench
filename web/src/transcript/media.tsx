@@ -141,6 +141,59 @@ export function workspacePath(path: string, cwd: string): string | null {
   return p || null;
 }
 
+// An image or video outside the launch directory, by its absolute path:
+// the server shows media wherever it is, to anyone signed in (ADR 0008).
+export function outsideMedia(path: string, cwd: string): string | null {
+  let p = path.trim();
+  if (/^file:\/\//i.test(p)) {
+    try {
+      p = decodeURIComponent(new URL(p).pathname);
+    } catch {
+      return null;
+    }
+  }
+  if (!p.startsWith("/") || !isMedia(p) || workspacePath(p, cwd)) return null;
+  return p;
+}
+
+// A viewer item for media outside the launch directory: no path, as
+// nothing else (Files, the preview panel) reaches it.
+export function outsideItem(
+  env: Env,
+  abs: string,
+  stamp?: string,
+): ViewItem | null {
+  const src = env.thumb(abs, undefined, stamp);
+  return src
+    ? { kind: VIDEO.test(abs) ? "video" : "image", src, title: abs }
+    : null;
+}
+
+// Why the server did not give an image, from its answer's status.
+export const refusalOf = (status: number) =>
+  status === 404 ? "not found" : status === 415 ? "not an image" : "";
+// Said in full where there is room (the viewer, a tooltip).
+export const refusalHint = (status: number) =>
+  status === 404
+    ? "The file is not there any more."
+    : status === 415
+      ? "The file is not an image or video the page can show."
+      : "";
+
+// Asks the server why an image did not load.
+async function refusal(src: string) {
+  if (!src.startsWith("/api/media?")) return 0;
+  try {
+    const r = await fetch(src, {
+      headers: { Range: "bytes=0-0" },
+      cache: "no-store",
+    });
+    return r.ok ? 0 : r.status;
+  } catch {
+    return 0;
+  }
+}
+
 // A viewer item for a workspace image or video path.
 export function pathItem(
   env: Env,
@@ -307,10 +360,25 @@ export function UrlLink({
         {children}
       </a>
     );
+  const abs = outsideMedia(path, env.cwd);
+  const item = abs ? outsideItem(env, abs) : null;
+  if (item)
+    return (
+      <a
+        href={"#" + abs}
+        title={`View ${abs}`}
+        onClick={(e) => {
+          e.preventDefault();
+          env.view([item], 0);
+        }}
+      >
+        {children}
+      </a>
+    );
   return <span>{children}</span>;
 }
 
-function Thumb({
+export function Thumb({
   src,
   title,
   onOpen,
@@ -326,11 +394,14 @@ function Thumb({
   missing?: string;
 }) {
   const [failed, setFailed] = useState(false);
+  // The server's refusal status, once asked.
+  const [status, setStatus] = useState(0);
   if (failed && quiet) return null;
   if (failed)
     return (
-      <span className="media-missing">
+      <span className="media-missing" title={refusalHint(status) || undefined}>
         <ImageOff size={13} /> {missing ?? title}
+        {refusalOf(status) && ` — ${refusalOf(status)}`}
       </span>
     );
   return (
@@ -344,7 +415,10 @@ function Thumb({
         src={src}
         alt={title}
         loading="lazy"
-        onError={() => setFailed(true)}
+        onError={() => {
+          setFailed(true);
+          if (!quiet) void refusal(src).then(setStatus);
+        }}
       />
     </button>
   );
@@ -386,7 +460,12 @@ export function MediaList({
       item = { kind: "image", src: "/api/uploads/" + m.upload, title: "Image" };
     else if (m.kind === "path") {
       const rel = workspacePath(m.path, env.cwd);
-      item = rel ? pathItem(env, rel, base, stamp) : null;
+      const abs = rel ? null : outsideMedia(m.path, env.cwd);
+      item = rel
+        ? pathItem(env, rel, base, stamp)
+        : abs
+          ? outsideItem(env, abs, stamp)
+          : null;
     }
     if (!item) return -1;
     items.push(item);

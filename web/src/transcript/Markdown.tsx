@@ -10,7 +10,10 @@ import {
   PathChip,
   PathCode,
   RASTER,
+  Thumb,
   UrlLink,
+  outsideMedia,
+  outsideItem,
   pathItem,
   useBase,
   useStamp,
@@ -66,6 +69,18 @@ function MarkdownImage({ src, alt }: { src?: string; alt?: string }) {
       >
         <img src={item.src} alt={alt ?? rel ?? ""} loading="lazy" />
       </button>
+    );
+  // Outside the working directory: shown as well, saying why when the
+  // server cannot (missing, not an image).
+  const abs = outsideMedia(src, env.cwd);
+  const outside = abs && RASTER.test(abs) ? outsideItem(env, abs, stamp) : null;
+  if (abs && outside)
+    return (
+      <Thumb
+        src={outside.src}
+        title={abs}
+        onOpen={() => env.view([outside], 0)}
+      />
     );
   return <PathChip path={src} />;
 }

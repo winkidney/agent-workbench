@@ -2,12 +2,16 @@ import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
   EnvContext,
+  MediaList,
   PathChip,
   PathCode,
   UrlLink,
   openWorkspacePath,
   splitLineRef,
   opensInPanel,
+  outsideMedia,
+  refusalHint,
+  refusalOf,
   type Env,
 } from "./media";
 
@@ -167,5 +171,39 @@ describe("the lines a link points to", () => {
     const file = render(<UrlLink href="file:///w/sub/a.go:12">f</UrlLink>, e);
     expect(file).toContain('href="#sub/a.go"');
     expect(file).toContain('title="Preview sub/a.go at line 12"');
+  });
+});
+
+describe("media outside the working directory", () => {
+  const thumb = (p: string) => `/api/media?path=${encodeURIComponent(p)}`;
+  it("is asked for by its absolute path", () => {
+    expect(outsideMedia("/tmp/cmp/a.webp", "/w")).toBe("/tmp/cmp/a.webp");
+    expect(outsideMedia("file:///tmp/a%20b.png", "/w")).toBe("/tmp/a b.png");
+    expect(outsideMedia("/tmp/clip.mp4", "/w")).toBe("/tmp/clip.mp4");
+    // Inside: a workspace path, not this.
+    expect(outsideMedia("/w/out/a.png", "/w")).toBeNull();
+    // Only media.
+    expect(outsideMedia("/etc/passwd", "/w")).toBeNull();
+    expect(outsideMedia("out/a.png", "/w")).toBeNull();
+  });
+  it("is a thumbnail in a list, and a viewer link in text", () => {
+    const view = vi.fn();
+    const e = env({ thumb, view });
+    expect(
+      render(<MediaList media={[{ kind: "path", path: "/tmp/a.png" }]} />, e),
+    ).toContain(`src="/api/media?path=%2Ftmp%2Fa.png"`);
+    expect(render(<UrlLink href="/tmp/a.png">shot</UrlLink>, e)).toContain(
+      `href="#/tmp/a.png"`,
+    );
+    // Not media: plain text, as before.
+    expect(render(<UrlLink href="/tmp/a.txt">notes</UrlLink>, e)).toBe(
+      "<span>notes</span>",
+    );
+  });
+  it("says why the server did not give it", () => {
+    expect(refusalOf(404)).toBe("not found");
+    expect(refusalOf(415)).toBe("not an image");
+    expect(refusalOf(500)).toBe("");
+    expect(refusalHint(404)).toMatch(/not there/);
   });
 });

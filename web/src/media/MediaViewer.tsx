@@ -21,7 +21,7 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import type { ViewItem } from "../transcript/media";
+import { refusalHint, type ViewItem } from "../transcript/media";
 import { composerInbox } from "../composer/inbox";
 import {
   centered,
@@ -108,6 +108,8 @@ export function MediaViewer({
   const [natural, setNatural] = useState<Size | null>(null);
   const [view, setView] = useState<View | null>(null);
   const [failed, setFailed] = useState(false);
+  // The server's refusal status, when it refused the image.
+  const [status, setStatus] = useState(0);
   // What the <img> shows: the item's address, or a fresh copy of it.
   const [shown, setShown] = useState<string | null>(() =>
     fresh(item) ? null : item.src,
@@ -203,6 +205,7 @@ export function MediaViewer({
     setNatural(null);
     setView(null);
     setFailed(false);
+    setStatus(0);
     setHistory(EMPTY);
     setDraft(null);
     setTyping(null);
@@ -220,7 +223,10 @@ export function MediaViewer({
     const control = new AbortController();
     fetch(item.src, { cache: "no-cache", signal: control.signal })
       .then((r) => {
-        if (!r.ok) throw new Error(r.statusText);
+        if (!r.ok) {
+          setStatus(r.status);
+          throw new Error(r.statusText);
+        }
         return r.blob();
       })
       .then(dataUrl)
@@ -661,6 +667,7 @@ export function MediaViewer({
           <div className="viewer-error">
             <ImageOff size={28} />
             <p>Couldn't load {name}</p>
+            {refusalHint(status) && <p>{refusalHint(status)}</p>}
             {item.path && (
               <button type="button" onClick={() => onReveal(item)}>
                 {here ? (

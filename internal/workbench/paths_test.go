@@ -93,9 +93,13 @@ func TestClaudeHistoryCarriesRecordCwd(t *testing.T) {
 }
 
 func mediaServer(t *testing.T) (*Server, Session, string, func(string) string) {
+	return mediaServerFor(t, "claude")
+}
+
+func mediaServerFor(t *testing.T, agent string) (*Server, Session, string, func(string) string) {
 	m, _ := fixture(t)
 	root := workspace(t)
-	session, _ := m.Create("claude", root, "media")
+	session, _ := m.Create(agent, root, "media")
 	s := pairedServer(m, nil, "agent.localhost:17880", "pair")
 	cookie := request(t, s, s.Host, "POST", "/api/login", `{"code":"pair"}`, nil).Result().Cookies()[0]
 	get := func(q string) string {
@@ -125,7 +129,7 @@ func TestMediaServesVideoRangesAndRefusesActiveContent(t *testing.T) {
 		"path=a.svg":               "415",
 		"path=fake.mp4":            "415",
 		"path=video/clip.mp4":      "404", // no base, not related: not found, quietly
-		"path=../etc/passwd.png":   "400",
+		"path=../etc/passwd.png":   "404", // looked for outside too (ADR 0008)
 		"path=game/README.md":      "415",
 		"path=missing/nothing.png": "404",
 	} {

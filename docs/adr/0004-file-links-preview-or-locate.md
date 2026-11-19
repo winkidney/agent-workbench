@@ -1,7 +1,7 @@
 # ADR 0004: A file link previews what the browser can show, and locates the rest in the file list
 
 - Date: 2026-11-17
-- Status: accepted; extended by 0007
+- Status: accepted; extended by 0007; amended by 0008 (media from anywhere)
 
 ## Context
 

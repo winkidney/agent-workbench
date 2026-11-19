@@ -42,6 +42,9 @@ type Preview struct {
 	secret string
 }
 
+// errOutside refuses a path outside the session's working directory.
+var errOutside = errors.New("path outside working directory")
+
 func confined(root, path string) (string, error) {
 	if filepath.IsAbs(path) {
 		return "", errors.New("path must be relative")
@@ -57,7 +60,7 @@ func confined(root, path string) (string, error) {
 	}
 	rel, err := filepath.Rel(root, full)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return "", errors.New("path outside working directory")
+		return "", errOutside
 	}
 	return full, nil
 }
@@ -123,11 +126,11 @@ func resolveSessionPath(root, base, path string, related []string) (string, stri
 		if _, ok := within(candidate); !ok {
 			real, err := filepath.EvalSymlinks(candidate)
 			if dir != "" || err != nil {
-				return "", "", errors.New("path outside working directory")
+				return "", "", errOutside
 			}
 			rel, ok := within(real)
 			if !ok {
-				return "", "", errors.New("path outside working directory")
+				return "", "", errOutside
 			}
 			return real, rel, nil
 		}
@@ -135,7 +138,7 @@ func resolveSessionPath(root, base, path string, related []string) (string, stri
 		if err == nil {
 			rel, ok := within(real)
 			if !ok {
-				return "", "", errors.New("path outside working directory")
+				return "", "", errOutside
 			}
 			return real, rel, nil
 		}
@@ -167,6 +170,34 @@ func (m *Manager) ResolvePath(id, base, path string) (string, string, error) {
 	root := r.session.Cwd
 	m.mu.Unlock()
 	return resolveSessionPath(root, base, path, m.activity.Related(id))
+}
+
+// MediaPath is the file a media path a session wrote names, wherever it
+// is: absolute, or relative to where the agent was (base), else to the
+// launch directory. Only the media route uses it (ADR 0008); previews,
+// text and downloads stay within the launch directory.
+func (m *Manager) MediaPath(id, base, path string) (string, error) {
+	m.mu.Lock()
+	r := m.find(id)
+	if r == nil {
+		m.mu.Unlock()
+		return "", errors.New("session not found")
+	}
+	root := r.session.Cwd
+	m.mu.Unlock()
+	path = strings.TrimSpace(strings.TrimPrefix(path, "file://"))
+	if !filepath.IsAbs(path) {
+		dir := root
+		if filepath.IsAbs(base) {
+			dir = base
+		}
+		path = filepath.Join(dir, path)
+	}
+	full, err := filepath.EvalSymlinks(filepath.Clean(path))
+	if err != nil {
+		return "", err
+	}
+	return full, nil
 }
 
 func (m *Manager) CreatePreview(id, kind, path, base, target, command string, port int, hostPort string) (*Preview, error) {

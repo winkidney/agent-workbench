@@ -1345,6 +1345,12 @@ func (s *Server) media(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	full, _, err := s.Manager.ResolvePath(q.Get("session"), q.Get("base"), path)
+	if errors.Is(err, errOutside) {
+		// Images and videos are shown wherever they are, to anyone signed
+		// in (ADR 0008): the agents read and write anywhere the user can,
+		// and often save screenshots and generated images elsewhere.
+		full, err = s.Manager.MediaPath(q.Get("session"), q.Get("base"), path)
+	}
 	if errors.Is(err, fs.ErrNotExist) {
 		// Paths mentioned in text are probed; a missing file is not a client error.
 		http.NotFound(w, r)
