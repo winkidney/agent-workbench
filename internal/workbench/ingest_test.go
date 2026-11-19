@@ -223,7 +223,7 @@ func TestIngestRecordsCommitsAndUndoes(t *testing.T) {
 
 func TestIngestOnlyForTheWiki(t *testing.T) {
 	m, root := assistantsWithGit(t)
-	a, err := m.NewAssistant("Report", "", "claude", "per-task")
+	a, err := m.NewAssistant("Report", "", "claude", "per-task", "")
 	if err != nil {
 		t.Fatal(err)
 	}

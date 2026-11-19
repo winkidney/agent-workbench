@@ -93,17 +93,17 @@ func TestSettingUpAssistantsWritesOnlyWhatIsMissing(t *testing.T) {
 		t.Fatalf("after setting up again: %+v", list)
 	}
 
-	a, err := m.NewAssistant("Weekly report", "", "claude", "per-task")
+	a, err := m.NewAssistant("Weekly report", "", "claude", "per-task", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if a.Dir != "weekly-report" || a.Sessions != "per-task" || a.Error != "" {
 		t.Fatalf("new assistant: %+v", a)
 	}
-	if _, err := m.NewAssistant("周报", "", "claude", "per-task"); err == nil {
+	if _, err := m.NewAssistant("周报", "", "claude", "per-task", ""); err == nil {
 		t.Fatal("a name without a folder name was accepted")
 	}
-	if _, err := m.NewAssistant("周报", "weekly-report", "claude", "per-task"); err == nil {
+	if _, err := m.NewAssistant("周报", "weekly-report", "claude", "per-task", ""); err == nil {
 		t.Fatal("an existing folder was accepted")
 	}
 }
@@ -212,5 +212,53 @@ func TestContinuousAssistantStartsNewTopics(t *testing.T) {
 	}
 	if got := topicDay(time.Date(2026, 11, 19, 2, 0, 0, 0, time.Local)); got.Day() != 18 || got.Hour() != topicDayStarts {
 		t.Fatalf("before 04:00 the day began yesterday: %v", got)
+	}
+}
+
+func TestMailAssistantStartsFromItsTemplate(t *testing.T) {
+	m, _ := fixture(t)
+	root := filepath.Join(t.TempDir(), "assistants")
+	if err := m.SetUpAssistants(root, "claude"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.NewAssistant("X", "", "claude", "per-task", "nope"); err == nil {
+		t.Fatal("an unknown template was accepted")
+	}
+	a, err := m.NewAssistant("Mail", "", "codex", "continuous", "mail")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.Error != "" || a.Agent != "codex" || a.Sessions != "per-task" || a.Routines != 1 {
+		t.Fatalf("mail: %+v", a)
+	}
+	for _, p := range []string{"AGENTS.md", "CLAUDE.md", "config.toml", "tools/fetch.py", "tools/test_fetch.py", ".agents/skills/check-mail/SKILL.md", "state/inbox.md", "state/loops.md", "log.md"} {
+		if _, err := os.Stat(filepath.Join(a.Path, filepath.FromSlash(p))); err != nil {
+			t.Errorf("missing %s", p)
+		}
+	}
+	if b, _ := os.ReadFile(filepath.Join(a.Path, "AGENTS.md")); !strings.HasPrefix(string(b), "# Mail\n") || strings.Contains(string(b), "{{") {
+		t.Fatalf("AGENTS.md:\n%s", b)
+	}
+	// Its routine is a background one, off until it is set up.
+	v, err := m.store.routine(fileRoutineID("mail", "Check mail"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.Enabled || v.Command == nil || v.Command.Run != "uv run tools/fetch.py" || v.Target == nil || !v.Target.Background || v.When.Minutes != 30 {
+		t.Fatalf("routine: %+v %+v", v, v.Target)
+	}
+	// Its script's own tests pass.
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		t.Skip("python3 is not installed")
+	}
+	if out, err := exec.Command(python, "-c", "import sys; sys.exit(sys.version_info < (3, 11))").CombinedOutput(); err != nil {
+		t.Skipf("python3 is older than 3.11: %s", out)
+	}
+	cmd := exec.Command(python, filepath.Join("tools", "test_fetch.py"))
+	cmd.Dir = a.Path
+	cmd.Env = append(os.Environ(), "PYTHONDONTWRITEBYTECODE=1")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("test_fetch.py: %v\n%s", err, out)
 	}
 }

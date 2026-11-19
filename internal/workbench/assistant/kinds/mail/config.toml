@@ -1,0 +1,12 @@
+# Where tools/fetch.py reads mail (IMAP over TLS). The password is not here:
+# it is in ~/.config/assistant/secrets/<secret>, readable by you only.
+# Gmail: imap.gmail.com, an app password (Google account → Security).
+# Outlook: outlook.office365.com. Fastmail: imap.fastmail.com.
+# QQ: imap.qq.com, 163: imap.163.com (turn IMAP on and use the authorization code).
+host = "imap.example.com"
+port = 993
+user = "you@example.com"
+folder = "INBOX"
+secret = "mail-password"
+# How many days back to look; mail seen before is skipped.
+days = 2

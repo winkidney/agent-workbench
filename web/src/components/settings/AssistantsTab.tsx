@@ -54,6 +54,8 @@ export function AssistantsTab({
   const [name, setName] = useState("");
   const [folder, setFolder] = useState("");
   const [sessions, setSessions] = useState<Assistant["sessions"]>("per-task");
+  // An empty procedure, or a template (internal/workbench/assistant/kinds).
+  const [kind, setKind] = useState<"" | "mail">("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [adding, setAdding] = useState(false);
@@ -136,16 +138,56 @@ export function AssistantsTab({
                   name,
                   dir: folder || folderFor(name),
                   agent,
-                  sessions,
+                  sessions: kind === "mail" ? "per-task" : sessions,
+                  kind,
                 }),
               ).then((ok) => {
                 if (!ok) return;
                 setAdding(false);
                 setName("");
                 setFolder("");
+                setKind("");
               });
             }}
           >
+            <div className="routine-row">
+              <span className="routine-label">Start from</span>
+              <div
+                className="agent-switch"
+                role="radiogroup"
+                aria-label="Start from"
+              >
+                {(
+                  [
+                    ["", "An empty procedure"],
+                    ["mail", "Mail triage"],
+                  ] as ["" | "mail", string][]
+                ).map(([v, label]) => (
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={kind === v}
+                    key={v || "empty"}
+                    className={kind === v ? "on" : ""}
+                    onClick={() => {
+                      setKind(v);
+                      if (v === "mail" && !name.trim()) setName("Mail");
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {kind === "mail" && (
+              <p className="subtle">
+                Reads new mail over IMAP every 30 minutes, without marking it
+                read, and sorts it into <code>state/inbox.md</code> in the
+                background. It cannot send. Its routine starts off: fill in{" "}
+                <code>config.toml</code> and the password as its{" "}
+                <code>AGENTS.md</code> says, then switch it on.
+              </p>
+            )}
             <label className="routine-field">
               <span className="routine-label">Name</span>
               <Input
@@ -168,32 +210,34 @@ export function AssistantsTab({
               <span className="routine-label">Agent</span>
               <AgentChoice value={agent} onChange={setAgent} />
             </div>
-            <div className="routine-row">
-              <span className="routine-label">Topics</span>
-              <div
-                className="agent-switch"
-                role="radiogroup"
-                aria-label="Topics"
-              >
-                {(
-                  [
-                    ["per-task", "A session per request"],
-                    ["continuous", "One ongoing conversation"],
-                  ] as [Assistant["sessions"], string][]
-                ).map(([v, label]) => (
-                  <button
-                    type="button"
-                    role="radio"
-                    aria-checked={sessions === v}
-                    key={v}
-                    className={sessions === v ? "on" : ""}
-                    onClick={() => setSessions(v)}
-                  >
-                    {label}
-                  </button>
-                ))}
+            {kind !== "mail" && (
+              <div className="routine-row">
+                <span className="routine-label">Topics</span>
+                <div
+                  className="agent-switch"
+                  role="radiogroup"
+                  aria-label="Topics"
+                >
+                  {(
+                    [
+                      ["per-task", "A session per request"],
+                      ["continuous", "One ongoing conversation"],
+                    ] as [Assistant["sessions"], string][]
+                  ).map(([v, label]) => (
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={sessions === v}
+                      key={v}
+                      className={sessions === v ? "on" : ""}
+                      onClick={() => setSessions(v)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
             {error && (
               <p className="error-text" role="alert">
                 {error}

@@ -529,7 +529,7 @@ func (m *Manager) SetUpAssistants(root, agent string) error {
 		return err
 	}
 	if len(assistantFiles(abs)) == 0 {
-		if err := scaffoldAssistant(abs, "main", scaffoldData{Name: "Assistant", Agent: agent, Sessions: "continuous", Memory: "wiki", Main: true}); err != nil {
+		if err := scaffoldAssistant(abs, "main", "", scaffoldData{Name: "Assistant", Agent: agent, Sessions: "continuous", Memory: "wiki", Main: true}); err != nil {
 			return err
 		}
 	}
@@ -541,8 +541,45 @@ func (m *Manager) SetUpAssistants(root, agent string) error {
 	return nil
 }
 
-func scaffoldAssistant(root, dir string, d scaffoldData) error {
+// assistantKinds are the templates New assistant can start from besides an
+// empty procedure: assistant/kinds/<kind>.
+var assistantKinds = map[string]bool{"mail": true}
+
+// scaffoldKind writes a kind's files: those ending in .tmpl rendered, the
+// rest as they are; its skills/ go to .agents/skills/ (embed leaves out
+// names that start with a dot).
+func scaffoldKind(path, kind string, d scaffoldData) error {
+	base := "assistant/kinds/" + kind
+	return fs.WalkDir(assistantTemplates, base, func(p string, e fs.DirEntry, err error) error {
+		if err != nil || e.IsDir() {
+			return err
+		}
+		rel := strings.TrimPrefix(p, base+"/")
+		var data []byte
+		if strings.HasSuffix(rel, ".tmpl") {
+			rel = strings.TrimSuffix(rel, ".tmpl")
+			data, err = renderTemplate(strings.TrimPrefix(p, "assistant/"), d)
+		} else {
+			data, err = assistantTemplates.ReadFile(p)
+		}
+		if err != nil {
+			return err
+		}
+		if strings.HasPrefix(rel, "skills/") {
+			rel = ".agents/" + rel
+		}
+		return writeNew(filepath.Join(path, filepath.FromSlash(rel)), data)
+	})
+}
+
+func scaffoldAssistant(root, dir, kind string, d scaffoldData) error {
 	path := filepath.Join(root, dir)
+	// A kind's own files first: the general ones fill in only what it lacks.
+	if kind != "" {
+		if err := scaffoldKind(path, kind, d); err != nil {
+			return err
+		}
+	}
 	files := map[string]string{
 		"assistant.toml":   "each/assistant.toml",
 		"AGENTS.md":        "each/AGENTS.md",
@@ -569,7 +606,7 @@ func scaffoldAssistant(root, dir string, d scaffoldData) error {
 }
 
 // NewAssistant adds an assistant folder to the repository.
-func (m *Manager) NewAssistant(name, dir, agent, sessions string) (Assistant, error) {
+func (m *Manager) NewAssistant(name, dir, agent, sessions, kind string) (Assistant, error) {
 	root := m.assistantsRoot()
 	if root == "" {
 		return Assistant{}, errors.New("set up the assistants folder first")
@@ -590,10 +627,13 @@ func (m *Manager) NewAssistant(name, dir, agent, sessions string) (Assistant, er
 	if sessions != "per-task" && sessions != "continuous" {
 		return Assistant{}, errors.New("sessions: per-task or continuous")
 	}
+	if kind != "" && !assistantKinds[kind] {
+		return Assistant{}, fmt.Errorf("no assistant template %q", kind)
+	}
 	if _, err := os.Stat(filepath.Join(root, dir)); err == nil {
 		return Assistant{}, fmt.Errorf("%s already exists", filepath.Join(root, dir))
 	}
-	if err := scaffoldAssistant(root, dir, scaffoldData{Name: name, Agent: agent, Sessions: sessions, Memory: "state"}); err != nil {
+	if err := scaffoldAssistant(root, dir, kind, scaffoldData{Name: name, Agent: agent, Sessions: sessions, Memory: "state"}); err != nil {
 		return Assistant{}, err
 	}
 	commitAll(root, "Add assistant "+dir)
@@ -876,12 +916,12 @@ func (s *Server) assistantsAPI(w http.ResponseWriter, r *http.Request, rest stri
 		}
 		writeJSON(w, map[string]any{"root": m.assistantsRoot(), "assistants": m.Assistants()})
 	case rest == "" && r.Method == "POST":
-		var v struct{ Name, Dir, Agent, Sessions string }
+		var v struct{ Name, Dir, Agent, Sessions, Kind string }
 		if err := decode(w, r, &v); err != nil {
 			bad(w, err)
 			return
 		}
-		a, err := m.NewAssistant(v.Name, v.Dir, v.Agent, v.Sessions)
+		a, err := m.NewAssistant(v.Name, v.Dir, v.Agent, v.Sessions, v.Kind)
 		if err != nil {
 			bad(w, err)
 			return

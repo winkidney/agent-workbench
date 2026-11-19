@@ -1110,3 +1110,26 @@ These are maintainer notes on how each feature of Agent Workbench was verified, 
   - `rm` removed it and refused main's file routine. A request with the tunnel header, and one without the token, got 403.
   - `assistant send main` started an engine whose environment had `AGENT_WORKBENCH_BIN`, `_DATA_DIR` and `_SESSION`.
 - Not exercised: a live agent running the command from inside its session.
+
+## Mail triage template (2026-11-19)
+
+- `tools/test_fetch.py` (run as `python3` and `uv run`, Python 3.12, 8 tests):
+  - A multipart mail with an encoded sender and subject, an HTML body (a script left out, entities decoded) and a PDF attachment, which is listed by name and not saved.
+  - A long body is cut, and the file id is stable.
+  - Saving keeps a file that is already there, and pruning removes days older than 30 but no other folders.
+  - IMAP dates use English months.
+  - A secret readable by others, or missing, is refused.
+  - A config still holding `example.com` is refused.
+  - Against a fake IMAP server, the main loop selects the folder read-only and fetches with `BODY.PEEK[]`. It prints "2 new mail:" with each mail's file. A second run, which finds the same mail under another UID, prints nothing.
+- Go: `TestMailAssistantStartsFromItsTemplate`
+  - An unknown template is refused.
+  - The mail template writes its files, with the skill in `.agents/skills/`, and the rendered `AGENTS.md` has no template marks left.
+  - It is per-task whatever was chosen.
+  - Its "Check mail" routine runs `uv run tools/fetch.py` every 30 minutes in the background, and is off.
+  - It runs the script's tests in the new folder.
+- Browser (isolated workbench, Playwright):
+  - **Start from: Mail triage** fills in the name "Mail", hides the topic choice and explains the setup.
+  - **Create** lists it, and Settings → Routines shows "Check mail · Off · Every 30 minutes · uv run tools/fetch.py · In the background, as mail".
+  - Before it is set up, `uv run tools/fetch.py` exits 1 with "config.toml: set host (see AGENTS.md, Setting up)".
+  - No page errors.
+- Not exercised: a real mailbox.
