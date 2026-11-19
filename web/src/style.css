@@ -4358,6 +4358,22 @@ textarea {
   font-size: 11px;
   white-space: nowrap;
 }
+/* Keeps the settings picked for an assistant's request as its own. */
+.new-save-default {
+  border: 0;
+  background: none;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
+  font-size: 11.5px;
+  white-space: nowrap;
+  text-decoration: underline dotted;
+  cursor: pointer;
+}
+.new-save-default:hover,
+.new-save-default:focus-visible {
+  color: var(--foreground);
+}
 .new-error {
   margin: 10px 0 0;
   font-size: 12.5px;
@@ -6438,6 +6454,9 @@ body.resizing iframe {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+.assistant-settings-hint {
+  font-size: 11.5px;
 }
 .assistant-settings-routine {
   display: flex;

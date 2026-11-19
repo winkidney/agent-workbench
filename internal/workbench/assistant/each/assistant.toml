@@ -30,6 +30,12 @@ requires = []
 ready = false
 {{- end}}
 {{if .Main}}
+# Its sessions' model and effort (also mode, permissions), per agent; what
+# a table leaves out follows Settings → Agents. Its Settings change them.
+# [options.claude]
+# model = "opus"
+# effort = "high"
+
 [[routines]]
 name = "Daily check"
 daily = "08:30"
@@ -41,6 +47,12 @@ daily = "10:00"
 days = ["sun"]
 message = "Check ../shared/wiki as AGENTS.md says under Lint, fix what you can, and ask me about the rest."
 {{else}}
+# Its sessions' model and effort (also mode, permissions), per agent; what
+# a table leaves out follows Settings → Agents. Its Settings change them.
+# [options.claude]
+# model = "opus"
+# effort = "high"
+
 # A routine sends this assistant a message, runs a command in this folder,
 # or runs a command and sends what it printed (only when it printed
 # something). Schedules: daily = "HH:MM" (days = ["mon", "fri"]),

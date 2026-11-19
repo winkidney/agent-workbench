@@ -601,11 +601,24 @@ export function NewSessionOptions({
   cwd,
   value,
   onChange,
+  defaultsFrom = `agents/${agent}/defaults`,
+  onDefaults,
+  labelPrefix = "New session",
+  fallbacks,
 }: {
   agent: string;
   cwd: string;
   value: Options;
   onChange: (o: Options) => void;
+  // Where the choices start (an assistant's own: assistants/<dir>/options);
+  // null keeps value as it is, as in an assistant's settings.
+  defaultsFrom?: string | null;
+  // The settings value started from, once loaded.
+  onDefaults?: (o: Options) => void;
+  labelPrefix?: string;
+  // What an unset choice falls back to before the CLI's own default (an
+  // assistant's settings: Settings → Agents).
+  fallbacks?: Options;
 }) {
   // Capabilities and saved defaults count only for the agent and directory
   // they were loaded for; until then the pills show "Loading…", not the
@@ -638,10 +651,15 @@ export function NewSessionOptions({
   }, [agent, cwd, key]);
   useEffect(() => {
     let cancelled = false;
-    void request<Options>(`agents/${agent}/defaults`)
+    if (defaultsFrom === null) {
+      setDefaultsFor(agent);
+      return;
+    }
+    void request<Options>(defaultsFrom)
       .then((v) => {
         if (!cancelled) {
           onChange(v);
+          onDefaults?.(v);
           setDefaultsFor(agent);
         }
       })
@@ -651,10 +669,12 @@ export function NewSessionOptions({
     return () => {
       cancelled = true;
     };
-  }, [agent]);
+  }, [agent, defaultsFrom]);
   const model =
-    findModel(meta.models, resolveOption("model", value, meta.defaults)) ??
-    findModel(meta.models, "");
+    findModel(
+      meta.models,
+      resolveOption("model", value, fallbacks, meta.defaults),
+    ) ?? findModel(meta.models, "");
   const efforts =
     model?.supportedEffortLevels ??
     model?.supportedReasoningEfforts?.map((e) => e.reasoningEffort) ??
@@ -696,7 +716,7 @@ export function NewSessionOptions({
         )
         .map(([label, key, items]) => {
           const override = value[key] ?? "";
-          const fallback = resolveOption(key, meta.defaults);
+          const fallback = resolveOption(key, fallbacks, meta.defaults);
           const name = (v: string) =>
             key === "model"
               ? modelName(meta.models, v)
@@ -705,7 +725,7 @@ export function NewSessionOptions({
             <OptionPill
               key={key}
               label={label}
-              ariaLabel={`New session ${label}`}
+              ariaLabel={`${labelPrefix} ${label}`}
               icon={ICONS[key]}
               override={override}
               shown={name(override || fallback)}

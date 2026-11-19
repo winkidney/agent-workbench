@@ -5,6 +5,8 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Textarea } from "../components/ui/textarea";
 import { api } from "../lib/api";
+import { NewSessionOptions } from "../AgentControls";
+import { OPTION_KEYS, type Options } from "../agentOptions";
 import {
   assistantsChanged,
   routinesOf,
@@ -13,6 +15,15 @@ import {
 import { describeWhen, type Routine } from "../routines/when";
 
 type Agent = "claude" | "codex";
+
+// A table as assistant.toml keeps it: only the keys that are set.
+const table = (o?: Options) => {
+  const out: Options = {};
+  for (const k of OPTION_KEYS) if (o?.[k]) out[k] = o[k];
+  return out;
+};
+const sameTable = (a?: Options, b?: Options) =>
+  OPTION_KEYS.every((k) => (a?.[k] ?? "") === (b?.[k] ?? ""));
 
 const lines = (s: string) =>
   s
@@ -47,6 +58,25 @@ export function AssistantSettings({
     a.sessions || "per-task",
   );
   const [enabled, setEnabled] = useState(a.enabled !== false);
+  // Its own session settings, per agent (ADR 0017), and what an unset one
+  // falls back to (Settings → Agents).
+  const [options, setOptions] = useState<Partial<Record<Agent, Options>>>(
+    () => ({
+      claude: table(a.options?.claude),
+      codex: table(a.options?.codex),
+    }),
+  );
+  const [fallbacks, setFallbacks] = useState<Options>({});
+  useEffect(() => {
+    let live = true;
+    setFallbacks({});
+    api<Options>(`agents/${agent}/defaults`)
+      .then((v) => live && setFallbacks(v))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [agent]);
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -71,6 +101,11 @@ export function AssistantSettings({
     if (agent !== a.agent) patch.agent = agent;
     if (sessions !== a.sessions) patch.sessions = sessions;
     if (enabled !== (a.enabled !== false)) patch.enabled = enabled;
+    const changedOptions: Partial<Record<Agent, Options>> = {};
+    for (const v of ["claude", "codex"] as Agent[])
+      if (!sameTable(options[v], a.options?.[v]))
+        changedOptions[v] = table(options[v]);
+    if (Object.keys(changedOptions).length) patch.options = changedOptions;
     if (!Object.keys(patch).length) return onClose();
     setBusy(true);
     setError("");
@@ -173,6 +208,24 @@ export function AssistantSettings({
                 </button>
               ))}
             </div>
+          </div>
+          <div className="assistant-settings-block">
+            <span className="routine-label">
+              Its {agent === "claude" ? "Claude" : "Codex"} sessions start with
+            </span>
+            <NewSessionOptions
+              agent={agent}
+              cwd={a.path}
+              value={options[agent] ?? {}}
+              onChange={(o) => setOptions((x) => ({ ...x, [agent]: o }))}
+              defaultsFrom={null}
+              fallbacks={fallbacks}
+              labelPrefix="Default"
+            />
+            <span className="subtle assistant-settings-hint">
+              "Default" follows Settings → Agents. A request can still choose
+              its own; background runs take only the model and effort.
+            </span>
           </div>
           <div className="routine-row">
             <span className="routine-label">Topics</span>

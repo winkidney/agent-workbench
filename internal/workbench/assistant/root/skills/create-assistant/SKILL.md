@@ -14,7 +14,7 @@ Ask only what you cannot tell from the conversation:
 - What it does, from what inputs, producing what, and for whom.
 - When: on request only, or on a schedule (daily at a time, every so often).
 - Which steps must wait for the user's approval (anything sent to other people, money, deletions, posting anywhere).
-- Claude or Codex (default: the agent you are), and whether every request is a new session (`per-task`, most jobs) or it keeps one ongoing conversation (`continuous`).
+- Claude or Codex (default: the agent you are), the model and effort if the job needs more (or less) than the user's defaults, and whether every request is a new session (`per-task`, most jobs) or it keeps one ongoing conversation (`continuous`).
 - What it needs to reach: accounts, servers, files. Which of those need a secret.
 
 ## 2. Propose it and get approval
@@ -40,7 +40,7 @@ It makes the folder from the template, commits it and prints its path. It never 
 
 | Path | What | In git |
 | --- | --- | --- |
-| `assistant.toml` | name, agent, sessions, memory, `description`, `capabilities`, `examples`, `ready`, `[[routines]]` | yes |
+| `assistant.toml` | name, agent, sessions, memory, `description`, `capabilities`, `examples`, `ready`, `[options.<agent>]` (model, effort), `[[routines]]` | yes |
 | `AGENTS.md` | the procedure (sections below) | yes |
 | `config.toml` | settings its scripts read, with comments; never secrets | yes |
 | `tools/<name>.py`, `tools/test_<name>.py` | scripts and their tests | yes |

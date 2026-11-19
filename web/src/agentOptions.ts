@@ -5,6 +5,9 @@ export type Options = {
   mode?: string;
   permissions?: string;
 };
+// The settings a new session starts with that an assistant can keep as its
+// own (ADR 0017); speed stays per session.
+export const OPTION_KEYS = ["model", "effort", "mode", "permissions"] as const;
 export type OptionItem = { value: string; label: string; disabled?: boolean };
 export type ModelRef = {
   value?: string;

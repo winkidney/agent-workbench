@@ -17,7 +17,12 @@ import {
   useFileDrop,
 } from "../composer/AttachmentStrip";
 import type { ViewItem } from "../transcript/media";
-import { MAIN_STARTERS, type Assistant } from "../lib/assistants";
+import {
+  assistantsChanged,
+  MAIN_STARTERS,
+  type Assistant,
+} from "../lib/assistants";
+import { OPTION_KEYS } from "../agentOptions";
 import { QuickStart } from "../assistants/QuickStart";
 import { AssistantHome } from "../assistants/lazy";
 
@@ -69,6 +74,32 @@ export function NewSession({
   const agent: Agent = (assistant?.agent || chosenAgent) as Agent;
   const cwd = assistant?.path ?? chosenCwd;
   const [options, setOptions] = useState<Options>({});
+  // An assistant's settings as they were loaded, to offer saving changes
+  // as its own (ADR 0017).
+  const [started, setStarted] = useState<Options | null>(null);
+  const [savedDefault, setSavedDefault] = useState(false);
+  const changed =
+    !!assistant &&
+    !!started &&
+    OPTION_KEYS.some((k) => (options[k] ?? "") !== (started[k] ?? ""));
+  const saveAsDefault = async () => {
+    if (!assistant || !started) return;
+    const agentKey = agent as "claude" | "codex";
+    const table = { ...(assistant.options?.[agentKey] ?? {}) };
+    for (const k of OPTION_KEYS)
+      if ((options[k] ?? "") !== (started[k] ?? ""))
+        table[k] = options[k] ?? "";
+    try {
+      await api(`assistants/${assistant.dir}`, "PATCH", {
+        options: { [agentKey]: table },
+      });
+      setStarted(options);
+      setSavedDefault(true);
+      assistantsChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -103,6 +134,7 @@ export function NewSession({
             text,
             images: images.images.map((a) => a.id),
             files: images.files.map((a) => a.id),
+            options,
           }),
         );
         return;
@@ -243,13 +275,41 @@ export function NewSession({
               ))}
             </div>
           )}
-          {!assistant && (
+          {assistant ? (
+            <NewSessionOptions
+              agent={agent}
+              cwd={cwd}
+              value={options}
+              onChange={(o) => {
+                setOptions(o);
+                setSavedDefault(false);
+              }}
+              defaultsFrom={`assistants/${assistant.dir}/options`}
+              onDefaults={setStarted}
+            />
+          ) : (
             <NewSessionOptions
               agent={agent}
               cwd={cwd}
               value={options}
               onChange={setOptions}
             />
+          )}
+          {changed && (
+            <button
+              type="button"
+              className="new-save-default"
+              disabled={busy}
+              title={`Use these settings for ${assistant?.name}'s new sessions`}
+              onClick={() => void saveAsDefault()}
+            >
+              Save as {assistant?.name}'s default
+            </button>
+          )}
+          {savedDefault && !changed && (
+            <span className="new-hint" role="status">
+              Saved as default
+            </span>
           )}
           <div className="composer-actions">
             <Button

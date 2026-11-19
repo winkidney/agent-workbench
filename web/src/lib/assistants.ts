@@ -2,6 +2,7 @@
 // repository, each with an assistant.toml.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api";
+import type { Options } from "../agentOptions";
 
 export type Assistant = {
   dir: string;
@@ -20,6 +21,9 @@ export type Assistant = {
   // What it needs from the user (a signed-in CLI, an MCP server, a token).
   requires?: string[];
   ready: boolean;
+  // Its own session settings by agent (assistant.toml [options.<agent>],
+  // ADR 0017); what one leaves out comes from Settings → Agents.
+  options?: Partial<Record<"claude" | "codex", Options>>;
   error?: string;
   current?: string;
   previous?: string[];

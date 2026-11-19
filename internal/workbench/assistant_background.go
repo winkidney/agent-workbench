@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -182,6 +183,28 @@ func summaryOf(out string) string {
 // allow rules still let Bash run simple commands (checked with 2.1.328).
 const backgroundTools = "Read,Edit,Write,Glob,Grep"
 
+// backgroundModel passes the assistant's model and effort to a background
+// run; its mode and permissions never apply there (the limits above stay).
+func backgroundModel(agent string, o Options) []string {
+	var args []string
+	if agent == "codex" {
+		if o.Model != "" {
+			args = append(args, "-m", o.Model)
+		}
+		if o.Effort != "" {
+			args = append(args, "-c", "model_reasoning_effort="+strconv.Quote(o.Effort))
+		}
+		return args
+	}
+	if o.Model != "" {
+		args = append(args, "--model", o.Model)
+	}
+	if o.Effort != "" {
+		args = append(args, "--effort", o.Effort)
+	}
+	return args
+}
+
 // backgroundAgent runs the assistant's agent once, without a session the
 // sidebar shows, limited to reading and editing files in the repository:
 // Claude with only the file tools and no MCP servers; Codex in its
@@ -204,9 +227,9 @@ func (m *Manager) backgroundAgent(a Assistant, prompt string) (string, error) {
 		last = f.Name()
 		f.Close()
 		defer os.Remove(last)
-		cmd = run.command("exec", "--ephemeral", "--sandbox", "workspace-write", "--skip-git-repo-check", "--color", "never", "-C", a.Path, "--add-dir", root, "-o", last, "-")
+		cmd = run.command(append([]string{"exec", "--ephemeral", "--sandbox", "workspace-write", "--skip-git-repo-check", "--color", "never", "-C", a.Path, "--add-dir", root, "-o", last}, append(backgroundModel(a.Agent, m.assistantOptions(a)), "-")...)...)
 	} else {
-		cmd = run.command("-p", "--no-session-persistence", "--output-format", "text", "--permission-mode", "acceptEdits", "--strict-mcp-config", "--mcp-config", `{"mcpServers":{}}`, "--add-dir", root, "--tools", backgroundTools, "--allowedTools", backgroundTools)
+		cmd = run.command(append([]string{"-p", "--no-session-persistence", "--output-format", "text", "--permission-mode", "acceptEdits", "--strict-mcp-config", "--mcp-config", `{"mcpServers":{}}`, "--add-dir", root, "--tools", backgroundTools, "--allowedTools", backgroundTools}, backgroundModel(a.Agent, m.assistantOptions(a))...)...)
 	}
 	cmd.Dir = a.Path
 	if cmd.Env == nil {

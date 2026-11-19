@@ -45,11 +45,13 @@ type AssistantFile struct {
 	// token, an account.
 	Requires []string `toml:"requires"`
 	// false until set up; missing (older files) means set up.
-	Ready    *bool         `toml:"ready"`
-	Agent    string        `toml:"agent"`
-	Sessions string        `toml:"sessions"`
-	Memory   string        `toml:"memory"`
-	Routines []FileRoutine `toml:"routines"`
+	Ready    *bool  `toml:"ready"`
+	Agent    string `toml:"agent"`
+	Sessions string `toml:"sessions"`
+	Memory   string `toml:"memory"`
+	// Its sessions' model, effort, mode and permissions, by agent (ADR 0017).
+	Options  map[string]AgentOptions `toml:"options"`
+	Routines []FileRoutine           `toml:"routines"`
 }
 
 // FileRoutine is a routine an assistant.toml lists; it runs in or sends to
@@ -88,6 +90,8 @@ type Assistant struct {
 	Examples     []string `json:"examples,omitempty"`
 	Requires     []string `json:"requires,omitempty"`
 	Ready        bool     `json:"ready"`
+	// Its own session settings, by agent (ADR 0017).
+	Options map[string]AgentOptions `json:"options,omitempty"`
 	// What is wrong with its assistant.toml; it is then not used.
 	Error string `json:"error,omitempty"`
 	// continuous: the session of the ongoing topic, and earlier ones.
@@ -281,6 +285,9 @@ func readAssistant(path string) (AssistantFile, error) {
 			}
 		}
 	}
+	if err := checkAgentOptions(f.Options); err != nil {
+		return f, err
+	}
 	names := map[string]bool{}
 	for i, r := range f.Routines {
 		if strings.TrimSpace(r.Name) == "" {
@@ -408,6 +415,7 @@ func (m *Manager) Assistants() []Assistant {
 			a.Enabled = f.Enabled == nil || *f.Enabled || a.Dir == "main"
 			a.Description, a.Capabilities, a.Examples, a.Requires = f.Description, f.Capabilities, f.Examples, f.Requires
 			a.Ready = f.Ready == nil || *f.Ready
+			a.Options = f.Options
 		}
 		list = append(list, a)
 	}
@@ -1042,6 +1050,9 @@ type AssistantPatch struct {
 	Examples              *[]string
 	Requires              *[]string
 	Enabled, Ready        *bool
+	// Its session settings for an agent: the whole table, "" leaves a key
+	// to Settings → Agents.
+	Options map[string]AgentOptions
 }
 
 // PatchAssistant changes only the given top-level lines of an
@@ -1128,6 +1139,17 @@ func (m *Manager) PatchAssistant(dir string, p AssistantPatch) (Assistant, error
 	if p.Ready != nil && *p.Ready != a.Ready {
 		text = setOrInsert(text, "ready", strconv.FormatBool(*p.Ready))
 		did = append(did, map[bool]string{true: "ready", false: "not set up"}[*p.Ready])
+	}
+	for _, agent := range []string{"claude", "codex"} {
+		o, ok := p.Options[agent]
+		if !ok || o == a.file.Options[agent] {
+			continue
+		}
+		if err := checkAgentOptions(map[string]AgentOptions{agent: o}); err != nil {
+			return a, err
+		}
+		text = setOptionsTable(text, agent, o)
+		did = append(did, agent+" settings")
 	}
 	if len(did) == 0 {
 		return a, nil
@@ -1221,6 +1243,13 @@ func (m *Manager) NewTopic(dir string) error {
 // that sent it, if any. It returns the session and whether the message
 // waits in its queue.
 func (m *Manager) AssistantMessage(dir, text string, images []string, routine string) (Session, bool, error) {
+	return m.AssistantMessageWith(dir, text, images, routine, nil)
+}
+
+// AssistantMessageWith is AssistantMessage with the settings chosen for a
+// session it starts, over the assistant's own; a message that joins the
+// ongoing topic keeps that session's.
+func (m *Manager) AssistantMessageWith(dir, text string, images []string, routine string, chosen *Options) (Session, bool, error) {
 	a, err := m.assistant(dir)
 	if err != nil {
 		return Session{}, false, err
@@ -1244,7 +1273,11 @@ func (m *Manager) AssistantMessage(dir, text string, images []string, routine st
 	if label := routineLabelOf(text); label != "" {
 		named = label
 	}
-	s, err := m.createWithMessage(a.Agent, a.Path, "", named, text, images, nil, routine)
+	options := m.assistantOptions(a)
+	if chosen != nil {
+		options = mergeOptions(options, *chosen)
+	}
+	s, err := m.createWithMessage(a.Agent, a.Path, "", named, text, images, &options, routine)
 	if err != nil {
 		return s, false, err
 	}
@@ -1477,9 +1510,10 @@ func (s *Server) assistantsAPI(w http.ResponseWriter, r *http.Request, rest stri
 		writeJSON(w, map[string]any{"ok": true})
 	case len(parts) == 2 && parts[1] == "message" && r.Method == "POST":
 		var v struct {
-			Text   string
-			Images []string `json:",omitempty"`
-			Files  []string `json:",omitempty"`
+			Text    string
+			Images  []string `json:",omitempty"`
+			Files   []string `json:",omitempty"`
+			Options *Options `json:",omitempty"`
 		}
 		if err := decode(w, r, &v); err != nil {
 			bad(w, err)
@@ -1495,12 +1529,20 @@ func (s *Server) assistantsAPI(w http.ResponseWriter, r *http.Request, rest stri
 			bad(w, err)
 			return
 		}
-		session, _, err := m.AssistantMessage(parts[0], text, v.Images, "")
+		session, _, err := m.AssistantMessageWith(parts[0], text, v.Images, "", v.Options)
 		if err != nil {
 			bad(w, err)
 			return
 		}
 		writeJSON(w, session)
+	case len(parts) == 2 && parts[1] == "options" && r.Method == "GET":
+		// What a session it starts now would use (the page's choices start here).
+		a, err := m.assistant(parts[0])
+		if err != nil {
+			bad(w, err)
+			return
+		}
+		writeJSON(w, m.assistantOptions(a))
 	default:
 		http.NotFound(w, r)
 	}
