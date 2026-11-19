@@ -89,6 +89,12 @@ func assistantsWithGit(t *testing.T) (*Manager, string) {
 	if err := m.SetUpAssistants(root, "claude"); err != nil {
 		t.Fatal(err)
 	}
+	// Sessions name their folder resolved, as the root is kept (macOS
+	// keeps temporary files under the /var link).
+	root, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
 	return m, root
 }
 
