@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 )
 
 // The agents' own commands (ADR 0012): an agent in a session runs
@@ -54,6 +55,7 @@ type AgentRoutineRequest struct {
 	Daily string   `json:"daily,omitempty"`
 	Days  []string `json:"days,omitempty"`
 	Every string   `json:"every,omitempty"`
+	Cron  string   `json:"cron,omitempty"`
 	At    string   `json:"at,omitempty"`
 }
 
@@ -106,12 +108,17 @@ func (m *Manager) agentTarget(to, caller string) (*RoutineTarget, error) {
 // command, runs at most every agentMinMinutes, and an agent has at most
 // agentRoutinesMax switched on.
 func (m *Manager) AgentRoutine(req AgentRoutineRequest) (Routine, error) {
-	when, err := FileRoutine{Daily: req.Daily, Days: req.Days, Every: req.Every, At: req.At}.when()
+	when, err := FileRoutine{Daily: req.Daily, Days: req.Days, Every: req.Every, At: req.At, Cron: req.Cron}.when()
 	if err != nil {
 		return Routine{}, err
 	}
 	if when.Kind == "interval" && when.Minutes < agentMinMinutes {
 		return Routine{}, fmt.Errorf("--every: at least %d minutes", agentMinMinutes)
+	}
+	if when.Kind == "cron" {
+		if gap, err := cronGap(when.Cron, time.Now()); err != nil || gap < agentMinMinutes*time.Minute {
+			return Routine{}, fmt.Errorf("--cron: at most every %d minutes", agentMinMinutes)
+		}
 	}
 	if strings.TrimSpace(req.Message) == "" {
 		return Routine{}, errors.New("--message is missing")

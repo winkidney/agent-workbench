@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/robfig/cron/v3"
 )
 
 // Routines are messages and commands the workbench runs on a schedule
@@ -24,8 +26,11 @@ import (
 
 // When is a routine's schedule, in the workbench computer's local time.
 type When struct {
-	// once | daily | interval
+	// once | daily | interval | cron
 	Kind string `json:"kind"`
+	// cron: a standard 5-field expression ("0 9 1 * *") or a descriptor
+	// ("@weekly"), in this computer's local time.
+	Cron string `json:"cron,omitempty"`
 	// once: the time (RFC 3339).
 	At string `json:"at,omitempty"`
 	// daily: "HH:MM", on Days (0 = Sunday … 6 = Saturday; none = every day).
@@ -183,8 +188,39 @@ func (w When) next(after, anchor time.Time) time.Time {
 		}
 		n := after.Sub(anchor)/step + 1
 		return anchor.Add(n * step)
+	case "cron":
+		s, err := cron.ParseStandard(w.Cron)
+		if err != nil {
+			return time.Time{}
+		}
+		return s.Next(after.In(time.Local))
 	}
 	return time.Time{}
+}
+
+// cronGap is the shortest time between two runs of a cron expression over
+// the next week, to hold it to the same minimum as an interval.
+func cronGap(expr string, now time.Time) (time.Duration, error) {
+	s, err := cron.ParseStandard(expr)
+	if err != nil {
+		return 0, fmt.Errorf("cron: %v (like \"0 9 1 * *\" or \"@weekly\")", err)
+	}
+	t := s.Next(now.In(time.Local))
+	if t.IsZero() {
+		return 0, errors.New("cron: it never runs")
+	}
+	gap := time.Duration(1<<62 - 1)
+	for i := 0; i < 200 && t.Before(now.Add(8*24*time.Hour)); i++ {
+		n := s.Next(t)
+		if n.IsZero() {
+			break
+		}
+		if d := n.Sub(t); d < gap {
+			gap = d
+		}
+		t = n
+	}
+	return gap, nil
 }
 
 func clockTime(s string) (hour, minute int, ok bool) {
@@ -230,8 +266,16 @@ func (w When) check(now time.Time) error {
 		if w.Minutes < routineMinMinutes || w.Minutes > 7*24*60 {
 			return fmt.Errorf("interval: every %d minutes to 7 days", routineMinMinutes)
 		}
+	case "cron":
+		gap, err := cronGap(w.Cron, now)
+		if err != nil {
+			return err
+		}
+		if gap < routineMinMinutes*time.Minute {
+			return fmt.Errorf("cron: at most every %d minutes", routineMinMinutes)
+		}
 	default:
-		return errors.New("when: once, daily or interval")
+		return errors.New("when: once, daily, interval or cron")
 	}
 	return nil
 }

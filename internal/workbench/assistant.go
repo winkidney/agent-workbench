@@ -59,6 +59,7 @@ type FileRoutine struct {
 	Daily          string   `toml:"daily"`
 	Days           []string `toml:"days"`
 	Every          string   `toml:"every"`
+	Cron           string   `toml:"cron"`
 	At             string   `toml:"at"`
 	Message        string   `toml:"message"`
 	Command        string   `toml:"command"`
@@ -173,13 +174,13 @@ func parseEvery(s string) (int, error) {
 // when reads a file routine's schedule.
 func (f FileRoutine) when() (When, error) {
 	set := 0
-	for _, s := range []string{f.Daily, f.Every, f.At} {
+	for _, s := range []string{f.Daily, f.Every, f.At, f.Cron} {
 		if s != "" {
 			set++
 		}
 	}
 	if set != 1 {
-		return When{}, errors.New("give one of daily, every or at")
+		return When{}, errors.New("give one of daily, every, at or cron")
 	}
 	switch {
 	case f.Daily != "":
@@ -190,6 +191,12 @@ func (f FileRoutine) when() (When, error) {
 				return w, fmt.Errorf("days: %q is not a day (mon … sun)", d)
 			}
 			w.Days = append(w.Days, n)
+		}
+		return w, nil
+	case f.Cron != "":
+		w := When{Kind: "cron", Cron: strings.TrimSpace(f.Cron)}
+		if _, err := cronGap(w.Cron, time.Now()); err != nil {
+			return w, err
 		}
 		return w, nil
 	case f.Every != "":

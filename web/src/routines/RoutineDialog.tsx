@@ -281,6 +281,7 @@ export function RoutineDialog({
                 ["daily", "Daily"],
                 ["interval", "Every"],
                 ["once", "Once"],
+                ["cron", "Cron"],
               ]}
               onChange={(whenKind) => set({ whenKind })}
             />
@@ -336,6 +337,20 @@ export function RoutineDialog({
                 ]}
                 onChange={(unit) => set({ unit })}
               />
+            </div>
+          )}
+          {d.whenKind === "cron" && (
+            <div className="routine-inline routine-indent">
+              <Input
+                className="routine-mono"
+                aria-label="Cron expression"
+                placeholder="0 9 1 * *"
+                value={d.cron}
+                onChange={(e) => set({ cron: e.target.value })}
+              />
+              <span className="subtle">
+                minute hour day month weekday, local time; or @daily, @weekly
+              </span>
             </div>
           )}
           {d.whenKind === "once" && (

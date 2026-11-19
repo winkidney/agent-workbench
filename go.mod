@@ -9,6 +9,7 @@ require (
 	github.com/creack/pty v1.1.24
 	github.com/google/uuid v1.6.0
 	github.com/klauspost/compress v1.19.2
+	github.com/robfig/cron/v3 v3.0.1
 	golang.org/x/sys v0.31.0
 	modernc.org/sqlite v1.36.3
 )

@@ -24,7 +24,7 @@ import (
 
 const agentUsage = `usage:
   agent-workbench routine add (--daily HH:MM [--days mon,fri] | --every 2h |
-                               --at "YYYY-MM-DD HH:MM" | --in 30m)
+                               --at "YYYY-MM-DD HH:MM" | --in 30m | --cron "0 9 1 * *")
                               --message TEXT [--to this|ASSISTANT|SESSION] [--name NAME]
   agent-workbench routine list
   agent-workbench routine rm ID
@@ -121,6 +121,7 @@ func agentCommand(group string, args []string) error {
 		flags.StringVar(&req.Daily, "daily", "", "every day at HH:MM")
 		flags.StringVar(&days, "days", "", "with --daily: only these days (mon,tue,…)")
 		flags.StringVar(&req.Every, "every", "", "every 15m, 2h, 1d, …")
+		flags.StringVar(&req.Cron, "cron", "", `a cron expression, "0 9 1 * *" or "@weekly" (local time)`)
 		flags.StringVar(&req.At, "at", "", `once, at "YYYY-MM-DD HH:MM" (local time)`)
 		flags.StringVar(&in, "in", "", "once, after 30m, 2h, …")
 		flags.StringVar(&req.Message, "message", "", "what to send")
@@ -252,6 +253,8 @@ func describe(v workbench.Routine) string {
 		}
 	case "interval":
 		when = fmt.Sprintf("every %d minutes", v.When.Minutes)
+	case "cron":
+		when = "cron " + v.When.Cron
 	}
 	if t := v.Target; t != nil {
 		switch t.Kind {

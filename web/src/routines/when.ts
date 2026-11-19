@@ -6,7 +6,8 @@ import type { Options } from "../AgentControls";
 export type When =
   | { kind: "once"; at: string }
   | { kind: "daily"; time: string; days?: number[] }
-  | { kind: "interval"; minutes: number };
+  | { kind: "interval"; minutes: number }
+  | { kind: "cron"; cron: string };
 
 export type RoutineTarget =
   | { kind: "session"; session: string }
@@ -72,6 +73,8 @@ export function describeWhen(w: When): string {
       if (m % 60 === 0) return plural(m / 60, "hour");
       return plural(m, "minute");
     }
+    case "cron":
+      return `Cron ${w.cron}`;
   }
 }
 
@@ -123,6 +126,8 @@ export type Draft = {
   days: number[];
   every: number;
   unit: "minutes" | "hours" | "days";
+  // cron: the expression.
+  cron: string;
   enabled: boolean;
 };
 
@@ -149,6 +154,7 @@ export function newDraft(session?: string, cwd = "", now = new Date()): Draft {
     days: [],
     every: 1,
     unit: "hours",
+    cron: "",
     enabled: true,
   };
 }
@@ -184,6 +190,7 @@ export function draftOf(r: Routine): Draft {
     d.time = r.when.time;
     d.days = r.when.days ?? [];
   }
+  if (r.when.kind === "cron") d.cron = r.when.cron;
   if (r.when.kind === "interval") {
     const m = r.when.minutes;
     if (m % (24 * 60) === 0) [d.every, d.unit] = [m / (24 * 60), "days"];
@@ -207,6 +214,10 @@ export function routineOf(
   } else if (d.whenKind === "daily") {
     if (!/^\d\d:\d\d$/.test(d.time)) return { error: "Choose a time." };
     when = { kind: "daily", time: d.time, days: d.days };
+  } else if (d.whenKind === "cron") {
+    const cron = d.cron.trim();
+    if (!cron) return { error: "Write the cron expression, like 0 9 1 * *." };
+    when = { kind: "cron", cron };
   } else {
     const minutes = Math.round(d.every * UNIT[d.unit]);
     if (!(minutes >= 5)) return { error: "Run it at most every 5 minutes." };

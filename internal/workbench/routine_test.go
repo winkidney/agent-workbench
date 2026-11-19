@@ -247,3 +247,40 @@ func TestRoutineOutputKeepsItsEnd(t *testing.T) {
 		t.Fatalf("hand-off %q", got)
 	}
 }
+
+func TestCronRoutines(t *testing.T) {
+	now := time.Date(2026, 11, 20, 10, 0, 0, 0, time.Local)
+	monthly := When{Kind: "cron", Cron: "0 9 1 * *"}
+	if err := monthly.check(now); err != nil {
+		t.Fatal(err)
+	}
+	if got := monthly.next(now, time.Time{}); !got.Equal(time.Date(2026, 12, 1, 9, 0, 0, 0, time.Local)) {
+		t.Fatalf("monthly next: %v", got)
+	}
+	if got := (When{Kind: "cron", Cron: "@weekly"}).next(now, time.Time{}); got.Weekday() != time.Sunday || got.Hour() != 0 {
+		t.Fatalf("@weekly: %v", got)
+	}
+	for _, bad := range []string{"* * * * *", "*/3 * * * *", "61 * * * *", "nonsense", ""} {
+		if err := (When{Kind: "cron", Cron: bad}).check(now); err == nil {
+			t.Errorf("accepted %q", bad)
+		}
+	}
+	if err := (When{Kind: "cron", Cron: "*/5 9-18 * * 1-5"}).check(now); err != nil {
+		t.Fatalf("every 5 minutes in working hours: %v", err)
+	}
+	// In assistant.toml, and from an agent (at least every 15 minutes).
+	if w, err := (FileRoutine{Cron: "0 9 1 * *"}).when(); err != nil || w.Kind != "cron" {
+		t.Fatalf("file: %+v %v", w, err)
+	}
+	if _, err := (FileRoutine{Cron: "0 9 1 * *", Daily: "09:00"}).when(); err == nil {
+		t.Fatal("two schedules accepted")
+	}
+	m, _ := fixture(t)
+	m.as.lookup = func(id string) (Session, bool) { return Session{ID: id, Cwd: "/w"}, id == "claude:w" }
+	if _, err := m.AgentRoutine(AgentRoutineRequest{Caller: "claude:w", Cron: "*/5 * * * *", Message: "x"}); err == nil {
+		t.Fatal("an agent's 5-minute cron was accepted")
+	}
+	if v, err := m.AgentRoutine(AgentRoutineRequest{Caller: "claude:w", Cron: "0 9 1 * *", Message: "x"}); err != nil || v.When.Cron != "0 9 1 * *" {
+		t.Fatalf("agent monthly: %+v %v", v, err)
+	}
+}

@@ -140,3 +140,32 @@ describe("routines to assistants", () => {
     ).toMatchObject({ target: "assistant", assistant: "report" });
   });
 });
+
+describe("cron routines", () => {
+  it("describes and builds them", () => {
+    expect(describeWhen({ kind: "cron", cron: "0 9 1 * *" })).toBe(
+      "Cron 0 9 1 * *",
+    );
+    const d = newDraft(undefined, "/w");
+    d.whenKind = "cron";
+    d.message = "x";
+    expect(routineOf(d)).toEqual({
+      error: "Write the cron expression, like 0 9 1 * *.",
+    });
+    d.cron = " @weekly ";
+    const r = routineOf(d);
+    expect("routine" in r && r.routine.when).toEqual({
+      kind: "cron",
+      cron: "@weekly",
+    });
+    expect(
+      draftOf({
+        ...(r as { routine: Routine }).routine,
+        id: "1",
+        enabled: true,
+        createdBy: "page",
+        created: "",
+      } as Routine).cron,
+    ).toBe("@weekly");
+  });
+});

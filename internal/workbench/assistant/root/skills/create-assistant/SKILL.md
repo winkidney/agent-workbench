@@ -55,7 +55,7 @@ It makes the folder from the template, commits it and prints its path. It never 
 
 **Home card:** `description` (one line), `capabilities` (what it can do, a few short items) and `examples` (requests the user can click to start) and `requires` (what it needs from the user, each with the ways it can be given, e.g. "GitHub: the gh CLI signed in, the GitHub MCP server, or an API token in secrets") at the top of `assistant.toml`, in the user's language. The page shows them when the assistant is opened. `ready = false` until setup is done.
 
-**Routines** in `assistant.toml` start with `enabled = false`. Use:
+**Routines** in `assistant.toml` start with `enabled = false`. Their schedule is one of `daily = "HH:MM"` (with `days`), `every = "30m"`, `at = "YYYY-MM-DD HH:MM"` (once) or `cron = "0 9 1 * *"` (minute hour day month weekday, local time; `@weekly`), at most every 5 minutes. Use:
 
 - a `message` alone: the assistant is asked on a schedule;
 - a `command` alone, with `notify_on_output = true`: a check that costs no tokens and notifies when it prints;

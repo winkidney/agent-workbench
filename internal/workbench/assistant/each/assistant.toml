@@ -44,7 +44,8 @@ message = "Check ../shared/wiki as AGENTS.md says under Lint, fix what you can, 
 # A routine sends this assistant a message, runs a command in this folder,
 # or runs a command and sends what it printed (only when it printed
 # something). Schedules: daily = "HH:MM" (days = ["mon", "fri"]),
-# every = "30m" / "2h" / "1d", or at = "2026-12-01 09:00" (once).
+# every = "30m" / "2h" / "1d", at = "2026-12-01 09:00" (once), or
+# cron = "0 9 1 * *" (minute hour day month weekday, local time; "@weekly").
 #
 # [[routines]]
 # name = "Friday report"

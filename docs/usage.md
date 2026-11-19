@@ -208,7 +208,7 @@ The workbench listens on all interfaces by default (`0.0.0.0:17880`) and `start`
 
 ## Routines
 
-A routine sends a message to a session, runs a command, or runs a command and hands what it printed to a session, on a schedule: once, daily at a time (on chosen weekdays), or every so many minutes, hours or days (at least every 5 minutes).
+A routine sends a message to a session, runs a command, or runs a command and hands what it printed to a session, on a schedule: once, daily at a time (on chosen weekdays), every so many minutes, hours or days, or a cron expression (`0 9 1 * *`: 09:00 on the 1st of each month; `@weekly`; local time). At most every 5 minutes, and every 15 for routines an assistant makes.
 
 - **Schedule a message:** **⋯ → Schedule message…** in the conversation header, or the same item in a session's row menu in the sidebar, makes a routine that sends a message to that session. **Settings → Routines → New routine** makes one from scratch.
 - **Run a command:** choose **Run a command**, write the command line and choose the folder it runs in. **Keep the output** only runs it: each run's output and exit code are kept, and with **Notify me when it prints something** you hear about output. **Send it to an agent** hands its output to a session with your message, and only when it printed something: a script that prints nothing when there is nothing new costs no tokens.
