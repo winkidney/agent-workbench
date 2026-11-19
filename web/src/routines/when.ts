@@ -10,6 +10,7 @@ export type When =
 
 export type RoutineTarget =
   | { kind: "session"; session: string }
+  | { kind: "assistant"; assistant: string }
   | { kind: "new"; agent: "claude" | "codex"; cwd: string; options?: Options };
 
 export type RoutineCommand = {
@@ -108,8 +109,10 @@ export type Draft = {
   notifyOnOutput: boolean;
   // command only: keep the output, or hand it to the target.
   handOff: boolean;
-  target: "session" | "new";
+  target: "session" | "new" | "assistant";
   session?: string;
+  // The assistant's folder name (lib/assistants.ts).
+  assistant: string;
   agent: "claude" | "codex";
   cwd: string;
   whenKind: When["kind"];
@@ -135,6 +138,7 @@ export function newDraft(session?: string, cwd = "", now = new Date()): Draft {
     handOff: false,
     target: session ? "session" : "new",
     session,
+    assistant: "",
     agent: "claude",
     cwd,
     whenKind: "daily",
@@ -162,6 +166,10 @@ export function draftOf(r: Routine): Draft {
     d.timeoutMin = r.command.timeoutMin ?? 10;
     d.notifyOnOutput = !!r.command.notifyOnOutput;
     d.handOff = !!r.target;
+  }
+  if (r.target?.kind === "assistant") {
+    d.target = "assistant";
+    d.assistant = r.target.assistant;
   }
   if (r.target?.kind === "new") {
     d.target = "new";
@@ -208,6 +216,9 @@ export function routineOf(
     if (d.target === "session") {
       if (!d.session) return { error: "Choose a session." };
       target = { kind: "session", session: d.session };
+    } else if (d.target === "assistant") {
+      if (!d.assistant) return { error: "Choose an assistant." };
+      target = { kind: "assistant", assistant: d.assistant };
     } else {
       if (!d.cwd.trim()) return { error: "Choose a folder for the session." };
       target = { kind: "new", agent: d.agent, cwd: d.cwd };

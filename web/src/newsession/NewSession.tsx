@@ -5,7 +5,7 @@ import { NewSessionOptions, type Options } from "../AgentControls";
 import { api } from "../lib/api";
 import { randomUUID } from "../lib/uuid";
 import { newlineKey } from "../lib/newline";
-import type { Prefs, Session } from "../sidebar/tree";
+import { shortPath, type Prefs, type Session } from "../sidebar/tree";
 import { ProjectPicker } from "./ProjectPicker";
 import { AgentIcon } from "../components/AgentIcon";
 import { recentProjects } from "./recent";
@@ -17,6 +17,7 @@ import {
   useFileDrop,
 } from "../composer/AttachmentStrip";
 import type { ViewItem } from "../transcript/media";
+import type { Assistant } from "../lib/assistants";
 
 type Agent = "claude" | "codex";
 const STORE = "workbench-new";
@@ -36,6 +37,8 @@ export function NewSession({
   workspaces,
   prefs,
   initialCwd,
+  assistant,
+  continues,
   onCreated,
   onView,
 }: {
@@ -43,6 +46,11 @@ export function NewSession({
   workspaces: string[];
   prefs: Prefs;
   initialCwd?: string;
+  // A message for an assistant: its folder and agent are its own, and the
+  // server decides where it goes (lib/assistants.ts).
+  assistant?: Assistant;
+  // The title of the session this new topic continues from.
+  continues?: string;
   onCreated: (s: Session) => void;
   // Opens added images in the viewer.
   onView?: (items: ViewItem[], index: number) => void;
@@ -52,10 +60,12 @@ export function NewSession({
     [sessions, prefs, workspaces],
   );
   const saved = remembered();
-  const [agent, setAgent] = useState<Agent>(saved.agent ?? "claude");
-  const [cwd, setCwd] = useState(
+  const [chosenAgent, setAgent] = useState<Agent>(saved.agent ?? "claude");
+  const [chosenCwd, setCwd] = useState(
     initialCwd || saved.cwd || recent[0]?.path || "",
   );
+  const agent: Agent = (assistant?.agent || chosenAgent) as Agent;
+  const cwd = assistant?.path ?? chosenCwd;
   const [options, setOptions] = useState<Options>({});
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -84,8 +94,18 @@ export function NewSession({
     if (!sendable || !cwd || busy) return;
     setBusy(true);
     setError("");
-    remember({ agent, cwd });
     try {
+      if (assistant) {
+        onCreated(
+          await api<Session>(`assistants/${assistant.dir}/message`, "POST", {
+            text,
+            images: images.images.map((a) => a.id),
+            files: images.files.map((a) => a.id),
+          }),
+        );
+        return;
+      }
+      remember({ agent, cwd });
       const s = await api<Session>("sessions", "POST", {
         agent,
         cwd,
@@ -105,13 +125,32 @@ export function NewSession({
   return (
     <div className="new-session">
       <div className="new-hero">
-        <h1>What should we work on?</h1>
-        <p>
-          {project?.name ??
-            (cwd ? cwd.split("/").filter(Boolean).pop() : "Choose a project")}
-          {" · "}
-          {agentName}
-        </p>
+        {assistant ? (
+          <>
+            <h1>{assistant.name}</h1>
+            <p>
+              {assistant.sessions === "continuous"
+                ? continues
+                  ? `New topic · continues from ${continues}`
+                  : "New topic"
+                : "A new request"}
+              {" · "}
+              {agentName}
+            </p>
+          </>
+        ) : (
+          <>
+            <h1>What should we work on?</h1>
+            <p>
+              {project?.name ??
+                (cwd
+                  ? cwd.split("/").filter(Boolean).pop()
+                  : "Choose a project")}
+              {" · "}
+              {agentName}
+            </p>
+          </>
+        )}
       </div>
       <form
         className={
@@ -156,32 +195,36 @@ export function NewSession({
         />
         <div className="composer-bottom">
           <AddFiles disabled={busy} onFiles={images.add} />
-          <div className="agent-switch" role="radiogroup" aria-label="Agent">
-            {(["claude", "codex"] as Agent[]).map((a) => (
-              <button
-                type="button"
-                role="radio"
-                aria-checked={agent === a}
-                key={a}
-                className={agent === a ? "on" : ""}
-                disabled={busy}
-                onClick={() => {
-                  setAgent(a);
-                  setOptions({});
-                  remember({ agent: a });
-                }}
-              >
-                <AgentIcon agent={a} size={16} decorative />
-                {a === "claude" ? "Claude" : "Codex"}
-              </button>
-            ))}
-          </div>
-          <NewSessionOptions
-            agent={agent}
-            cwd={cwd}
-            value={options}
-            onChange={setOptions}
-          />
+          {!assistant && (
+            <div className="agent-switch" role="radiogroup" aria-label="Agent">
+              {(["claude", "codex"] as Agent[]).map((a) => (
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={agent === a}
+                  key={a}
+                  className={agent === a ? "on" : ""}
+                  disabled={busy}
+                  onClick={() => {
+                    setAgent(a);
+                    setOptions({});
+                    remember({ agent: a });
+                  }}
+                >
+                  <AgentIcon agent={a} size={16} decorative />
+                  {a === "claude" ? "Claude" : "Codex"}
+                </button>
+              ))}
+            </div>
+          )}
+          {!assistant && (
+            <NewSessionOptions
+              agent={agent}
+              cwd={cwd}
+              value={options}
+              onChange={setOptions}
+            />
+          )}
           <div className="composer-actions">
             <Button
               size="icon"
@@ -201,14 +244,20 @@ export function NewSession({
         </div>
       </form>
       <div className="new-meta">
-        <ProjectPicker
-          value={cwd}
-          recent={recent}
-          onChange={(p) => {
-            setCwd(p);
-            remember({ cwd: p });
-          }}
-        />
+        {assistant ? (
+          <span className="new-hint" title={assistant.path}>
+            {shortPath(assistant.path)}
+          </span>
+        ) : (
+          <ProjectPicker
+            value={cwd}
+            recent={recent}
+            onChange={(p) => {
+              setCwd(p);
+              remember({ cwd: p });
+            }}
+          />
+        )}
         <span className="new-hint">
           {busy ? `Starting ${agentName}…` : "↵ start · ⇧↵ / Alt↵ new line"}
         </span>

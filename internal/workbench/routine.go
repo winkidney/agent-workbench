@@ -38,12 +38,14 @@ type When struct {
 // RoutineTarget is where a routine's message goes: an existing session, or
 // a new session started in a folder.
 type RoutineTarget struct {
-	// session | new
-	Kind    string   `json:"kind"`
-	Session string   `json:"session,omitempty"`
-	Agent   string   `json:"agent,omitempty"`
-	Cwd     string   `json:"cwd,omitempty"`
-	Options *Options `json:"options,omitempty"`
+	// session | new | assistant
+	Kind    string `json:"kind"`
+	Session string `json:"session,omitempty"`
+	// assistant: its folder name (assistant.go).
+	Assistant string   `json:"assistant,omitempty"`
+	Agent     string   `json:"agent,omitempty"`
+	Cwd       string   `json:"cwd,omitempty"`
+	Options   *Options `json:"options,omitempty"`
 }
 
 // RoutineCommand is a command line a routine runs in a folder.
@@ -69,6 +71,8 @@ type Routine struct {
 	Anchor string `json:"anchor,omitempty"`
 	// A once routine: when it ran (it is then off, and removed a week later).
 	Ran string `json:"ran,omitempty"`
+	// A routine from an assistant.toml: the `enabled` its file last said.
+	FileEnabled *bool `json:"fileEnabled,omitempty"`
 
 	// Computed for the page.
 	Next string      `json:"next,omitempty"`
@@ -246,6 +250,11 @@ func (m *Manager) checkRoutine(v *Routine, now time.Time) error {
 				return errors.New("choose a session")
 			}
 			t.Agent, t.Cwd, t.Options = "", "", nil
+		case "assistant":
+			if err := m.assistantRoutineTarget(t.Assistant); err != nil {
+				return err
+			}
+			t.Session, t.Agent, t.Cwd, t.Options = "", "", "", nil
 		case "new":
 			if t.Agent != "codex" && t.Agent != "claude" {
 				return errors.New("agent must be codex or claude")
@@ -256,7 +265,7 @@ func (m *Manager) checkRoutine(v *Routine, now time.Time) error {
 			}
 			t.Cwd, t.Session = dir, ""
 		default:
-			return errors.New("target: session or new")
+			return errors.New("target: session, assistant or new")
 		}
 		if v.Command == nil && strings.TrimSpace(v.Message) == "" {
 			return errors.New("write the message to send")
@@ -495,6 +504,9 @@ func (m *Manager) SaveRoutine(v Routine) (Routine, error) {
 		if err != nil {
 			return v, err
 		}
+		if strings.HasPrefix(old.CreatedBy, "file:") {
+			return v, errFileRoutine(old)
+		}
 		v.Created, v.CreatedBy = old.Created, old.CreatedBy
 		if old.When.Kind == v.When.Kind && old.When.Minutes == v.When.Minutes {
 			v.Anchor = old.Anchor
@@ -606,6 +618,11 @@ func (m *Manager) loadRoutines() {
 	}
 }
 
+// errFileRoutine: a routine an assistant.toml lists changes in that file.
+func errFileRoutine(v Routine) error {
+	return fmt.Errorf("%s/assistant.toml defines this routine; change it there", strings.TrimPrefix(v.CreatedBy, "file:"))
+}
+
 // RunRoutines starts what falls due until ctx ends.
 func (m *Manager) RunRoutines(ctx context.Context) {
 	m.loadRoutines()
@@ -618,6 +635,8 @@ func (m *Manager) RunRoutines(ctx context.Context) {
 		case <-timer.C:
 		case <-m.rt.wake:
 		}
+		// Routines from assistant.toml files follow their edits.
+		m.Assistants()
 		wait := m.dueRoutines(m.rt.now())
 		if !timer.Stop() {
 			select {
@@ -772,6 +791,17 @@ func (m *Manager) sendRun(v Routine, run RoutineRun, message string) {
 			return
 		}
 		run.Session, run.Status = s.ID, "sent"
+	case "assistant":
+		s, queued, err := m.AssistantMessage(t.Assistant, text, nil, run.ID)
+		run.Session = s.ID
+		if err != nil {
+			m.endRun(run, "failed", err.Error(), true)
+			return
+		}
+		run.Status = "sent"
+		if queued {
+			run.Status = "queued"
+		}
 	}
 	// The run may have ended already (a fast turn); keep what it recorded.
 	if saved, err := m.store.run(run.ID); err == nil && (saved.Status == "done" || saved.Status == "failed") {
@@ -963,6 +993,10 @@ func (s *Server) routinesAPI(w http.ResponseWriter, r *http.Request, rest string
 		}
 		writeJSON(w, saved)
 	case len(parts) == 1 && r.Method == "DELETE":
+		if old, err := m.store.routine(id); err == nil && strings.HasPrefix(old.CreatedBy, "file:") {
+			bad(w, errFileRoutine(old))
+			return
+		}
 		if err := m.DeleteRoutine(id); err != nil {
 			bad(w, err)
 			return

@@ -77,6 +77,10 @@ func (m *Manager) turnEnded(r *runtime, failed bool) {
 	time.AfterFunc(time.Second, func() { m.refreshAllOthers(id) })
 	interrupted := r.interrupted
 	r.interrupted = false
+	if used, window := num(r.context["used"]), num(r.context["window"]); window > 0 {
+		cwd := r.session.Cwd
+		go m.assistantTurnEnded(id, cwd, used, window)
+	}
 	if run := r.routineRun; run != "" {
 		r.routineRun = ""
 		reason := ""

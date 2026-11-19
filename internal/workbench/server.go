@@ -704,6 +704,8 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 		default:
 			writeJSON(w, v)
 		}
+	case path == "assistants" || strings.HasPrefix(path, "assistants/"):
+		s.assistantsAPI(w, r, strings.TrimPrefix(strings.TrimPrefix(path, "assistants"), "/"))
 	case path == "routines" || strings.HasPrefix(path, "routines/"):
 		s.routinesAPI(w, r, strings.TrimPrefix(strings.TrimPrefix(path, "routines"), "/"))
 	case path == "preferences" && r.Method == "GET":

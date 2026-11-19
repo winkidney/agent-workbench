@@ -73,6 +73,7 @@ export function RoutinesTab({
     const t = r.target;
     if (!t) return "Keeps the output";
     if (t.kind === "session") return "To " + sessionTitle(t.session);
+    if (t.kind === "assistant") return "To the assistant " + t.assistant;
     return `New ${t.agent === "claude" ? "Claude" : "Codex"} session in ${t.cwd}`;
   };
   return (
@@ -151,6 +152,8 @@ export function RoutinesTab({
                 {" · "}
                 {target(r)}
                 {r.createdBy.startsWith("agent:") && " · made by an agent"}
+                {r.createdBy.startsWith("file:") &&
+                  ` · from ${r.createdBy.slice(5)}/assistant.toml`}
               </p>
               <p className="routine-meta">
                 {r.enabled && r.next ? `Next ${shortTime(r.next)}` : "Off"}
@@ -172,25 +175,30 @@ export function RoutinesTab({
                       <Play size={14} />
                       Run now
                     </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => onEdit(draftOf(r))}
-                    >
-                      <Pencil size={14} />
-                      Edit
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        if (confirm(`Delete the routine “${r.name}”?`))
-                          void act(`routines/${r.id}`, "DELETE");
-                      }}
-                    >
-                      <Trash2 size={14} />
-                      Delete
-                    </Button>
+                    {/* An assistant's routines change in its file. */}
+                    {!r.createdBy.startsWith("file:") && (
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => onEdit(draftOf(r))}
+                        >
+                          <Pencil size={14} />
+                          Edit
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            if (confirm(`Delete the routine “${r.name}”?`))
+                              void act(`routines/${r.id}`, "DELETE");
+                          }}
+                        >
+                          <Trash2 size={14} />
+                          Delete
+                        </Button>
+                      </>
+                    )}
                   </div>
                   {runs.length === 0 && <p className="subtle">No runs yet.</p>}
                   <ol className="routine-runs">

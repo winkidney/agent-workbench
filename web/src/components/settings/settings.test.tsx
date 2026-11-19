@@ -117,7 +117,7 @@ describe("settings tabs", () => {
       <SettingsTabs tab="about" dirty={{ access: true }} onSelect={() => {}} />,
     );
     expect(html).toContain('role="tablist"');
-    expect(html.match(/role="tab"/g)?.length).toBe(6);
+    expect(html.match(/role="tab"/g)?.length).toBe(7);
     expect(html.match(/tab-dot/g)?.length).toBe(1);
     expect(
       renderToStaticMarkup(

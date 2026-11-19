@@ -10,6 +10,7 @@ import { createPortal } from "react-dom";
 import {
   AlarmClock,
   Archive,
+  TriangleAlert,
   ArchiveRestore,
   ChevronRight,
   Copy,
@@ -34,6 +35,7 @@ import { AgentIcon, StatusIcon, statusLabel } from "../components/AgentIcon";
 import { LogoLockup } from "../components/Logo";
 import { ATTENTION_LABEL } from "../attention";
 import type { FooterConnection } from "../lib/connection";
+import type { Assistant } from "../lib/assistants";
 import {
   buildSidebar,
   relativeTime,
@@ -717,6 +719,97 @@ function OtherGroup({
 }
 
 // How many of a section's sessions wait for the user, as its header says.
+// One assistant (lib/assistants.ts): opening it shows its ongoing topic or
+// a new message for it; it unfolds to its sessions, newest first.
+function AssistantRow({
+  assistant: a,
+  nodes,
+  actions,
+  onOpen,
+}: {
+  assistant: Assistant;
+  nodes: Node[];
+  actions: Actions;
+  onOpen: (dir: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const latest = nodes[0]?.session;
+  const waiting = nodes.find((n) => needsYou(n))?.session;
+  const shown = waiting ?? latest;
+  const selected = !!actions.activeId && a.current === actions.activeId;
+  return (
+    <>
+      <div
+        className={"session-row assistant-row" + (selected ? " selected" : "")}
+        style={{ paddingLeft: 6 }}
+      >
+        {nodes.length > 0 ? (
+          <button
+            type="button"
+            className="tree-toggle"
+            aria-label={
+              open ? "Hide its sessions" : `Show its ${nodes.length} sessions`
+            }
+            aria-expanded={open}
+            onClick={() => setOpen(!open)}
+          >
+            <ChevronRight size={12} className={open ? "chev open" : "chev"} />
+          </button>
+        ) : (
+          <span className="tree-spacer" />
+        )}
+        <button
+          type="button"
+          className="session-main"
+          title={
+            a.error
+              ? `${a.dir}/assistant.toml: ${a.error}`
+              : `${a.name} · ${a.sessions === "continuous" ? "one ongoing conversation" : "a new session for each request"}`
+          }
+          onClick={() => onOpen(a.dir)}
+        >
+          {a.agent ? (
+            <AgentIcon agent={a.agent} size={16} />
+          ) : (
+            <TriangleAlert size={14} aria-label="Has an error" />
+          )}
+          <span className="session-name">
+            <Highlight text={a.name} query={actions.query} />
+          </span>
+          {shown &&
+          (statusLabel[shown.status] || shown.attention || shown.background) ? (
+            <StatusIcon
+              status={shown.status}
+              attention={shown.attention}
+              background={shown.background}
+            />
+          ) : (
+            <span className="session-time">
+              {a.error
+                ? "error"
+                : latest
+                  ? relativeTime(latest.updated, actions.now)
+                  : ""}
+            </span>
+          )}
+        </button>
+      </div>
+      {open &&
+        nodes
+          .slice(0, 12)
+          .map((n) => (
+            <SessionRow
+              key={n.session.id}
+              node={n}
+              depth={1}
+              scope="assistants"
+              actions={actions}
+            />
+          ))}
+    </>
+  );
+}
+
 function needsYouBadge(nodes: Node[]) {
   const n = nodes.filter(needsYou).length;
   return n ? `${n} need${n === 1 ? "s" : ""} you` : undefined;
@@ -777,6 +870,9 @@ export function Sidebar({
   onArchive,
   onDelete,
   onSchedule,
+  assistants,
+  assistantRoot,
+  onOpenAssistant,
   connection,
   onReconnect,
 }: {
@@ -791,6 +887,10 @@ export function Sidebar({
   onArchive: (session: Session, archived: boolean) => void;
   onDelete: (session: Session) => void;
   onSchedule: (session: Session) => void;
+  // The assistants and their folder (lib/assistants.ts).
+  assistants: Assistant[];
+  assistantRoot: string;
+  onOpenAssistant: (dir: string) => void;
   // Where this page is and whether live updates arrive.
   connection: FooterConnection;
   onReconnect: () => void;
@@ -829,8 +929,17 @@ export function Sidebar({
         showHidden,
         showArchived,
         workspaces,
+        assistantRoot,
       }),
-    [sessions, prefs, query, showHidden, showArchived, workspaces],
+    [
+      sessions,
+      prefs,
+      query,
+      showHidden,
+      showArchived,
+      workspaces,
+      assistantRoot,
+    ],
   );
   const names = useMemo(
     () => new Map(model.projects.map((p) => [p.path, p.name])),
@@ -924,6 +1033,25 @@ export function Sidebar({
         )}
       </div>
       <nav className="sidebar-scroll" aria-label="Sessions">
+        {assistants.length > 0 && (
+          <Section
+            id="assistants"
+            title="Assistants"
+            count={assistants.length}
+            badge={needsYouBadge(model.assistants)}
+            forceOpen={false}
+          >
+            {assistants.map((a) => (
+              <AssistantRow
+                key={a.dir}
+                assistant={a}
+                nodes={model.assistants.filter((n) => n.session.cwd === a.path)}
+                actions={actions}
+                onOpen={onOpenAssistant}
+              />
+            ))}
+          </Section>
+        )}
         {model.pinned.length > 0 && (
           <Section
             id="pinned"

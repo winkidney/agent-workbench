@@ -129,6 +129,8 @@ The interface uses a JSON API under `/api/`. Main endpoints:
 | `GET/PATCH /api/preferences` | The workbench's own settings for every session: `{suggestions}` |
 | `GET/POST /api/routines`, `PUT/PATCH/DELETE /api/routines/{id}` | Routines: list (with `next` and `last`), create, replace, turn on or off (`{enabled}`), delete |
 | `GET /api/routines/{id}/runs`, `POST /api/routines/{id}/run` | A routine's recent runs with their output; run it now |
+| `GET/POST /api/assistants`, `POST /api/assistants/setup` | Assistants (`{root, assistants}`); add one (`{name, dir, agent, sessions}`); set up the repository (`{root, agent}`) |
+| `POST /api/assistants/{dir}/open`, `…/message`, `…/topic` | What to show for an assistant (`{session}` or `{fresh, previous}`); give it a message (`{text, images, files}`); start a new topic |
 
 ## Limits
 
@@ -145,6 +147,10 @@ Not included: multiple user accounts, a desktop shell, handing context between a
 ## Routines
 
 Routines ([ADR 0009](adr/0009-routines-run-on-a-schedule.md), `routine.go`) are kept in `routines` (one JSON row each) and their runs in `routine_runs`. A scheduler goroutine started with the server keeps each enabled routine's next due time in memory, computed from now at startup (missed runs are skipped), and wakes at the earliest one, at least once a minute, or when a routine changes. A due time more than 5 minutes past is recorded as skipped. A run with a command runs it with `shellCommand` in a process group (`startGroup`, `killOn` its timeout) and keeps the last 16 KiB of output; a message goes to a session through `enqueue` (sent, or queued behind the running turn) or to a new session through `createWithMessage`, the code behind `POST /api/sessions`. The run id travels with the message (`runtime.routineRun`, `queued.Routine`) and `turnEnded`, `exited` and removing a queued message end the run. Every change emits a global `routine` event (`{routine, run?}`, output left out), which Settings → Routines reloads on and which may raise a notification (`notify`). `Tidy` ends runs open for more than a day, prunes runs older than a month or past 50 per routine, and removes once routines a week after they ran.
+
+## Assistants
+
+Assistants ([ADR 0010](adr/0010-assistants-are-folders.md), `assistant.go`) are folders with an `assistant.toml` one level under the root kept in the `assistants` setting. `Assistants()` reads them again only when a file's size or time changed (checked on every scheduler wake and API call), decodes them with BurntSushi/toml (unknown keys are errors) and brings the file routines in line: each is a routine with `createdBy: "file:<dir>"` and an id hashed from the folder and routine name, so its runs and on/off switch survive edits; a target `{kind: "assistant"}`; a command running in the folder. The page cannot change or delete them (`errFileRoutine`). Setting up writes the templates under `internal/workbench/assistant/` (embedded) only where nothing exists, links `.claude/skills` to `.agents/skills`, and commits with git when it is there. A continuous assistant's topic (`assistant:<dir>` setting: `current`, `previous`, `rotateNext`) changes under `as.topic`: `currentTopic` starts a new one when the session rests and was last updated before 04:00 today or a turn marked it (`assistantTurnEnded`, from `turnEnded`, when the context is 60% full). `AssistantMessage` sends to the ongoing topic through `enqueue`, or starts a session with `createWithMessage` (always, for a per-task assistant). An `assistants` event tells pages to read the list again.
 
 ## Side chats
 

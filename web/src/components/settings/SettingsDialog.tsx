@@ -6,14 +6,23 @@ import { AboutTab } from "./AboutTab";
 import { AgentsTab } from "./AgentsTab";
 import { GeneralTab } from "./GeneralTab";
 import { RoutinesTab } from "./RoutinesTab";
+import { AssistantsTab } from "./AssistantsTab";
+import type { Assistants } from "../../lib/assistants";
 import { UsageTab } from "./UsageTab";
 import type { Draft } from "../../routines/when";
 
 export type SettingsTab =
-  "general" | "agents" | "routines" | "usage" | "access" | "about";
+  | "general"
+  | "agents"
+  | "assistants"
+  | "routines"
+  | "usage"
+  | "access"
+  | "about";
 export const TABS: { id: SettingsTab; label: string }[] = [
   { id: "general", label: "General" },
   { id: "agents", label: "Agents" },
+  { id: "assistants", label: "Assistants" },
   { id: "routines", label: "Routines" },
   { id: "usage", label: "Usage" },
   { id: "access", label: "Access & security" },
@@ -92,11 +101,15 @@ export function SettingsDialog({
   onOpenChange,
   sessionTitle,
   onEditRoutine,
+  assistants,
+  onOpenAssistant,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   sessionTitle: (id: string) => string;
   onEditRoutine: (d: Draft) => void;
+  assistants: Assistants;
+  onOpenAssistant: (dir: string) => void;
 }) {
   const [tab, setTab] = useState<SettingsTab>(storedTab);
   const [dirty, setDirty] = useState<Dirty>({});
@@ -154,6 +167,15 @@ export function SettingsDialog({
             open={open}
             onDirty={mark(setDirty, "agents")}
             onBusy={mark(setWorking, "agents")}
+          />
+        </div>
+        <div {...panel("assistants")}>
+          <AssistantsTab
+            value={assistants}
+            onOpen={(dir) => {
+              onOpenChange(false);
+              onOpenAssistant(dir);
+            }}
           />
         </div>
         <div {...panel("routines")}>

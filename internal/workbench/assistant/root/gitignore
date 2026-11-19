@@ -1,0 +1,6 @@
+# Caches a script can fetch again: kept out of history.
+raw/mail/
+**/raw/mail/
+.venv/
+__pycache__/
+.DS_Store

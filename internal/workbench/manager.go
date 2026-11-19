@@ -150,6 +150,8 @@ type Manager struct {
 	uploads *Uploads
 	// Routines: the scheduler's state (routine.go).
 	rt *routines
+	// Assistants: the files last read, topic changes (assistant.go).
+	as assistants
 }
 
 func NewManager(store *Store, launch Launch, idle time.Duration) (*Manager, error) {

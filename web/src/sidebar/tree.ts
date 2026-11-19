@@ -157,6 +157,9 @@ export type OtherGroups = {
 export type SidebarModel = {
   pinned: Node[];
   active: Node[];
+  // Sessions in the assistants folder, newest first (lib/assistants.ts):
+  // the Assistants section lists them instead of Projects and Other.
+  assistants: Node[];
   projects: Project[];
   other: OtherGroups;
   hiddenCount: number;
@@ -194,6 +197,7 @@ export function buildSidebar(
     showHidden?: boolean;
     showArchived?: boolean;
     workspaces?: string[];
+    assistantRoot?: string;
   } = {},
 ): SidebarModel {
   const hidden = new Set(prefs.hidden);
@@ -225,14 +229,20 @@ export function buildSidebar(
     else roots.push(n);
   }
 
+  const root = opts.assistantRoot?.replace(/\/$/, "");
+  const inAssistants = (path: string) =>
+    !!root && !!path && (path === root || within(path, root));
+  const assistantOf = (n: Node) => inAssistants(n.session.cwd);
   // Project paths: launch directories of project sessions plus registered roots.
-  const projectRoots = roots.filter((n) => originOf(n.session) === "project");
+  const projectRoots = roots.filter(
+    (n) => originOf(n.session) === "project" && !assistantOf(n),
+  );
   const paths = [
     ...new Set([
       ...(opts.workspaces ?? []),
       ...projectRoots.map((n) => namespaceOf(n.session)),
     ]),
-  ].filter(Boolean);
+  ].filter((p) => p && !inAssistants(p));
   const parentOf = new Map<string, string | undefined>();
   const link = () => {
     paths.sort((a, b) => a.length - b.length || a.localeCompare(b));
@@ -402,7 +412,7 @@ export function buildSidebar(
   const other: OtherGroups = { chats: [], automated: [], temporary: [] };
   for (const r of roots) {
     const o = originOf(r.session);
-    if (o === "project") continue;
+    if (o === "project" || assistantOf(r)) continue;
     const kept = filter(r);
     if (!kept) continue;
     (o === "automation"
@@ -451,9 +461,15 @@ export function buildSidebar(
     .sort(
       (a, b) => rankOf(a) - rankOf(b) || latestOf(b).localeCompare(latestOf(a)),
     );
+  const assistants = roots
+    .filter(assistantOf)
+    .map((n) => filter(n))
+    .filter((n): n is Node => !!n)
+    .sort(byUpdated);
   return {
     pinned,
     active,
+    assistants,
     projects,
     other,
     hiddenCount: sessions.filter((s) => hidden.has(s.id)).length,

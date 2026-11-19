@@ -37,6 +37,13 @@ import { notifyRun, useAttention } from "./attention";
 import { RoutineDialog } from "./routines/RoutineDialog";
 import { newDraft, type Draft, type RoutineRun } from "./routines/when";
 import { recentProjects } from "./newsession/recent";
+import {
+  assistantOf,
+  assistantsChanged,
+  useAssistants,
+  type Assistant,
+  type Opened,
+} from "./lib/assistants";
 import { SettingsDialog } from "./components/settings/SettingsDialog";
 import { LogoMark } from "./components/Logo";
 import { PreviewPanel } from "./preview/PreviewPanel";
@@ -98,6 +105,7 @@ import {
   CornerLeftUp,
   MessagesSquare,
   AlarmClock,
+  MessageSquarePlus,
 } from "lucide-react";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
@@ -161,7 +169,12 @@ export default function App() {
     [sessions, setSessions] = useState<Session[]>([]),
     [active, setActive] = useState(""),
     [busy, setBusy] = useState(false),
-    [composing, setComposing] = useState<{ cwd?: string } | null>(null),
+    // A new session, or a new message for an assistant (lib/assistants.ts).
+    [composing, setComposing] = useState<{
+      cwd?: string;
+      assistant?: Assistant;
+      continues?: string;
+    } | null>(null),
     [entries, setEntries] = useState<Entry[]>([]),
     [path, setPath] = useState(""),
     // The file list entry a link pointed at, relative to the session's
@@ -407,6 +420,10 @@ export default function App() {
         forget.current(v.session);
         return;
       }
+      if (v.kind === "assistants") {
+        assistantsChanged();
+        return;
+      }
       if (v.kind === "routine") {
         // Settings → Routines reloads; a run's end may notify.
         window.dispatchEvent(new CustomEvent("workbench:routines"));
@@ -592,6 +609,34 @@ export default function App() {
     return s ? displayTitle(s, sidebarPrefs.prefs) : "a session that is gone";
   };
   const scheduleFor = (s: Session) => setRoutineDraft(newDraft(s.id, s.cwd));
+  const assistantList = useAssistants(paired);
+  // An assistant opens on its ongoing topic, or on a new message for it.
+  const openAssistant = (dir: string) =>
+    void api<Opened>(`assistants/${dir}/open`, "POST")
+      .then((o) => {
+        if (o.session) {
+          setComposing(null);
+          selectSession(o.session);
+        } else {
+          const prev = o.previous && sessions.find((x) => x.id === o.previous);
+          setComposing({
+            assistant: o.assistant,
+            continues: prev
+              ? displayTitle(prev, sidebarPrefs.prefs)
+              : undefined,
+          });
+        }
+        if (innerWidth <= 850) setLeft(false);
+      })
+      .catch(catchError);
+  // The continuous assistant whose ongoing topic is the open session.
+  const topicOf = current
+    ? assistantOf(assistantList.assistants, current.cwd)
+    : undefined;
+  const ongoing =
+    topicOf?.sessions === "continuous" && topicOf.current === current?.id
+      ? topicOf
+      : undefined;
   const waitingElsewhere = waiting.some((s) => s.id !== active);
   // The Claude command or subagent a running turn waits on, which Ctrl+B or
   // the status line's button moves to the background.
@@ -1133,6 +1178,9 @@ export default function App() {
             onArchive={archiveSession}
             onDelete={setDeleting}
             onSchedule={scheduleFor}
+            assistants={assistantList.assistants}
+            assistantRoot={assistantList.root}
+            onOpenAssistant={openAssistant}
             connection={footerConnection({
               here,
               open: signin.open,
@@ -1162,7 +1210,9 @@ export default function App() {
               <h2>
                 {current && !composing
                   ? displayTitle(current, sidebarPrefs.prefs)
-                  : "New session"}
+                  : composing?.assistant
+                    ? composing.assistant.name
+                    : "New session"}
               </h2>
               {current && !composing && (
                 <>
@@ -1226,6 +1276,23 @@ export default function App() {
                   >
                     <AlarmClock size={14} />
                     Schedule message…
+                  </Button>
+                )}
+                {ongoing && !composing && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={(e) => {
+                      e.currentTarget
+                        .closest("details")
+                        ?.removeAttribute("open");
+                      void api(`assistants/${ongoing.dir}/topic`, "POST")
+                        .then(() => openAssistant(ongoing.dir))
+                        .catch(catchError);
+                    }}
+                  >
+                    <MessageSquarePlus size={14} />
+                    New topic
                   </Button>
                 )}
                 {current && (
@@ -1514,11 +1581,13 @@ export default function App() {
             </>
           ) : (
             <NewSession
-              key={composing?.cwd ?? "new"}
+              key={composing?.assistant?.dir ?? composing?.cwd ?? "new"}
               sessions={sessions}
               workspaces={workspaces}
               prefs={sidebarPrefs.prefs}
               initialCwd={composing?.cwd}
+              assistant={composing?.assistant}
+              continues={composing?.continues}
               onView={view}
               onCreated={(s) => {
                 setSessions((old) => [s, ...old.filter((x) => x.id !== s.id)]);
@@ -1643,10 +1712,13 @@ export default function App() {
           onOpenChange={setSettingsOpen}
           sessionTitle={sessionTitle}
           onEditRoutine={setRoutineDraft}
+          assistants={assistantList}
+          onOpenAssistant={openAssistant}
         />
         {routineDraft && (
           <RoutineDialog
             draft={routineDraft}
+            assistants={assistantList.assistants.filter((a) => !a.error)}
             recent={recent}
             sessionTitle={sessionTitle}
             onClose={() => setRoutineDraft(null)}

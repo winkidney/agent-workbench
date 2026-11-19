@@ -485,3 +485,30 @@ describe("unified ordering", () => {
     expect(a.related.map((n) => n.session.id)).toEqual(["codex:x"]);
   });
 });
+
+describe("assistants", () => {
+  it("lists sessions in the assistants folder apart from projects", () => {
+    const list = [
+      s("claude:m1", "/home/u/assistants/main", "2026-11-19T09:00:00Z"),
+      s("claude:m2", "/home/u/assistants/main", "2026-11-19T10:00:00Z", {
+        status: "running",
+      }),
+      s("codex:r", "/home/u/assistants/report", "2026-11-18T10:00:00Z"),
+      s("claude:p", "/w/app", "2026-11-19T08:00:00Z"),
+    ];
+    const model = buildSidebar(list, emptyPrefs(), {
+      assistantRoot: "/home/u/assistants/",
+      workspaces: ["/w/app", "/home/u/assistants/main"],
+    });
+    expect(model.assistants.map((n) => n.session.id)).toEqual([
+      "claude:m2",
+      "claude:m1",
+      "codex:r",
+    ]);
+    expect(model.projects.map((p) => p.path)).toEqual(["/w/app"]);
+    // A running assistant session is still in Active.
+    expect(model.active.map((n) => n.session.id)).toContain("claude:m2");
+    // Without the folder they are projects like any other.
+    expect(buildSidebar(list, emptyPrefs()).assistants).toEqual([]);
+  });
+});

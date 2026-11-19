@@ -1,0 +1,40 @@
+# {{.Name}}: settings Agent Workbench reads. Changes apply within a minute.
+name = {{printf "%q" .Name}}
+# claude or codex
+agent = {{printf "%q" .Agent}}
+# per-task: every request or routine run starts a new session (a topic).
+# continuous: one ongoing conversation, a new session each day or when its
+# context fills; state/handoff.md carries over.
+sessions = {{printf "%q" .Sessions}}
+# state: this assistant keeps state/ and log.md. wiki: it also maintains
+# ../shared/wiki from its conversations.
+memory = {{printf "%q" .Memory}}
+{{if .Main}}
+[[routines]]
+name = "Daily check"
+daily = "08:30"
+message = "Check state/loops.md: what is due today or overdue, and what needs me. Keep it short."
+
+[[routines]]
+name = "Weekly wiki check"
+daily = "10:00"
+days = ["sun"]
+message = "Check ../shared/wiki as AGENTS.md says under Lint, fix what you can, and ask me about the rest."
+{{else}}
+# A routine sends this assistant a message, runs a command in this folder,
+# or runs a command and sends what it printed (only when it printed
+# something). Schedules: daily = "HH:MM" (days = ["mon", "fri"]),
+# every = "30m" / "2h" / "1d", or at = "2026-12-01 09:00" (once).
+#
+# [[routines]]
+# name = "Friday report"
+# daily = "17:00"
+# days = ["fri"]
+# message = "Draft this week's report and ask me to approve it."
+#
+# [[routines]]
+# name = "Check for new items"
+# every = "30m"
+# command = "uv run tools/check.py"
+# message = "Sort these and tell me what needs me."
+{{end}}

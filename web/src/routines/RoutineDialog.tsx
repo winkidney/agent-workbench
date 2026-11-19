@@ -9,6 +9,7 @@ import { ProjectPicker } from "../newsession/ProjectPicker";
 import type { RecentProject } from "../newsession/recent";
 import { api } from "../lib/api";
 import { DAYS, routineOf, type Draft, type Routine } from "./when";
+import type { Assistant } from "../lib/assistants";
 
 // One small segmented choice, styled like the new-session agent switch.
 function Choice<T extends string>({
@@ -44,12 +45,14 @@ function Choice<T extends string>({
 export function RoutineDialog({
   draft: initial,
   recent,
+  assistants,
   sessionTitle,
   onClose,
   onSaved,
 }: {
   draft: Draft;
   recent: RecentProject[];
+  assistants: Assistant[];
   sessionTitle: (id: string) => string;
   onClose: () => void;
   onSaved?: (r: Routine) => void;
@@ -175,11 +178,44 @@ export function RoutineDialog({
                           string,
                         ][])
                       : []),
+                    ...(assistants.length
+                      ? ([["assistant", "An assistant"]] as [
+                          "assistant",
+                          string,
+                        ][])
+                      : []),
                     ["new", "A new session each time"],
                   ]}
-                  onChange={(target) => set({ target })}
+                  onChange={(target) =>
+                    set({
+                      target,
+                      assistant:
+                        target === "assistant" && !d.assistant
+                          ? (assistants[0]?.dir ?? "")
+                          : d.assistant,
+                    })
+                  }
                 />
               </div>
+              {d.target === "assistant" && (
+                <label className="routine-field">
+                  <span className="routine-label">Assistant</span>
+                  <select
+                    className="routine-select"
+                    value={d.assistant}
+                    onChange={(e) => set({ assistant: e.target.value })}
+                  >
+                    {assistants.map((a) => (
+                      <option key={a.dir} value={a.dir}>
+                        {a.name}
+                        {a.sessions === "continuous"
+                          ? " (its ongoing topic)"
+                          : " (a new session each time)"}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               {d.target === "new" && (
                 <div className="routine-field">
                   <span className="routine-label">In</span>

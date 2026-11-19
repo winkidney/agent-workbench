@@ -107,3 +107,30 @@ describe("routines", () => {
     expect(routineLabel("[Routine: x] typed by hand")).toBeUndefined();
   });
 });
+
+describe("routines to assistants", () => {
+  it("sends to an assistant by its folder", () => {
+    const d = newDraft();
+    d.message = "Draft the report";
+    d.target = "assistant";
+    expect(routineOf(d)).toEqual({ error: "Choose an assistant." });
+    d.assistant = "report";
+    const out = routineOf(d);
+    expect("routine" in out && out.routine.target).toEqual({
+      kind: "assistant",
+      assistant: "report",
+    });
+    expect(
+      draftOf({
+        id: "x",
+        name: "x",
+        enabled: true,
+        when: { kind: "daily", time: "09:00" },
+        target: { kind: "assistant", assistant: "report" },
+        message: "m",
+        createdBy: "page",
+        created: "",
+      }),
+    ).toMatchObject({ target: "assistant", assistant: "report" });
+  });
+});

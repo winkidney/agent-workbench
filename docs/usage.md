@@ -219,12 +219,25 @@ A routine sends a message to a session, runs a command, or runs a command and ha
 
 Commands run with your user's rights, like a terminal tab; any signed-in device can make routines. See [ADR 0009](adr/0009-routines-run-on-a-schedule.md).
 
+## Assistants
+
+An assistant does one kind of work your way. Each is a folder in a repository of assistants: its procedure (`AGENTS.md`), skills (`.agents/skills/`), scripts (`tools/`), what is in progress (`state/`), what it did (`log.md`) and its settings and routines (`assistant.toml`). See [ADR 0010](adr/0010-assistants-are-folders.md).
+
+- **Set up:** **Settings → Assistants → Set up** makes the repository (default `~/assistants`, a git repository when git is installed) with rules every assistant shares, a shared wiki, and a personal assistant (`main`) that keeps one ongoing conversation, looks after the wiki, checks open items every morning and the wiki on Sundays. Nothing that exists is overwritten.
+- **New assistant:** give it a name, a folder, the agent, and how its topics go: **A session per request** (each request or routine run is a new session) or **One ongoing conversation**. Then write its procedure in its `AGENTS.md`, or ask it to.
+- **Use one:** assistants are listed in the sidebar above Pinned, with the state of their latest session; unfold one for its sessions. Click it to continue its ongoing conversation, or to write a new request with its folder and agent already chosen. Sessions in the assistants folder are not listed under Projects; one that needs you still shows in Active.
+- **Topics:** an ongoing conversation starts a new session the first time you use it after 04:00 the next day, after a turn leaves its context 60% full, or with **⋯ → New topic**; never while it works or waits for you. What carries over is what it wrote down (`state/handoff.md`, the wiki).
+- **Approval:** a procedure marks the steps it must not take without you. Claude asks with a question card (Approve, Change, Reject), which rings the bell like any question; Codex stops with a "Needs your approval:" line.
+- **Routines:** `[[routines]]` in `assistant.toml` (a `daily` time with `days`, `every = "30m"`, or `at = "2026-12-01 09:00"`; a `message`, a `command`, or both) run as routines of that assistant: messages go to it, commands run in its folder. They are listed in Settings → Routines, where you can switch them off or run them now; change them in the file. A routine you make in the page can also send to an assistant.
+- **Credentials:** never in the repository or a message. Scripts read them from `~/.config/assistant/secrets/` (mode 0600); Claude Code is told not to read that folder.
+
 ## Settings
 
 **⋯ → Settings** has these tabs:
 
 - **General:** appearance, desktop notifications and suggested next prompts. These are the same controls as the **⋯** menu, and they apply at once.
 - **Agents:** which program runs Claude Code and Codex, the folder each keeps its data in, and signing them in (see [Agents](#agents)). Saved with its button.
+- **Assistants:** set up the assistants repository, add assistants, open one (see [Assistants](#assistants)).
 - **Routines:** messages and commands run on a schedule (see [Routines](#routines)).
 - **Access & security:** how this page is connected, which devices may sign in and how, allowed origins, and signed-in devices (see [Access from other devices](#access-from-other-devices)). Saved with its button.
 - Unsaved changes on Agents or Access & security are marked on the tab and kept while you switch tabs. Closing asks before discarding them.
