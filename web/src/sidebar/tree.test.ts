@@ -3,6 +3,7 @@ import {
   applyOp,
   buildSidebar,
   emptyPrefs,
+  listedByDefault,
   needsYou,
   relativeTime,
   resumeCommand,
@@ -510,5 +511,30 @@ describe("assistants", () => {
     expect(model.active.map((n) => n.session.id)).not.toContain("claude:m2");
     // Without the folder they are projects like any other.
     expect(buildSidebar(list, emptyPrefs()).assistants).toEqual([]);
+  });
+});
+
+describe("listedByDefault", () => {
+  it("leaves out hidden and archived sessions and their subsessions", () => {
+    const list = [
+      s("claude:a", "/w", "2026-01-01T00:00:00Z", { attention: "question" }),
+      s("codex:b", "/w", "2026-01-01T00:00:00Z", {
+        attention: "question",
+        archived: true,
+      }),
+      s("claude:c", "/w", "2026-01-01T00:00:00Z", { attention: "approval" }),
+      s("claude:c:agent-1", "/w", "2026-01-01T00:00:00Z", {
+        parentId: "claude:c",
+        attention: "approval",
+      }),
+      s("claude:d:agent-1", "/w", "2026-01-01T00:00:00Z", {
+        parentId: "claude:gone",
+      }),
+    ];
+    const prefs = { ...emptyPrefs(), hidden: ["claude:c"] };
+    expect(listedByDefault(list, prefs).map((x) => x.id)).toEqual([
+      "claude:a",
+      "claude:d:agent-1",
+    ]);
   });
 });

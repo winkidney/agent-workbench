@@ -21,7 +21,7 @@ type SteerResult = {
 };
 import { Sidebar, statusLabels as labels } from "./sidebar/Sidebar";
 import { usePrefs } from "./sidebar/usePrefs";
-import { displayTitle, type Session } from "./sidebar/tree";
+import { displayTitle, listedByDefault, type Session } from "./sidebar/tree";
 import { api, download } from "./lib/api";
 import { randomUUID } from "./lib/uuid";
 import {
@@ -626,9 +626,11 @@ export default function App() {
   };
   // Sessions waiting for the user: the tab title counts them, and a desktop
   // notification announces each new one while the page is in the background.
+  // Only sessions the sidebar lists by default: an archived or hidden one
+  // still waiting would otherwise count with nothing to point to.
   const titled = useMemo(
     () =>
-      sessions.map((s) => ({
+      listedByDefault(sessions, sidebarPrefs.prefs).map((s) => ({
         id: s.id,
         agent: s.agent,
         attention: s.attention,

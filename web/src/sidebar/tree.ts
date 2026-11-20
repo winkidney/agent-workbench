@@ -104,6 +104,23 @@ export function workspaceName(path: string, paths: string[]) {
 export const displayTitle = (s: Session, p: Prefs) =>
   p.aliases[s.id] || s.title || s.nativeId;
 
+// Sessions the sidebar lists by default: not hidden, not archived, and not
+// under a parent that is. The tab title and the notifications count only
+// these, so the page never counts a session it does not show.
+export function listedByDefault<S extends Session>(
+  sessions: S[],
+  prefs: Prefs,
+): S[] {
+  const hidden = new Set(prefs.hidden);
+  const byId = new Map(sessions.map((s) => [s.id, s]));
+  const listed = (s: S, depth = 0): boolean => {
+    if (hidden.has(s.id) || s.archived) return false;
+    const parent = s.parentId ? byId.get(s.parentId) : undefined;
+    return !parent || depth > 8 || listed(parent, depth + 1);
+  };
+  return sessions.filter((s) => listed(s));
+}
+
 export function relativeTime(iso: string, now: number): string {
   const t = Date.parse(iso);
   if (!t) return "";
