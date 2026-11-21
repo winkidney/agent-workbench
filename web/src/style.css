@@ -4888,6 +4888,9 @@ textarea {
   color: var(--muted-foreground);
   font-size: 11px;
 }
+.notify-text small.awake-problem {
+  color: var(--destructive);
+}
 .notify-state {
   font-size: 11px;
   color: var(--muted-foreground);

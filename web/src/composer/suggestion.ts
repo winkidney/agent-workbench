@@ -19,7 +19,17 @@ export function shownSuggestion(v: {
   return text;
 }
 
-export type Preferences = { suggestions: boolean };
+// How the computer the workbench runs on holds a keep-awake switch now
+// (server keepawake.go): held and by what, or why it could not be.
+export type AwakeItem = { on: boolean; via?: string; error?: string };
+
+export type Preferences = {
+  suggestions: boolean;
+  preventSleep?: boolean;
+  preventLock?: boolean;
+  // Read only: the server's answer, never sent.
+  awake?: { sleep: AwakeItem; lock: AwakeItem };
+};
 
 // The workbench's own settings, for every session and page.
 export function usePreferences() {

@@ -255,6 +255,7 @@ An assistant does one kind of work your way. Each is a folder in a repository of
 **⋯ → Settings** has these tabs:
 
 - **General:** appearance, desktop notifications and suggested next prompts. These are the same controls as the **⋯** menu, and they apply at once.
+  Under **This computer**, two switches keep the computer Agent Workbench runs on awake while it runs: **Prevent system sleep**, and **Prevent screen lock** (the screen also stays on). A locked screen leaves agents without a display for browsers and screenshots. Both are off by default, and the line under each says how the computer holds it, or why it could not (ADR 0018).
 - **Agents:** which program runs Claude Code and Codex, the folder each keeps its data in, and signing them in (see [Agents](#agents)). Saved with its button.
 - **Assistants:** set up the assistants repository, add assistants, open one (see [Assistants](#assistants)).
 - **Routines:** messages and commands run on a schedule (see [Routines](#routines)).

@@ -715,10 +715,12 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 	case path == "routines" || strings.HasPrefix(path, "routines/"):
 		s.routinesAPI(w, r, strings.TrimPrefix(strings.TrimPrefix(path, "routines"), "/"))
 	case path == "preferences" && r.Method == "GET":
-		writeJSON(w, m.Preferences())
+		writeJSON(w, m.PreferencesView())
 	case path == "preferences" && r.Method == "PATCH":
 		var v struct {
-			Suggestions *bool `json:"suggestions"`
+			Suggestions  *bool `json:"suggestions"`
+			PreventSleep *bool `json:"preventSleep"`
+			PreventLock  *bool `json:"preventLock"`
 		}
 		if err := decode(w, r, &v); err != nil {
 			bad(w, err)
@@ -728,11 +730,17 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 		if v.Suggestions != nil {
 			p.Suggestions = *v.Suggestions
 		}
+		if v.PreventSleep != nil {
+			p.PreventSleep = *v.PreventSleep
+		}
+		if v.PreventLock != nil {
+			p.PreventLock = *v.PreventLock
+		}
 		if err := m.SetPreferences(p); err != nil {
 			bad(w, err)
 			return
 		}
-		writeJSON(w, p)
+		writeJSON(w, m.PreferencesView())
 	case path == "sidebar" && r.Method == "GET":
 		writeJSON(w, m.Prefs())
 	case path == "sidebar" && r.Method == "POST":
@@ -1516,6 +1524,8 @@ func Run(ctx context.Context, m *Manager, assets fs.FS, addr, code string) error
 	}()
 	// Routines: what falls due runs (routine.go).
 	go m.RunRoutines(ctx)
+	// Settings may ask to keep this computer awake (keepawake.go).
+	m.ApplyKeepAwake()
 	go func() {
 		// Old events, unused caches and the rows of sessions gone go at
 		// startup and then hourly.

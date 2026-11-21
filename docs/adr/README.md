@@ -21,3 +21,4 @@ Decisions that shape how the workbench behaves, why, and what they cost. Each re
 | [0015](0015-an-assistant-explains-itself.md) | An assistant explains itself: metadata, a home card, its own settings | accepted |
 | [0016](0016-moss-ships-and-comes-back.md) | Moss ships with Agent Workbench and comes back from the user's repository | accepted |
 | [0017](0017-assistants-choose-their-session-settings.md) | Assistants choose their sessions' model, effort, mode and permissions | accepted |
+| [0018](0018-keep-the-computer-awake.md) | Two switches keep the computer awake while the workbench runs | accepted |

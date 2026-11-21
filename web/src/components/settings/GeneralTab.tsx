@@ -1,4 +1,5 @@
 import { Appearance } from "../Appearance";
+import { KeepAwakeToggles } from "../KeepAwakeToggles";
 import { NotifyToggle } from "../NotifyToggle";
 import { SuggestToggle } from "../SuggestToggle";
 
@@ -15,6 +16,13 @@ export function GeneralTab() {
         <h3>Notifications and suggestions</h3>
         <NotifyToggle />
         <SuggestToggle />
+      </section>
+      <section className="settings-section">
+        <h3>This computer</h3>
+        <p className="subtle">
+          The computer Agent Workbench runs on, while it runs. Off by default.
+        </p>
+        <KeepAwakeToggles />
       </section>
     </>
   );

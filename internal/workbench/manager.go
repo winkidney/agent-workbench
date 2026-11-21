@@ -152,10 +152,12 @@ type Manager struct {
 	rt *routines
 	// Assistants: the files last read, topic changes (assistant.go).
 	as assistants
+	// Keeping the computer awake, as Settings asks (keepawake.go).
+	awake *keepAwake
 }
 
 func NewManager(store *Store, launch Launch, idle time.Duration) (*Manager, error) {
-	m := &Manager{store: store, launch: launch, idle: idle, sessions: map[string]*runtime{}, changes: newNotifier(), activity: NewActivityIndex(store), uploads: &Uploads{dir: filepath.Join(store.dir, "uploads")}, rt: newRoutines()}
+	m := &Manager{store: store, launch: launch, idle: idle, sessions: map[string]*runtime{}, changes: newNotifier(), activity: NewActivityIndex(store), uploads: &Uploads{dir: filepath.Join(store.dir, "uploads")}, rt: newRoutines(), awake: newKeepAwake(holdAwake)}
 	m.renameCodex, m.codexThread = m.codexRename, m.codexThreadRequest
 	m.catalog = NewNativeCatalog()
 	m.catalog.startCodex = m.startCodexClient
@@ -1353,6 +1355,7 @@ func (m *Manager) Sweep() {
 		_ = m.Stop(id, true)
 	}
 	m.evictIdle()
+	m.awake.Check()
 }
 
 // moveSessionRows moves what is kept under a session's first id (a
@@ -1377,6 +1380,7 @@ func (m *Manager) moveSessionRows(oldID, newID string) {
 func (m *Manager) Shutdown() {
 	// Terminals are the workbench's children: they end with it.
 	m.endTerminals("", "workbench stopped")
+	m.awake.Release()
 	m.mu.Lock()
 	m.closing = true
 	for _, sc := range m.sides {

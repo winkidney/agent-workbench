@@ -22,6 +22,29 @@ type Preferences struct {
 	// Suggestions: offer a next prompt when a turn ends (on unless turned
 	// off).
 	Suggestions bool `json:"suggestions"`
+	// PreventSleep and PreventLock: while the workbench runs, keep the
+	// computer it runs on from sleeping, or from locking its screen when
+	// idle (keepawake.go; off unless turned on).
+	PreventSleep bool `json:"preventSleep"`
+	PreventLock  bool `json:"preventLock"`
+}
+
+// PreferencesView is what the page gets: the preferences and how the
+// computer holds the two switches now.
+type PreferencesView struct {
+	Preferences
+	Awake AwakeStatus `json:"awake"`
+}
+
+func (m *Manager) PreferencesView() PreferencesView {
+	return PreferencesView{Preferences: m.Preferences(), Awake: m.awake.Status()}
+}
+
+// ApplyKeepAwake takes or releases the holds the preferences ask for; the
+// server calls it as it starts.
+func (m *Manager) ApplyKeepAwake() {
+	p := m.Preferences()
+	m.awake.Apply(p.PreventSleep, p.PreventLock)
 }
 
 func (m *Manager) Preferences() Preferences {
@@ -35,6 +58,7 @@ func (m *Manager) SetPreferences(p Preferences) error {
 	if err := m.store.setting("preferences", p); err != nil {
 		return err
 	}
+	m.awake.Apply(p.PreventSleep, p.PreventLock)
 	m.mu.Lock()
 	var claude []string
 	for _, r := range m.sessions {
