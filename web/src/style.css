@@ -6181,24 +6181,199 @@ body.resizing iframe {
   gap: 4px;
   margin-bottom: 6px;
 }
-.routine-runs {
+/* A routine's runs as a heartbeat (routines/Heartbeat.tsx): a bar per run,
+   short and grey when it had nothing to say. */
+.heartbeat-wrap {
+  position: relative;
+  display: inline-flex;
+  max-width: 100%;
+}
+/* Too narrow for every bar, the oldest are cut off, not the newest; the
+   padding leaves room for a picked bar's ring. */
+.heartbeat {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 2px;
+  height: 32px;
+  max-width: 100%;
+  padding: 2px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+.heartbeat.compact {
+  height: 18px;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+span.heartbeat.compact {
+  cursor: default;
+}
+.heartbeat-bar {
+  flex: none;
+  width: 6px;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--primary);
+  cursor: pointer;
+}
+.heartbeat.compact .heartbeat-bar {
+  width: 4px;
+}
+.heartbeat-bar.quiet {
+  height: 35%;
+  background: var(--muted-foreground);
+  opacity: 0.45;
+}
+.heartbeat-bar.missed {
+  height: 18%;
+  background: none;
+  box-shadow: inset 0 0 0 1px var(--muted-foreground);
+  opacity: 0.6;
+}
+.heartbeat-bar.failed {
+  background: var(--destructive);
+}
+.heartbeat-bar.active {
+  animation: heartbeat-pulse 1.2s ease-in-out infinite;
+}
+@keyframes heartbeat-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .heartbeat-bar.active {
+    animation: none;
+  }
+}
+.heartbeat-bar:hover,
+.heartbeat-bar:focus-visible {
+  opacity: 1;
+  outline: none;
+  box-shadow: 0 0 0 1.5px var(--foreground);
+}
+.heartbeat-bar.selected {
+  opacity: 1;
+  box-shadow: 0 0 0 1.5px var(--foreground);
+}
+.heartbeat-tip {
+  position: absolute;
+  top: calc(100% + 4px);
+  z-index: 20;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 1px;
+  width: max-content;
+  max-width: min(280px, 70vw);
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--popover, var(--background));
+  color: var(--popover-foreground, var(--foreground));
+  box-shadow: var(--shadow-lg);
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+}
+.heartbeat-tip-time {
+  color: var(--muted-foreground);
+}
+.routine-pulse {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+.routine-last-failed {
+  color: var(--destructive);
+}
+.run-history {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+}
+.run-history-count {
+  margin: 0;
+  color: var(--muted-foreground);
+}
+.run-history-quiet {
+  margin: 0;
+}
+.run-notable {
+  display: flex;
+  flex-direction: column;
   margin: 0;
   padding: 0;
   list-style: none;
-  font-size: 12px;
 }
-.routine-run.failed {
+.run-notable-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--foreground);
+  text-align: left;
+  cursor: pointer;
+}
+.run-notable-item:hover,
+.run-notable-item[aria-pressed="true"] {
+  background: var(--muted);
+}
+.run-notable-item.failed .run-notable-text {
   color: var(--destructive);
 }
-.routine-run.skipped {
+.run-notable-time {
+  flex: none;
   color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
 }
-.routine-runs summary {
-  color: var(--muted-foreground);
-  cursor: pointer;
+.run-notable-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.heartbeat-dot {
+  flex: none;
+  align-self: center;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--primary);
+}
+.heartbeat-dot.failed {
+  background: var(--destructive);
+}
+.run-detail {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.run-detail p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.run-detail .routine-output {
+  align-self: stretch;
+}
+.assistant-home-pulse {
+  display: inline-flex;
+  margin-left: 8px;
+  vertical-align: middle;
 }
 .routine-output {
   max-height: 220px;
@@ -6405,6 +6580,24 @@ body.resizing iframe {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+/* In the ⓘ dialog the dialog is the card: no second frame, and the name
+   keeps clear of the close button. */
+.modal .assistant-home {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.modal .assistant-home-head {
+  padding-right: 28px;
+}
+/* Not the dialogs' spaced-out .subtle: the card's gap spaces its lines. */
+.modal .assistant-home p.subtle {
+  margin: 0;
+}
+.modal .assistant-home-head p.subtle {
+  margin-top: 2px;
 }
 .assistant-home-head h2 {
   margin: 0;

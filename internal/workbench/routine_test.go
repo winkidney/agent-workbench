@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -282,5 +283,43 @@ func TestCronRoutines(t *testing.T) {
 	}
 	if v, err := m.AgentRoutine(AgentRoutineRequest{Caller: "claude:w", Cron: "0 9 1 * *", Message: "x"}); err != nil || v.When.Cron != "0 9 1 * *" {
 		t.Fatalf("agent monthly: %+v %v", v, err)
+	}
+}
+
+// The list carries each routine's latest runs for the heartbeat, outputs cut
+// to a first-line preview; the runs themselves keep the whole output.
+func TestRoutinesListTheirRecentRuns(t *testing.T) {
+	m, _ := fixture(t)
+	v, err := m.SaveRoutine(Routine{Enabled: true, When: When{Kind: "daily", Time: "09:00"}, Command: &RoutineCommand{Run: "true", Dir: t.TempDir()}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := time.Now().Add(-time.Hour)
+	long := "\n  " + strings.Repeat("x", 200) + "\nsecond line"
+	for i := 0; i < routineRecentShown+6; i++ {
+		run := RoutineRun{ID: fmt.Sprintf("r%02d", i), Routine: v.ID, Started: base.Add(time.Duration(i) * time.Minute).UTC().Format(time.RFC3339Nano), Status: "done"}
+		if i == routineRecentShown+5 {
+			run.Output = long
+		}
+		_ = m.store.saveRun(run)
+	}
+	list, _ := m.Routines()
+	got := list[0]
+	if len(got.Recent) != routineRecentShown || got.Recent[0].ID != "r29" || got.Recent[len(got.Recent)-1].ID != "r06" {
+		t.Fatalf("recent: %d runs, %+v", len(got.Recent), got.Recent[0])
+	}
+	if want := strings.Repeat("x", routineRecentPreview) + "…"; got.Recent[0].Output != want {
+		t.Fatalf("preview: %q", got.Recent[0].Output)
+	}
+	if got.Last == nil || got.Last.ID != "r29" || got.Last.Output != "" {
+		t.Fatalf("last: %+v", got.Last)
+	}
+	if runs, _ := m.RoutineRuns(v.ID); runs[0].Output != long {
+		t.Fatalf("the runs lost the output: %q", runs[0].Output)
+	}
+	// Not kept with the routine.
+	saved, _ := m.store.routine(v.ID)
+	if saved.Recent != nil || saved.Last != nil {
+		t.Fatalf("saved computed fields: %+v", saved)
 	}
 }

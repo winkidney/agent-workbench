@@ -11,27 +11,36 @@ import { api } from "../../lib/api";
 import {
   describeWhen,
   draftOf,
+  heartbeatSummary,
   newDraft,
-  runSummary,
+  runDuration,
+  runKind,
+  runResult,
   shortTime,
   type Draft,
   type Routine,
   type RoutineRun,
 } from "../../routines/when";
+import { Heartbeat } from "../../routines/Heartbeat";
 import { Button } from "../ui/button";
 import { groupRoutines, type Assistant } from "../../lib/assistants";
 
-// Every routine: what it does, when it runs next and how its last run went;
-// a routine opens to its recent runs and their output.
+// Every routine: what it does, when it runs next and its heartbeat (its
+// latest runs as bars). A routine opens to all its kept runs: the heartbeat,
+// the runs worth a look (it sent something or failed) and, for the run
+// picked, its output. Quiet runs show only as bars.
 export function RoutinesTab({
   open,
   sessionTitle,
   onEdit,
+  onOpenSession,
   assistants = [],
 }: {
   open: boolean;
   sessionTitle: (id: string) => string;
   onEdit: (d: Draft) => void;
+  // A run's conversation was asked for.
+  onOpenSession?: (id: string) => void;
   // For grouping by assistant (lib/assistants.ts groupRoutines).
   assistants?: Assistant[];
 }) {
@@ -39,6 +48,8 @@ export function RoutinesTab({
   const [error, setError] = useState("");
   const [shown, setShown] = useState<string | null>(null);
   const [runs, setRuns] = useState<RoutineRun[]>([]);
+  // The run whose details show, in the open routine.
+  const [picked, setPicked] = useState<string | null>(null);
   const load = useCallback(async () => {
     try {
       setList(await api<Routine[]>("routines"));
@@ -128,6 +139,7 @@ export function RoutinesTab({
                       aria-expanded={open}
                       onClick={() => {
                         setShown(open ? null : r.id);
+                        setPicked(null);
                         if (!open) void loadRuns(r.id);
                       }}
                     >
@@ -170,15 +182,31 @@ export function RoutinesTab({
                     {r.createdBy.startsWith("file:") &&
                       ` · from ${r.createdBy.slice(5)}/assistant.toml`}
                   </p>
-                  <p className="routine-meta">
-                    {r.assistantOff
-                      ? "Waiting: its assistant is turned off"
-                      : r.enabled && r.next
-                        ? `Next ${shortTime(r.next)}`
-                        : "Off"}
-                    {r.last &&
-                      ` · Last ${shortTime(r.last.started)}: ${runSummary(r.last)}`}
-                  </p>
+                  <div className="routine-meta routine-pulse">
+                    {!open && (
+                      <Heartbeat
+                        compact
+                        runs={r.recent ?? []}
+                        onOpen={() => {
+                          setShown(r.id);
+                          setPicked(null);
+                          void loadRuns(r.id);
+                        }}
+                      />
+                    )}
+                    <span>
+                      {r.assistantOff
+                        ? "Waiting: its assistant is turned off"
+                        : r.enabled && r.next
+                          ? `Next ${shortTime(r.next)}`
+                          : "Off"}
+                    </span>
+                    {r.last?.status === "failed" && (
+                      <span className="routine-last-failed">
+                        Last run failed
+                      </span>
+                    )}
+                  </div>
                   {open && (
                     <div className="routine-details">
                       <div className="routine-actions">
@@ -219,27 +247,13 @@ export function RoutinesTab({
                           </>
                         )}
                       </div>
-                      {runs.length === 0 && (
-                        <p className="subtle">No runs yet.</p>
-                      )}
-                      <ol className="routine-runs">
-                        {runs.map((run) => (
-                          <li key={run.id}>
-                            <span className={`routine-run ${run.status}`}>
-                              {shortTime(run.started)} · {runSummary(run)}
-                              {run.exit !== undefined && ` (exit ${run.exit})`}
-                            </span>
-                            {run.output && (
-                              <details>
-                                <summary>Output</summary>
-                                <pre className="routine-output">
-                                  {run.output}
-                                </pre>
-                              </details>
-                            )}
-                          </li>
-                        ))}
-                      </ol>
+                      <RunHistory
+                        runs={runs}
+                        picked={picked}
+                        onPick={setPicked}
+                        sessionTitle={sessionTitle}
+                        onOpenSession={onOpenSession}
+                      />
                     </div>
                   )}
                 </li>
@@ -249,5 +263,95 @@ export function RoutinesTab({
         </section>
       ))}
     </>
+  );
+}
+
+// How many runs worth a look the open routine lists.
+const NOTABLE_SHOWN = 10;
+
+// An open routine's kept runs: the heartbeat with a count, the runs that sent
+// something or failed, and the details of the one picked.
+function RunHistory({
+  runs,
+  picked,
+  onPick,
+  sessionTitle,
+  onOpenSession,
+}: {
+  runs: RoutineRun[];
+  picked: string | null;
+  onPick: (id: string | null) => void;
+  sessionTitle: (id: string) => string;
+  onOpenSession?: (id: string) => void;
+}) {
+  if (!runs.length) return <p className="subtle">No runs yet.</p>;
+  const oldest = runs[runs.length - 1];
+  const notable = runs
+    .filter((r) => ["delivered", "failed"].includes(runKind(r)))
+    .slice(0, NOTABLE_SHOWN);
+  const run = runs.find((r) => r.id === picked);
+  const pick = (id: string) => onPick(id === picked ? null : id);
+  return (
+    <div className="run-history">
+      <p className="run-history-count">
+        {heartbeatSummary(runs)} · since {shortTime(oldest.started)}
+      </p>
+      <Heartbeat
+        runs={runs}
+        selected={picked ?? undefined}
+        onSelect={(r) => pick(r.id)}
+      />
+      {notable.length ? (
+        <ul className="run-notable" aria-label="Runs worth a look">
+          {notable.map((r) => (
+            <li key={r.id}>
+              <button
+                type="button"
+                className={`run-notable-item ${runKind(r)}`}
+                aria-pressed={r.id === picked}
+                onClick={() => pick(r.id)}
+              >
+                <span className={`heartbeat-dot ${runKind(r)}`} aria-hidden />
+                <span className="run-notable-time">{shortTime(r.started)}</span>
+                <span className="run-notable-text">{runResult(r)}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="subtle run-history-quiet">
+          Nothing to report: no run sent anything or failed.
+        </p>
+      )}
+      {run && (
+        <div className="run-detail" aria-label="Run details">
+          <p>
+            <strong>{shortTime(run.started)}</strong>
+            {runDuration(run) && ` · took ${runDuration(run)}`}
+            {run.exit !== undefined && ` · exit ${run.exit}`}
+          </p>
+          <p className={runKind(run) === "failed" ? "error-text" : undefined}>
+            {runResult(run)}
+          </p>
+          {run.session && onOpenSession && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => onOpenSession(run.session!)}
+            >
+              Open “{sessionTitle(run.session)}”
+            </Button>
+          )}
+          {run.output ? (
+            <pre className="routine-output">{run.output}</pre>
+          ) : (
+            // A command that ran; a message has no output of its own.
+            run.exit !== undefined && (
+              <p className="subtle">It printed nothing.</p>
+            )
+          )}
+        </div>
+      )}
+    </div>
   );
 }

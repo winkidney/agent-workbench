@@ -86,6 +86,9 @@ type Routine struct {
 	// Its assistant is turned off: it does not run (computed, not kept).
 	AssistantOff bool        `json:"assistantOff,omitempty"`
 	Last         *RoutineRun `json:"last,omitempty"`
+	// Its latest runs, newest first, for the page's heartbeat: each output cut
+	// to its first line (routineRecentPreview), the whole of it in the runs.
+	Recent []RoutineRun `json:"recent,omitempty"`
 }
 
 // RoutineRun is one time a routine was due.
@@ -121,6 +124,9 @@ const (
 	// Kept runs: a month, and at most this many per routine.
 	routineRunsKept   = 50
 	routineRunsMaxAge = 30 * 24 * time.Hour
+	// The runs the list shows with each routine, and how much of each output.
+	routineRecentShown   = 24
+	routineRecentPreview = 120
 	// A sent message whose turn never reported its end.
 	routineRunStale = 24 * time.Hour
 	// A once routine that ran is removed after this.
@@ -421,7 +427,7 @@ func (s *Store) routine(id string) (Routine, error) {
 }
 
 func (s *Store) saveRoutine(v Routine) error {
-	v.Next, v.Last = "", nil
+	v.Next, v.Last, v.Recent = "", nil, nil
 	b, _ := json.Marshal(v)
 	_, err := s.db.Exec(`INSERT INTO routines(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data`, v.ID, string(b))
 	return err
@@ -530,14 +536,32 @@ func (m *Manager) Routines() ([]Routine, error) {
 		}
 	}
 	for i := range list {
-		if runs, _ := m.store.runs(list[i].ID, 1); len(runs) > 0 {
+		runs, _ := m.store.runs(list[i].ID, routineRecentShown)
+		for j := range runs {
+			runs[j].Output = outputPreview(runs[j].Output)
+		}
+		if len(runs) > 0 {
 			last := runs[0]
 			last.Output = ""
-			list[i].Last = &last
+			list[i].Last, list[i].Recent = &last, runs
 		}
 	}
 	sort.Slice(list, func(i, j int) bool { return list[i].Created < list[j].Created })
 	return list, nil
+}
+
+// outputPreview is the first line of a run's output that has text, cut to
+// routineRecentPreview characters.
+func outputPreview(out string) string {
+	for _, line := range strings.Split(out, "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			if r := []rune(line); len(r) > routineRecentPreview {
+				return string(r[:routineRecentPreview]) + "…"
+			}
+			return line
+		}
+	}
+	return ""
 }
 
 // SaveRoutine creates (no ID) or replaces a routine.

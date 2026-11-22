@@ -48,6 +48,9 @@ export type Routine = {
   created: string;
   next?: string;
   last?: RoutineRun;
+  // Its latest runs, newest first, outputs cut to their first line
+  // (routineRecentShown in routine.go): the heartbeat.
+  recent?: RoutineRun[];
   // Its assistant is turned off: it waits.
   assistantOff?: boolean;
 };
@@ -296,4 +299,82 @@ export function runSummary(run: RoutineRun): string {
     case "skipped":
       return "Skipped" + (run.error ? `: ${run.error}` : "");
   }
+}
+
+// What a run amounts to, for the heartbeat (Heartbeat.tsx):
+// active: under way; delivered: an agent answered or the command printed;
+// failed; quiet: it ran and had nothing to say (a command that printed
+// nothing skips sending it, routine.go endRun "nothing printed"); missed: it
+// did not run (the computer slept, its assistant was off, the previous run
+// still ran).
+export type RunKind = "active" | "delivered" | "failed" | "quiet" | "missed";
+
+export function runKind(run: RoutineRun): RunKind {
+  switch (run.status) {
+    case "running":
+    case "sent":
+    case "queued":
+      return "active";
+    case "failed":
+      return "failed";
+    case "done":
+      return run.session || run.output?.trim() ? "delivered" : "quiet";
+    case "skipped":
+      return run.error?.startsWith("nothing printed") ? "quiet" : "missed";
+  }
+}
+
+// How long a run took: "4.9 s", "2 min", "1 h 5 min"; "" while it runs.
+export function runDuration(run: RoutineRun): string {
+  if (!run.finished) return "";
+  const ms = Date.parse(run.finished) - Date.parse(run.started);
+  if (!(ms >= 0)) return "";
+  if (ms < 60_000) return `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)} s`;
+  const min = Math.round(ms / 60_000);
+  if (min < 60) return `${min} min`;
+  return `${Math.floor(min / 60)} h` + (min % 60 ? ` ${min % 60} min` : "");
+}
+
+const KIND_WORD: Record<RunKind, string> = {
+  delivered: "sent",
+  failed: "failed",
+  quiet: "quiet",
+  missed: "missed",
+  active: "running",
+};
+
+// The heartbeat in words: "24 runs: 22 quiet, 1 sent, 1 failed".
+export function heartbeatSummary(runs: RoutineRun[]): string {
+  if (!runs.length) return "No runs yet";
+  const count = new Map<RunKind, number>();
+  for (const r of runs) count.set(runKind(r), (count.get(runKind(r)) ?? 0) + 1);
+  const order: RunKind[] = ["active", "quiet", "delivered", "failed", "missed"];
+  const parts = order
+    .filter((k) => count.get(k))
+    .map((k) => `${count.get(k)} ${KIND_WORD[k]}`);
+  return `${runs.length} ${runs.length === 1 ? "run" : "runs"}: ${parts.join(", ")}`;
+}
+
+// What a quiet run did, in a few words; others say it with runSummary.
+export function runResult(run: RoutineRun): string {
+  if (runKind(run) === "quiet")
+    return run.status === "skipped"
+      ? "Quiet: printed nothing, nothing sent"
+      : "Quiet: finished, nothing to show";
+  if (run.status === "skipped")
+    return "Missed" + (run.error ? `: ${run.error}` : "");
+  const printed = firstLine(run.output);
+  if (run.status === "done" && !run.session && printed)
+    return "Printed: " + printed;
+  return runSummary(run);
+}
+
+// The first line of an output that has text, cut short.
+export function firstLine(out = ""): string {
+  const line = out
+    .split("\n")
+    .map((l) => l.trim())
+    .find(Boolean);
+  if (!line) return "";
+  return line.length > 120 ? line.slice(0, 120) + "…" : line;
 }

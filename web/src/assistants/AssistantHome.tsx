@@ -8,6 +8,7 @@ import {
   type Assistant,
 } from "../lib/assistants";
 import { describeWhen, type Routine } from "../routines/when";
+import { Heartbeat } from "../routines/Heartbeat";
 import { MossIcon } from "../components/MossIcon";
 import { Button } from "../components/ui/button";
 
@@ -139,6 +140,11 @@ export function AssistantHome({
                       ? "on"
                       : "off"}
                 </span>
+                {!!r.recent?.length && (
+                  <span className="assistant-home-pulse">
+                    <Heartbeat compact runs={r.recent} />
+                  </span>
+                )}
               </li>
             ))}
           </ul>

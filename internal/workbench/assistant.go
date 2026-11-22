@@ -541,7 +541,7 @@ func fileRoutine(a Assistant, f FileRoutine) Routine {
 }
 
 func sameRoutine(a, b Routine) bool {
-	a.Next, a.Last, b.Next, b.Last = "", nil, "", nil
+	a.Next, a.Last, a.Recent, b.Next, b.Last, b.Recent = "", nil, nil, "", nil, nil
 	x, _ := json.Marshal(a)
 	y, _ := json.Marshal(b)
 	return bytes.Equal(x, y)

@@ -7,7 +7,7 @@ import { AgentsTab } from "./AgentsTab";
 import { GeneralTab } from "./GeneralTab";
 import { RoutinesTab } from "./RoutinesTab";
 import { AssistantsTab } from "../../assistants/lazy";
-import type { Assistants } from "../../lib/assistants";
+import { openSessionLater, type Assistants } from "../../lib/assistants";
 import { UsageTab } from "./UsageTab";
 import type { Draft } from "../../routines/when";
 
@@ -189,6 +189,10 @@ export function SettingsDialog({
             open={open && tab === "routines"}
             sessionTitle={sessionTitle}
             onEdit={onEditRoutine}
+            onOpenSession={(id) => {
+              onOpenChange(false);
+              openSessionLater(id);
+            }}
             assistants={assistants.assistants}
           />
         </div>
