@@ -358,7 +358,7 @@ func install(c config) error {
 	if err := os.MkdirAll(c.dataDir, 0o700); err != nil {
 		return err
 	}
-	if err := writeEnv(envPath(c), c.env); err != nil {
+	if err := writeEnv(envPath(c), c.env, os.Stderr); err != nil {
 		return err
 	}
 	writeInstance(c)
@@ -556,13 +556,14 @@ var serviceEnv = []string{"PATH", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_
 
 func envPath(c config) string { return filepath.Join(c.dataDir, "service-env.json") }
 
-func writeEnv(path string, extra []string) error {
+func writeEnv(path string, extra []string, warn io.Writer) error {
 	env := map[string]string{}
 	for _, name := range append(append([]string{}, serviceEnv...), extra...) {
 		if v, ok := os.LookupEnv(name); ok {
 			env[name] = v
 		}
 	}
+	keepAgentPath(env, path, warn)
 	data, err := json.MarshalIndent(env, "", "  ")
 	if err != nil {
 		return err
@@ -570,14 +571,86 @@ func writeEnv(path string, extra []string) error {
 	return os.WriteFile(path, data, 0o600)
 }
 
-func loadEnv(path string) error {
+// The programs the service looks up on the recorded PATH.
+var serviceAgents = []string{"claude", "codex"}
+
+// keepAgentPath keeps the PATH the previous install recorded when it finds
+// more of the agents than this one. An install run from a detached unit or a
+// minimal shell carries systemd's or launchd's own PATH, without ~/.local/bin
+// or a version manager's folders, and the service could no longer start
+// claude or codex.
+func keepAgentPath(env map[string]string, file string, warn io.Writer) {
+	missing := missingAgents(env["PATH"])
+	if len(missing) == 0 {
+		return
+	}
+	if old, err := readEnv(file); err == nil && old["PATH"] != "" && old["PATH"] != env["PATH"] {
+		if still := missingAgents(old["PATH"]); len(still) < len(missing) {
+			fmt.Fprintf(warn, "Warning: %s not found on this PATH; keeping the PATH the previous install recorded.\n", strings.Join(missing, " and "))
+			env["PATH"], missing = old["PATH"], still
+		}
+	}
+	if len(missing) > 0 {
+		fmt.Fprintf(warn, "Warning: %s not found on PATH; its sessions will not start unless a program is chosen in Settings → Agents. Run install again from a shell where it is found.\n", strings.Join(missing, " and "))
+	}
+}
+
+func missingAgents(pathList string) []string {
+	var missing []string
+	for _, name := range serviceAgents {
+		if !programOnPath(pathList, name) {
+			missing = append(missing, name)
+		}
+	}
+	return missing
+}
+
+// programOnPath reports whether name is an executable in one of pathList's folders,
+// as exec.LookPath would find it with that PATH.
+func programOnPath(pathList, name string) bool {
+	names := []string{name}
+	if runtime.GOOS == "windows" {
+		exts := os.Getenv("PATHEXT")
+		if exts == "" {
+			exts = ".com;.exe;.bat;.cmd"
+		}
+		names = nil
+		for _, ext := range strings.Split(exts, ";") {
+			if ext != "" {
+				names = append(names, name+strings.ToLower(ext))
+			}
+		}
+	}
+	for _, dir := range filepath.SplitList(pathList) {
+		if dir == "" {
+			continue
+		}
+		for _, n := range names {
+			info, err := os.Stat(filepath.Join(dir, n))
+			if err == nil && !info.IsDir() && (runtime.GOOS == "windows" || info.Mode()&0o111 != 0) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func readEnv(path string) (map[string]string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	env := map[string]string{}
 	if err := json.Unmarshal(data, &env); err != nil {
-		return fmt.Errorf("%s: %w", path, err)
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	return env, nil
+}
+
+func loadEnv(path string) error {
+	env, err := readEnv(path)
+	if err != nil {
+		return err
 	}
 	for k, v := range env {
 		if err := os.Setenv(k, v); err != nil {

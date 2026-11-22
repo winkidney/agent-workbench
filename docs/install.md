@@ -89,7 +89,7 @@ agent-workbench doctor      # check claude, codex and the platform
 
 ### Environment
 
-The login start does not run through your shell, so `install` records the current `PATH`, the proxy variables (`HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` and their lowercase forms), `CODEX_HOME`, `CODEX_SQLITE_HOME` and `CLAUDE_CONFIG_DIR` in `service-env.json` in the data directory (readable by you only). API keys and other variables are not recorded; add one with `--env NAME`, for example `agent-workbench install --env ANTHROPIC_BASE_URL`. Run `install` again after changing your `PATH` or proxy. A program or home folder chosen in **Settings → Agents** takes precedence over these (see [Agents](usage.md#agents)).
+The login start does not run through your shell, so `install` records the current `PATH`, the proxy variables (`HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` and their lowercase forms), `CODEX_HOME`, `CODEX_SQLITE_HOME` and `CLAUDE_CONFIG_DIR` in `service-env.json` in the data directory (readable by you only). API keys and other variables are not recorded; add one with `--env NAME`, for example `agent-workbench install --env ANTHROPIC_BASE_URL`. Run `install` again after changing your `PATH` or proxy. If `claude` or `codex` is not on the current `PATH` (as when `install` runs from a detached `systemd-run` unit or a minimal shell) but the `PATH` the previous install recorded finds more of them, `install` keeps that one and warns; any agent still not found is named in a warning. A program or home folder chosen in **Settings → Agents** takes precedence over these (see [Agents](usage.md#agents)).
 
 ## More than one workbench
 

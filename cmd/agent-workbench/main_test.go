@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -19,7 +20,7 @@ func TestServiceEnvKeepsPathsAndProxiesButNotSecrets(t *testing.T) {
 	t.Setenv("ANTHROPIC_API_KEY", "sk-secret")
 	t.Setenv("WORKBENCH_EXTRA", "named")
 	path := filepath.Join(t.TempDir(), "service-env.json")
-	if err := writeEnv(path, []string{"WORKBENCH_EXTRA"}); err != nil {
+	if err := writeEnv(path, []string{"WORKBENCH_EXTRA"}, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	data, _ := os.ReadFile(path)
@@ -39,6 +40,86 @@ func TestServiceEnvKeepsPathsAndProxiesButNotSecrets(t *testing.T) {
 	t.Setenv("HTTPS_PROXY", "")
 	if err := loadEnv(path); err != nil || os.Getenv("HTTPS_PROXY") != "http://proxy.local:3128" {
 		t.Fatalf("load: %v %q", err, os.Getenv("HTTPS_PROXY"))
+	}
+}
+
+// agentDir is a folder holding stand-in programs with the given names.
+func agentDir(t *testing.T, names ...string) string {
+	t.Helper()
+	dir := t.TempDir()
+	for _, n := range names {
+		if runtime.GOOS == "windows" {
+			n += ".exe"
+		}
+		if err := os.WriteFile(filepath.Join(dir, n), []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
+}
+
+func recordedPath(t *testing.T, file string) string {
+	t.Helper()
+	env, err := readEnv(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return env["PATH"]
+}
+
+// An install from a shell without the agents on PATH (a detached systemd
+// unit has only systemd's PATH) keeps the PATH the previous install
+// recorded, and says so.
+func TestServiceEnvKeepsThePreviousPathWhenAgentsAreMissing(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "service-env.json")
+	full := agentDir(t, "claude", "codex")
+	bare := agentDir(t)
+
+	t.Setenv("PATH", full)
+	var out strings.Builder
+	if err := writeEnv(file, nil, &out); err != nil || out.Len() != 0 {
+		t.Fatalf("full PATH: %v %q", err, out.String())
+	}
+
+	t.Setenv("PATH", bare)
+	out.Reset()
+	if err := writeEnv(file, nil, &out); err != nil {
+		t.Fatal(err)
+	}
+	if got := recordedPath(t, file); got != full {
+		t.Fatalf("recorded %q, want the previous %q", got, full)
+	}
+	if !strings.Contains(out.String(), "claude and codex not found") || !strings.Contains(out.String(), "keeping the PATH") {
+		t.Fatalf("warning: %q", out.String())
+	}
+
+	// A PATH that finds them replaces the recorded one.
+	other := agentDir(t, "claude", "codex")
+	t.Setenv("PATH", other)
+	out.Reset()
+	if err := writeEnv(file, nil, &out); err != nil || out.Len() != 0 || recordedPath(t, file) != other {
+		t.Fatalf("new full PATH: %v %q %q", err, out.String(), recordedPath(t, file))
+	}
+}
+
+// With no better PATH recorded, the new one is kept and the missing agent named.
+func TestServiceEnvWarnsWhenNoPathFindsTheAgents(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "service-env.json")
+	t.Setenv("PATH", agentDir(t, "claude"))
+	if err := writeEnv(file, nil, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	only := agentDir(t, "codex")
+	t.Setenv("PATH", only)
+	var out strings.Builder
+	if err := writeEnv(file, nil, &out); err != nil {
+		t.Fatal(err)
+	}
+	if got := recordedPath(t, file); got != only {
+		t.Fatalf("recorded %q, want %q", got, only)
+	}
+	if !strings.Contains(out.String(), "claude not found on PATH") || strings.Contains(out.String(), "keeping") {
+		t.Fatalf("warning: %q", out.String())
 	}
 }
 
