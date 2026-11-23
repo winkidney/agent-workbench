@@ -999,7 +999,11 @@ func (c *NativeCatalog) Workspaces() ([]string, error) {
 	}
 	set := map[string]bool{}
 	for _, s := range list {
-		set[s.Workspace] = true
+		// codex exec runs are listed under Other, not Projects: their
+		// folders alone would show as empty project folders.
+		if s.Origin == "" || s.Origin == "project" {
+			set[s.Workspace] = true
+		}
 	}
 	c.mu.Lock()
 	statePath := c.codexStatePath()

@@ -120,12 +120,14 @@ func (m *Manager) codexThreadRequests(method string, threads []string) map[strin
 }
 
 // FolderResult is what archiving or deleting a folder's sessions did, or
-// would do: Codex sessions archived or deleted, Claude sessions hidden.
+// would do: Codex sessions archived or deleted (Automated of them codex
+// exec runs), Claude sessions hidden.
 type FolderResult struct {
-	Codex   int          `json:"codex"`
-	Claude  int          `json:"claude"`
-	Skipped []FolderSkip `json:"skipped"`
-	Failed  []FolderSkip `json:"failed"`
+	Codex     int          `json:"codex"`
+	Automated int          `json:"automated"`
+	Claude    int          `json:"claude"`
+	Skipped   []FolderSkip `json:"skipped"`
+	Failed    []FolderSkip `json:"failed"`
 }
 
 type FolderSkip struct {
@@ -137,9 +139,10 @@ type FolderSkip struct {
 // FolderSessions archives or deletes the Codex sessions started in a
 // project folder or any folder under it, and hides its Claude sessions
 // (Claude Code has neither). It takes the sessions the sidebar lists under
-// the folder in Projects: not related ones started elsewhere, not
-// assistants' or Other's. Sessions at work or open in another client are
-// skipped. dryRun only counts.
+// the folder in Projects and the codex exec runs started there (listed
+// under Other): not related ones started elsewhere, not assistants'.
+// Sessions at work or open in another client are skipped. dryRun only
+// counts.
 func (m *Manager) FolderSessions(folder, op string, dryRun bool) (FolderResult, error) {
 	res := FolderResult{Skipped: []FolderSkip{}, Failed: []FolderSkip{}}
 	method := map[string]string{"archive": "thread/archive", "delete": "thread/delete"}[op]
@@ -169,7 +172,7 @@ func (m *Manager) FolderSessions(folder, op string, dryRun bool) (FolderResult, 
 		if ns == "" {
 			ns = s.Cwd
 		}
-		if !under(ns, folder) || (s.Origin != "" && s.Origin != "project") || (assistants != "" && under(s.Cwd, assistants)) {
+		if !under(ns, folder) || (s.Origin != "" && s.Origin != "project" && s.Origin != "automation") || (assistants != "" && under(s.Cwd, assistants)) {
 			continue
 		}
 		if s.Agent != "codex" {
@@ -193,6 +196,9 @@ func (m *Manager) FolderSessions(folder, op string, dryRun bool) (FolderResult, 
 			res.Skipped = append(res.Skipped, FolderSkip{s.ID, s.Title, "open in another client"})
 		default:
 			codex = append(codex, s)
+			if s.Origin == "automation" {
+				res.Automated++
+			}
 		}
 	}
 	res.Codex, res.Claude = len(codex), len(claude)
@@ -241,6 +247,13 @@ func (m *Manager) FolderSessions(folder, op string, dryRun bool) (FolderResult, 
 		m.mu.Unlock()
 	}
 	res.Codex -= len(res.Failed)
+	for _, f := range res.Failed {
+		for _, s := range codex {
+			if s.ID == f.ID && s.Origin == "automation" {
+				res.Automated--
+			}
+		}
+	}
 	if len(claude) > 0 {
 		m.prefsMu.Lock()
 		p := m.Prefs()

@@ -11,6 +11,8 @@ type Skip = { id: string; title: string; reason: string };
 // What archiving or deleting a folder's sessions does (archive.go).
 type Result = {
   codex: number;
+  // Of those, codex exec runs (listed under Other).
+  automated: number;
   claude: number;
   skipped: Skip[];
   failed: Skip[];
@@ -84,7 +86,10 @@ export function FolderDialog({
               <ul className="folder-plan">
                 {plan.codex > 0 && (
                   <li>
-                    {count(plan.codex, "Codex session")} will be{" "}
+                    {count(plan.codex, "Codex session")}
+                    {plan.automated > 0 &&
+                      ` (${plan.automated.toLocaleString()} of them codex exec runs, listed under Other)`}{" "}
+                    will be{" "}
                     {op === "delete"
                       ? "deleted from Codex, including the Codex app and CLI. This cannot be undone."
                       : "archived (Archived at the bottom of the sidebar brings them back)."}
@@ -111,7 +116,7 @@ export function FolderDialog({
           <>
             <p>
               {done.codex > 0 &&
-                `${op === "delete" ? "Deleted" : "Archived"} ${count(done.codex, "Codex session")}. `}
+                `${op === "delete" ? "Deleted" : "Archived"} ${count(done.codex, "Codex session")}${done.automated > 0 ? ` (${done.automated.toLocaleString()} codex exec runs)` : ""}. `}
               {done.claude > 0 &&
                 `Hid ${count(done.claude, "Claude session")}. `}
               {done.skipped.length > 0 &&

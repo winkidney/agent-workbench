@@ -110,7 +110,7 @@ The interface uses a JSON API under `/api/`. Main endpoints:
 | `POST /api/sessions/{id}/reply` | Answer an approval: `{id, decision, message, answers}` |
 | `GET /api/sessions/{id}/commands`, `POST …/command` | The command and skill catalog; run a command |
 | `POST /api/sessions/{id}/rename`, `/archive`, `/unarchive`, `/delete` | Session management |
-| `POST /api/folders/sessions` | Archive or delete (`op`) every session started in a project folder and the folders under it: Codex threads through one app-server, Claude sessions hidden; `dryRun` only counts |
+| `POST /api/folders/sessions` | Archive or delete (`op`) every session started in a project folder and the folders under it: Codex threads (`codex exec` runs included) through one app-server, Claude sessions hidden; `dryRun` only counts |
 | `GET /api/sessions/{id}/telemetry`, `PATCH …/options` | Usage and settings |
 | `GET /api/agents/{agent}/capabilities?cwd=`, `/usage`, `GET/PUT …/defaults` | Models, modes, quotas, default settings |
 | `GET/PUT /api/agents/setup`, `POST /api/agents/{agent}/check` | Each agent's program and home: as in use, with version, sign-in and candidates on PATH; saved after checking (409 while that agent's sessions are at work); checked without saving |

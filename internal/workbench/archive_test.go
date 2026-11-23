@@ -186,7 +186,7 @@ func folderFixture(t *testing.T) (*Manager, string, *[]string) {
 	m, _ := fixture(t)
 	root := realTempDir(t)
 	app := filepath.Join(root, "app")
-	for _, d := range []string{"app/sub", "app2", "app/assistants/main"} {
+	for _, d := range []string{"app/sub", "app2", "app/assistants/main", "app/build/run"} {
 		os.MkdirAll(filepath.Join(root, d), 0o700)
 	}
 	_ = m.store.setting("assistants", assistantsSetting{Root: filepath.Join(app, "assistants")})
@@ -197,8 +197,9 @@ func folderFixture(t *testing.T) (*Manager, string, *[]string) {
 	db, _ := sql.Open("sqlite", filepath.Join(codex, "state_5.sqlite"))
 	_, err := db.Exec(`CREATE TABLE threads(id TEXT,cwd TEXT,name TEXT,title TEXT,updated_at INTEGER,source TEXT,rollout_path TEXT,archived INTEGER);
 INSERT INTO threads VALUES('one',?1,'one','',10,'cli','',0),('two',?2,'two','',10,'cli','',0),('old',?1,'old','',10,'cli','',1),
-('busy',?1,'busy','',10,'cli','',0),('next',?3,'next','',10,'cli','',0),('moss',?4,'moss','',10,'cli','',0)`,
-		app, filepath.Join(app, "sub"), filepath.Join(root, "app2"), filepath.Join(app, "assistants", "main"))
+('busy',?1,'busy','',10,'cli','',0),('next',?3,'next','',10,'cli','',0),('moss',?4,'moss','',10,'cli','',0),
+('run',?5,'run','',10,'exec','',0)`,
+		app, filepath.Join(app, "sub"), filepath.Join(root, "app2"), filepath.Join(app, "assistants", "main"), filepath.Join(app, "build", "run"))
 	db.Close()
 	if err != nil {
 		t.Fatal(err)
@@ -228,14 +229,15 @@ func TestFolderArchiveTakesTheFolderAndItsSubfolders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plan.Codex != 2 || plan.Claude != 1 || len(plan.Skipped) != 1 || plan.Skipped[0].ID != "codex:busy" || len(*calls) != 0 {
+	if plan.Codex != 3 || plan.Automated != 1 || plan.Claude != 1 || len(plan.Skipped) != 1 || plan.Skipped[0].ID != "codex:busy" || len(*calls) != 0 {
 		t.Fatalf("dry run: %+v %v", plan, *calls)
 	}
 	done, err := m.FolderSessions(app, "archive", false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if done.Codex != 2 || done.Claude != 1 || strings.Join(*calls, ",") != "thread/archive one,thread/archive two" {
+	sort.Strings(*calls)
+	if done.Codex != 3 || done.Automated != 1 || done.Claude != 1 || strings.Join(*calls, ",") != "thread/archive one,thread/archive run,thread/archive two" {
 		t.Fatalf("archive: %+v %v", done, *calls)
 	}
 	p := m.Prefs()
@@ -259,10 +261,27 @@ func TestFolderDeleteReportsWhatFailed(t *testing.T) {
 	}
 	// The archived thread is deleted too; one refused stays.
 	sort.Strings(*calls)
-	if strings.Join(*calls, ",") != "thread/delete old,thread/delete one,thread/delete two" {
+	if strings.Join(*calls, ",") != "thread/delete old,thread/delete one,thread/delete run,thread/delete two" {
 		t.Fatalf("calls: %v", *calls)
 	}
-	if done.Codex != 2 || len(done.Failed) != 1 || done.Failed[0].ID != "codex:two" || done.Failed[0].Reason != "refused" {
+	if done.Codex != 3 || done.Automated != 1 || len(done.Failed) != 1 || done.Failed[0].ID != "codex:two" || done.Failed[0].Reason != "refused" {
 		t.Fatalf("delete: %+v", done)
+	}
+}
+
+// A folder only codex exec runs started in is not a project folder: they
+// are listed under Other.
+func TestWorkspacesLeaveOutExecRuns(t *testing.T) {
+	m, app, _ := folderFixture(t)
+	list, err := m.catalog.Workspaces()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, p := range list {
+		got[p] = true
+	}
+	if !got[app] || !got[filepath.Join(app, "sub")] || got[filepath.Join(app, "build", "run")] {
+		t.Fatalf("workspaces: %v", list)
 	}
 }
