@@ -164,7 +164,7 @@ HTML and dev-server previews use `p-*.agent.localhost` addresses in a browser on
   - A parent is listed while it or one of its subagents is at work. Its row shows "N sub" and opens to the subagents that are running or waiting for you; finished subagents stay in the project tree.
   - A family that needs you comes first.
   - The subagents of a session this workbench runs show as running while they work and idle afterwards, not as "in another client". Their pages are read only, and their parent session takes the messages.
-- **Projects** groups sessions by the directory they were started in (moving elsewhere inside the session doesn't change that), nests subdirectories, and folds shared path prefixes into one folder. A session that worked across several subprojects shows them on a second line (`↗ api, web`) and is listed under each of them as related.
+- **Projects** groups sessions by the directory they were started in (moving elsewhere inside the session doesn't change that), nests subdirectories, and folds shared path prefixes into one folder. In a project, its folders come first (pinned ones at the top), then its sessions, each newest first. A session that worked across several subprojects shows them on a second line (`↗ api, web`) and is listed under each of them as related.
 - **Other** holds sessions that are not project work: `codex exec` runs, temporary directories, and chats from the home directory or the Codex app.
 - **Search** (press `/`) matches titles, projects and agents; separate words with spaces.
 - **Hover a row** (or focus it with the keyboard) to show its pin button and "⋯" menu: rename, copy the resume command, copy the session ID, and

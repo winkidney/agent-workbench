@@ -146,7 +146,7 @@ export type Node = {
   children: Node[];
 };
 
-// One row in a project: a child folder or a session, ordered together by activity.
+// One row in a project: a child folder or a session. Folders come first.
 export type Entry =
   | { kind: "project"; project: Project; latest: string }
   | { kind: "session"; node: Node; latest: string };
@@ -157,7 +157,8 @@ export type Project = {
   pinned: boolean;
   nodes: Node[];
   children: Project[];
-  // Child folders and own sessions in display order: pinned folders, then newest activity.
+  // Child folders and own sessions in display order: pinned folders, other
+  // folders, then sessions, each newest activity first.
   entries: Entry[];
   // Sessions launched elsewhere whose tool calls touched this project.
   related: Node[];
@@ -353,6 +354,8 @@ export function buildSidebar(
     const pa = pinRank(a);
     const pb = pinRank(b);
     if (pa !== pb) return pa < pb ? -1 : 1;
+    // Folders before sessions, so a project's subfolders stay in one place.
+    if (a.kind !== b.kind) return a.kind === "project" ? -1 : 1;
     if (!a.latest !== !b.latest) return a.latest ? -1 : 1;
     return b.latest.localeCompare(a.latest) || label(a).localeCompare(label(b));
   };

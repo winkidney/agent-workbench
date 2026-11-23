@@ -456,22 +456,26 @@ describe("unified ordering", () => {
       e.kind === "project" ? "dir:" + e.project.name : e.node.session.id,
     );
 
-  it("interleaves folders and sessions by most recent activity", () => {
+  it("lists folders before sessions, each by most recent activity", () => {
     const app = buildSidebar(list, emptyPrefs()).projects[0];
     expect(labels(app)).toEqual([
+      "dir:folder-a",
+      "dir:folder-b",
       "codex:new",
       "codex:busy-parent",
-      "dir:folder-a",
       "codex:mid",
       "codex:old",
-      "dir:folder-b",
     ]);
     expect(app.latest).toBe("2026-11-10T00:00:00Z");
   });
 
   it("keeps pinned folders first", () => {
     const p = applyOp(emptyPrefs(), "pinWorkspace", W + "/folder-b");
-    expect(labels(buildSidebar(list, p).projects[0])[0]).toBe("dir:folder-b");
+    expect(labels(buildSidebar(list, p).projects[0]).slice(0, 3)).toEqual([
+      "dir:folder-b",
+      "dir:folder-a",
+      "codex:new",
+    ]);
   });
 
   it("keeps the Related list on folders that have their own sessions", () => {
