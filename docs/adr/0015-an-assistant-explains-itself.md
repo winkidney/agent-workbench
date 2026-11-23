@@ -1,7 +1,7 @@
 # ADR 0015: An assistant explains itself
 
 - Date: 2026-11-19
-- Status: accepted
+- Status: accepted; decision 5's wizard amended by 0020
 
 ## Context
 
@@ -39,7 +39,7 @@ Opening a new assistant showed a name and an empty box. Nothing said what the as
 
 5. **What it needs, and sign-ins outside the conversation.**
    - `requires` lists what an assistant needs from the user, each item with the ways it can be given (a signed-in CLI, an MCP server, an API token, an account). The card shows it.
-   - Setup is a wizard: one question at a time, with the choices offered (AskUserQuestion for Claude, a numbered list for Codex).
+   - Setup is a wizard: one question at a time, with the choices offered (AskUserQuestion for Claude, a numbered list for Codex). ADR 0020 extends this to every question an assistant asks.
    - Every sign-in or secret is done by the user outside the conversation:
      - `uv run ../shared/tools/secret.py set <name>` asks with hidden input and saves with mode 600;
      - the tool's own login (`gh auth login`, `tools/<x>.py auth`) opens the page and records the result;
