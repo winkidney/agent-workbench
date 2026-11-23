@@ -28,6 +28,10 @@ Agent Workbench runs on your machine next to `claude` and `codex` and gives both
 | --- | --- | --- |
 | ![A running Claude Code turn with a steered message and a queued message](docs/screenshots/steer.png) | ![The / command menu](docs/screenshots/commands.png) | ![The phone layout in dark mode](docs/screenshots/mobile.png) |
 
+| Moss, your personal assistant | An assistant's card | Routines and their heartbeat |
+| --- | --- | --- |
+| ![Moss's welcome in its ongoing conversation, with the assistants in the sidebar and quick starts above the composer](docs/screenshots/assistant.png) | ![Moss's card: what it can do, requests to try and its routines](docs/screenshots/assistant-card.png) | ![Settings → Routines: messages and commands on a schedule, each with a bar per recent run](docs/screenshots/routines.png) |
+
 It is a single-user tool for your own machine, not a hosted service for a team.
 
 ## Quick start
