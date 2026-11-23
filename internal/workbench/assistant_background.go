@@ -44,6 +44,9 @@ type AssistantChange struct {
 	Error   string   `json:"error,omitempty"`
 	// The commit that undid it.
 	Reverted string `json:"reverted,omitempty"`
+	// Files it changed that a background run may not change: undone, not
+	// committed (ADR 0021).
+	Blocked []string `json:"blocked,omitempty"`
 }
 
 const (
@@ -53,7 +56,7 @@ const (
 )
 
 // What every background run is told first: nobody is there to answer.
-const backgroundPreamble = `You are running in the background: no one reads this conversation or can answer a question. Do not ask; do what you can and leave the rest in state/loops.md for the user. Only change files in this repository. The workbench commits your changes when you finish. End your answer with one line, starting "Summary:", that says what you changed.
+const backgroundPreamble = `You are running in the background: no one reads this conversation or can answer a question. Do not ask; do what you can and leave the rest in state/loops.md for the user. Only change your own state/, drafts/ and log.md (and the shared wiki, if you keep it): the workbench undoes changes to any other file. It commits your changes when you finish. End your answer with one line, starting "Summary:", that says what you changed.
 
 `
 
@@ -148,6 +151,14 @@ func (m *Manager) inBackground(a Assistant, v AssistantChange, prompt string) As
 	}
 	out, err := run(a, backgroundPreamble+prompt)
 	v.Summary = summaryOf(out)
+	blocked, undoErr := undoOutside(root, backgroundWrites(a))
+	v.Blocked = blocked
+	if undoErr != nil && err == nil {
+		err = fmt.Errorf("checking what it changed: %w", undoErr)
+	}
+	if err == nil && len(blocked) > 0 {
+		err = fmt.Errorf("it changed files a background run may not change, which were undone: %s", strings.Join(blocked, ", "))
+	}
 	if err != nil {
 		v.Status, v.Error, v.Finished = "failed", err.Error(), nowStamp()
 		// Keep what it did get done, so it can be seen and undone.
@@ -164,6 +175,100 @@ func (m *Manager) inBackground(a Assistant, v AssistantChange, prompt string) As
 	}
 	m.recordChange(v)
 	return v
+}
+
+// backgroundWrites is what a background run of a may change, relative to
+// the repository: its own state/, drafts/ and log.md, and the shared wiki
+// for an assistant that keeps it. Its procedure, settings, skills and
+// scripts are not among them: text the run read (mail, a web page) must not
+// change what runs later or what the next session is told (ADR 0021).
+func backgroundWrites(a Assistant) []string {
+	dir := filepath.ToSlash(a.Dir)
+	allowed := []string{dir + "/state/", dir + "/drafts/", dir + "/log.md"}
+	if a.Memory == "wiki" {
+		allowed = append(allowed, "shared/wiki/")
+	}
+	return allowed
+}
+
+func writeAllowed(path string, allowed []string) bool {
+	for _, a := range allowed {
+		if path == a || strings.HasSuffix(a, "/") && strings.HasPrefix(path, a) {
+			return true
+		}
+	}
+	return false
+}
+
+// undoOutside puts back every change in root outside allowed: a changed or
+// deleted file is restored from the last commit, a new one removed. Run
+// after a background run, whose repository was committed just before it,
+// so every change is the run's. It returns the files it undid. Files git
+// ignores are not seen.
+func undoOutside(root string, allowed []string) ([]string, error) {
+	out, err := gitRun(root, "status", "--porcelain=v1", "-z", "--untracked-files=all")
+	if err != nil {
+		return nil, err
+	}
+	var restore, remove, blocked []string
+	entries := strings.Split(out, "\x00")
+	for i := 0; i < len(entries); i++ {
+		e := entries[i]
+		if len(e) < 4 {
+			continue
+		}
+		code, path := e[:2], e[3:]
+		if code[0] == 'R' || code[0] == 'C' {
+			// A staged rename or copy names its source next; a background
+			// run stages nothing, but restore both if one appears.
+			i++
+			if i < len(entries) && !writeAllowed(entries[i], allowed) {
+				restore = append(restore, entries[i])
+				blocked = append(blocked, entries[i])
+			}
+		}
+		if writeAllowed(path, allowed) {
+			continue
+		}
+		blocked = append(blocked, path)
+		if code == "??" {
+			remove = append(remove, path)
+		} else if code[0] == 'A' {
+			restore = append(restore, path)
+			remove = append(remove, path)
+		} else {
+			restore = append(restore, path)
+		}
+	}
+	var firstErr error
+	if len(restore) > 0 {
+		args := append([]string{"checkout", "HEAD", "--"}, restore...)
+		if _, err := gitRun(root, args...); err != nil {
+			// A file added and staged has no HEAD version: drop it from the
+			// index, then remove it below.
+			_, _ = gitRun(root, append([]string{"rm", "-q", "--cached", "--ignore-unmatch", "--"}, restore...)...)
+			for _, p := range restore {
+				_, _ = gitRun(root, "checkout", "HEAD", "--", p)
+			}
+		}
+	}
+	for _, p := range remove {
+		full := filepath.Join(root, filepath.FromSlash(p))
+		if _, err := gitRun(root, "cat-file", "-e", "HEAD:"+p); err == nil {
+			continue
+		}
+		if err := os.Remove(full); err != nil && !errors.Is(err, os.ErrNotExist) && firstErr == nil {
+			firstErr = err
+		}
+	}
+	if left, err := gitRun(root, "status", "--porcelain=v1", "-z", "--untracked-files=all"); err == nil {
+		for _, e := range strings.Split(left, "\x00") {
+			if len(e) >= 4 && !writeAllowed(e[3:], allowed) && firstErr == nil {
+				firstErr = fmt.Errorf("could not undo %s", e[3:])
+			}
+		}
+	}
+	return blocked, firstErr
 }
 
 // summaryOf is the "Summary:" line an answer ends with, or its last line.

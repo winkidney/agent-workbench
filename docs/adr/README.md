@@ -12,9 +12,9 @@ Decisions that shape how the workbench behaves, why, and what they cost. Each re
 | [0006](0006-terminal-tabs-live-until-closed.md) | A terminal tab lives until it is closed | accepted |
 | [0007](0007-file-links-carry-a-line.md) | A file link may name lines, and a text file in the panel shows numbered lines | accepted |
 | [0008](0008-media-shown-from-anywhere.md) | Images and videos a session names are shown wherever they are | accepted; amends 0004 for media |
-| [0009](0009-routines-run-on-a-schedule.md) | Routines send messages and run commands on a schedule | accepted |
+| [0009](0009-routines-run-on-a-schedule.md) | Routines send messages and run commands on a schedule | accepted; a run can wait for approval (0021) |
 | [0010](0010-assistants-are-folders.md) | An assistant is a folder in a repository of assistants | accepted |
-| [0011](0011-background-runs-commit-and-undo.md) | Background runs keep the wiki, read outside content, and commit what they change | accepted |
+| [0011](0011-background-runs-commit-and-undo.md) | Background runs keep the wiki, read outside content, and commit what they change | accepted; what they may change amended by 0021 |
 | [0012](0012-agents-schedule-their-own-messages.md) | Agents schedule their own messages and hand tasks to assistants through a local command | accepted |
 | [0013](0013-assistants-set-up-on-first-use.md) | Assistants are set up on first use; each picks its agent; Moss makes new ones | accepted; amends 0010 |
 | [0014](0014-moss-welcomes-one-template.md) | Moss welcomes the user; assistants come from one template and are backed up to GitHub | accepted |
@@ -24,3 +24,4 @@ Decisions that shape how the workbench behaves, why, and what they cost. Each re
 | [0018](0018-keep-the-computer-awake.md) | Two switches keep the computer awake while the workbench runs | accepted |
 | [0019](0019-assistants-start-sessions-on-request.md) | An assistant starts a separate session when the user asks for one | accepted |
 | [0020](0020-assistants-ask-through-the-client.md) | Assistants ask the user through the client's question tool, one step at a time | accepted; amends 0015 |
+| [0021](0021-outside-content-waits-and-background-runs-stay-in-their-folder.md) | Outside content waits for the user's approval, and background runs change only their own files | accepted; amends 0009 and 0011 |

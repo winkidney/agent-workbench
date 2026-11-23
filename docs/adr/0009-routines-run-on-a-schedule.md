@@ -1,7 +1,7 @@
 # ADR 0009: Routines send messages and run commands on a schedule
 
 - Date: 2026-11-19
-- Status: accepted
+- Status: accepted; a run can wait for the user's approval (0021)
 
 ## Context
 

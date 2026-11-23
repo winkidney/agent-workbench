@@ -145,8 +145,8 @@ export function useAttention<S extends Waiting>(
 
 // A routine run ended (routines/when.ts): failures always notify, and so do
 // runs the server marked (an agent answered, or a command printed what its
-// routine asked to hear about); only while this page is in the background,
-// like the attention notifications.
+// routine asked to hear about), and runs that wait for approval; only while
+// this page is in the background, like the attention notifications.
 export function notifyRun(
   run: {
     id: string;
@@ -159,15 +159,20 @@ export function notifyRun(
   },
   onOpen: (id: string) => void,
 ) {
+  const waiting = run.status === "waiting";
   const ended = run.status === "done" || run.status === "failed";
-  if (!ended || !(run.notify || run.status === "failed")) return;
+  if (!(ended || waiting) || !(run.notify || run.status === "failed")) return;
   if (notifyState() !== "on" || !background()) return;
-  const title =
-    run.status === "failed"
+  const title = waiting
+    ? `Waiting for your approval: ${run.name}`
+    : run.status === "failed"
       ? `Routine failed: ${run.name}`
       : `Routine done: ${run.name}`;
-  const body =
-    run.status === "failed"
+  // A waiting run's output is not shown here: the user looks at it in its
+  // assistant's preview first (ADR 0021).
+  const body = waiting
+    ? "Open its assistant to look at it and approve or dismiss it."
+    : run.status === "failed"
       ? run.error || "See Settings → Routines."
       : run.session
         ? "The agent answered."

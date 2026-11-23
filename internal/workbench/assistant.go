@@ -68,8 +68,12 @@ type FileRoutine struct {
 	Timeout        int      `toml:"timeout"`
 	NotifyOnOutput bool     `toml:"notify_on_output"`
 	// The message goes to a background run, not a session (ADR 0011).
-	Background bool  `toml:"background"`
-	Enabled    *bool `toml:"enabled"`
+	Background bool `toml:"background"`
+	// What the command printed waits for the user's approval, with Preview
+	// (a file in the assistant's folder) to look at first (ADR 0021).
+	Approve bool   `toml:"approve"`
+	Preview string `toml:"preview"`
+	Enabled *bool  `toml:"enabled"`
 }
 
 // Assistant is an assistant as the page sees it.
@@ -306,8 +310,32 @@ func readAssistant(path string) (AssistantFile, error) {
 		if r.Background && strings.TrimSpace(r.Message) == "" {
 			return f, fmt.Errorf("routine %q: background needs a message: what to do", r.Name)
 		}
+		if r.Approve && (strings.TrimSpace(r.Message) == "" || strings.TrimSpace(r.Command) == "") {
+			return f, fmt.Errorf("routine %q: approve needs a command and a message", r.Name)
+		}
+		if r.Preview != "" {
+			if !r.Approve {
+				return f, fmt.Errorf("routine %q: preview goes with approve", r.Name)
+			}
+			if _, ok := insideFolder(r.Preview); !ok {
+				return f, fmt.Errorf("routine %q: preview is a file in the assistant's folder, such as raw/preview.md", r.Name)
+			}
+		}
 	}
 	return f, nil
+}
+
+// insideFolder cleans a path relative to an assistant's folder; false when
+// it is absolute or leaves the folder.
+func insideFolder(rel string) (string, bool) {
+	if filepath.IsAbs(rel) || strings.HasPrefix(rel, "/") || strings.HasPrefix(rel, "\\") {
+		return "", false
+	}
+	c := filepath.ToSlash(filepath.Clean(filepath.FromSlash(rel)))
+	if c == "." || c == ".." || strings.HasPrefix(c, "../") || filepath.VolumeName(c) != "" {
+		return "", false
+	}
+	return c, true
 }
 
 // assistantFiles lists the assistant.toml files under root, one folder deep.
@@ -536,6 +564,10 @@ func fileRoutine(a Assistant, f FileRoutine) Routine {
 	if strings.TrimSpace(f.Message) != "" {
 		v.Message = f.Message
 		v.Target = &RoutineTarget{Kind: "assistant", Assistant: a.Dir, Background: f.Background}
+		v.Approve = f.Approve && v.Command != nil
+		if rel, ok := insideFolder(f.Preview); ok && v.Approve {
+			v.Preview = filepath.Join(a.Path, filepath.FromSlash(rel))
+		}
 	}
 	return v
 }

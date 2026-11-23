@@ -57,6 +57,22 @@ describe("a routine's heartbeat", () => {
     expect(runKind(running)).toBe("active");
   });
 
+  it("shows runs that wait for approval, and dismissed ones as quiet", () => {
+    const waiting = run({ id: "w", status: "waiting", finished: undefined });
+    const dismissed = run({
+      id: "x",
+      status: "skipped",
+      error: "dismissed: nothing was sent",
+    });
+    expect(runKind(waiting)).toBe("waiting");
+    expect(runResult(waiting)).toBe("Waiting for your approval");
+    expect(runKind(dismissed)).toBe("quiet");
+    expect(runResult(dismissed)).toBe("Dismissed: nothing was sent");
+    expect(heartbeatSummary([waiting, dismissed, failed])).toBe(
+      "3 runs: 1 waiting for you, 1 quiet, 1 failed",
+    );
+  });
+
   it("says each in a few words", () => {
     expect(runResult(quietCommand)).toBe(
       "Quiet: printed nothing, nothing sent",

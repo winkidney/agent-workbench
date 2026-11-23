@@ -6250,6 +6250,9 @@ span.heartbeat.compact {
 .heartbeat-bar.failed {
   background: var(--destructive);
 }
+.heartbeat-bar.waiting {
+  background: var(--warning);
+}
 .heartbeat-bar.active {
   animation: heartbeat-pulse 1.2s ease-in-out infinite;
 }
@@ -6653,6 +6656,9 @@ span.heartbeat.compact {
 }
 .assistant-home-setup span {
   flex: 1;
+}
+.assistant-home-approve {
+  flex-wrap: wrap;
 }
 .assistant-home-foot {
   display: flex;

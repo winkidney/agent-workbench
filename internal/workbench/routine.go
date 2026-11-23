@@ -80,6 +80,12 @@ type Routine struct {
 	Ran string `json:"ran,omitempty"`
 	// A routine from an assistant.toml: the `enabled` its file last said.
 	FileEnabled *bool `json:"fileEnabled,omitempty"`
+	// What its command printed waits for the user's approval before the
+	// message takes it to an agent (ADR 0021).
+	Approve bool `json:"approve,omitempty"`
+	// A file the page offers to open while a run waits: what the command
+	// wrote for the user to look at first, shown without an agent.
+	Preview string `json:"preview,omitempty"`
 
 	// Computed for the page.
 	Next string `json:"next,omitempty"`
@@ -89,6 +95,9 @@ type Routine struct {
 	// Its latest runs, newest first, for the page's heartbeat: each output cut
 	// to its first line (routineRecentPreview), the whole of it in the runs.
 	Recent []RoutineRun `json:"recent,omitempty"`
+	// Its runs that wait for the user's approval, oldest first (outputs cut
+	// as in Recent).
+	Waiting []RoutineRun `json:"waiting,omitempty"`
 }
 
 // RoutineRun is one time a routine was due.
@@ -99,8 +108,9 @@ type RoutineRun struct {
 	Due      string `json:"due"`
 	Started  string `json:"started"`
 	Finished string `json:"finished,omitempty"`
-	// running (its command) | sent | queued (the message waits for the
-	// session) | done | failed | skipped
+	// running (its command) | waiting (its output waits for the user's
+	// approval) | sent | queued (the message waits for the session) | done |
+	// failed | skipped
 	Status string `json:"status"`
 	// The session the message went to.
 	Session string `json:"session,omitempty"`
@@ -344,6 +354,9 @@ func (m *Manager) checkRoutine(v *Routine, now time.Time) error {
 			return fmt.Errorf("timeout: 1 to %d minutes", routineTimeoutMax)
 		}
 	}
+	if v.Approve && (v.Command == nil || v.Target == nil) {
+		return errors.New("approval needs a command and a message to send what it printed")
+	}
 	v.Name = strings.TrimSpace(v.Name)
 	if v.Name == "" {
 		v.Name = routineName(v)
@@ -427,7 +440,7 @@ func (s *Store) routine(id string) (Routine, error) {
 }
 
 func (s *Store) saveRoutine(v Routine) error {
-	v.Next, v.Last, v.Recent = "", nil, nil
+	v.Next, v.Last, v.Recent, v.Waiting = "", nil, nil, nil
 	b, _ := json.Marshal(v)
 	_, err := s.db.Exec(`INSERT INTO routines(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data`, v.ID, string(b))
 	return err
@@ -484,6 +497,27 @@ func (s *Store) runs(routine string, limit int) ([]RoutineRun, error) {
 	return out, rows.Err()
 }
 
+// waitingRuns lists a routine's runs that wait for approval, oldest first.
+func (s *Store) waitingRuns(routine string) ([]RoutineRun, error) {
+	rows, err := s.db.Query(`SELECT data FROM routine_runs WHERE routine=? AND json_extract(data,'$.status')='waiting' ORDER BY started`, routine)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []RoutineRun{}
+	for rows.Next() {
+		var data string
+		if rows.Scan(&data) != nil {
+			continue
+		}
+		var v RoutineRun
+		if json.Unmarshal([]byte(data), &v) == nil {
+			out = append(out, v)
+		}
+	}
+	return out, rows.Err()
+}
+
 // openRuns lists the runs not yet ended.
 func (s *Store) openRuns() ([]RoutineRun, error) {
 	rows, err := s.db.Query(`SELECT data FROM routine_runs WHERE json_extract(data,'$.status') IN ('running','sent','queued')`)
@@ -511,7 +545,9 @@ func (s *Store) pruneRuns(now time.Time) error {
 	if _, err := s.db.Exec(`DELETE FROM routine_runs WHERE started < ?`, cut); err != nil {
 		return err
 	}
-	_, err := s.db.Exec(`DELETE FROM routine_runs WHERE id IN (SELECT id FROM (SELECT id, row_number() OVER (PARTITION BY routine ORDER BY started DESC) AS n FROM routine_runs) WHERE n > ?)`, routineRunsKept)
+	// A run that waits for approval is kept until it is a month old: a
+	// routine that runs every half hour would otherwise push it out in a day.
+	_, err := s.db.Exec(`DELETE FROM routine_runs WHERE id IN (SELECT id FROM (SELECT id, row_number() OVER (PARTITION BY routine ORDER BY started DESC) AS n FROM routine_runs) WHERE n > ?) AND json_extract(data,'$.status') IS NOT 'waiting'`, routineRunsKept)
 	return err
 }
 
@@ -544,6 +580,15 @@ func (m *Manager) Routines() ([]Routine, error) {
 			last := runs[0]
 			last.Output = ""
 			list[i].Last, list[i].Recent = &last, runs
+		}
+		if list[i].Approve {
+			waiting, _ := m.store.waitingRuns(list[i].ID)
+			for j := range waiting {
+				waiting[j].Output = outputPreview(waiting[j].Output)
+			}
+			if len(waiting) > 0 {
+				list[i].Waiting = waiting
+			}
 		}
 	}
 	sort.Slice(list, func(i, j int) bool { return list[i].Created < list[j].Created })
@@ -832,7 +877,7 @@ func (m *Manager) startRun(v Routine, due time.Time, scheduled bool) RoutineRun 
 func (m *Manager) carryOut(v Routine, run RoutineRun) {
 	message := v.Message
 	if c := v.Command; c != nil {
-		out, exit, err := runRoutineCommand(c)
+		out, exit, err := m.routineCommand(v)
 		m.rt.mu.Lock()
 		delete(m.rt.running, v.ID)
 		m.rt.mu.Unlock()
@@ -850,10 +895,71 @@ func (m *Manager) carryOut(v Routine, run RoutineRun) {
 		case strings.TrimSpace(out) == "":
 			m.endRun(run, "skipped", "nothing printed, so nothing was sent", false)
 			return
+		case v.Approve:
+			// Nothing reaches an agent until the user approves (ApproveRun).
+			run.Status, run.Notify = "waiting", true
+			m.recordRun(run)
+			return
 		}
 		message = handOff(message, out)
 	}
 	m.sendRun(v, run, message)
+}
+
+// routineCommand runs a routine's command. An assistant's command waits
+// while a background run changes the repository, and a background run
+// waits for it: what a background run changed, and the workbench undid
+// (ADR 0021), is never run in between.
+func (m *Manager) routineCommand(v Routine) (string, *int, error) {
+	if strings.HasPrefix(v.CreatedBy, "file:") {
+		m.as.bg.Lock()
+		defer m.as.bg.Unlock()
+	}
+	return runRoutineCommand(v.Command)
+}
+
+// ApproveRun hands a waiting run's output to its routine's message
+// (approve), or ends the run without sending anything.
+func (m *Manager) ApproveRun(routine, id string, approve bool) (RoutineRun, error) {
+	v, err := m.store.routine(routine)
+	if err != nil {
+		return RoutineRun{}, err
+	}
+	if approve {
+		if name, off := m.assistantOff(v); off {
+			return RoutineRun{}, fmt.Errorf("%s is turned off", name)
+		}
+	}
+	// One answer per run: a second click finds it no longer waiting.
+	m.rt.mu.Lock()
+	run, err := m.store.run(id)
+	if err != nil || run.Routine != routine {
+		m.rt.mu.Unlock()
+		return RoutineRun{}, errors.New("run not found")
+	}
+	if run.Status != "waiting" {
+		m.rt.mu.Unlock()
+		return run, errors.New("this run no longer waits for approval")
+	}
+	if approve {
+		run.Status, run.Notify = "sent", false
+	} else {
+		run.Status, run.Error, run.Finished, run.Notify = "skipped", "dismissed: nothing was sent", nowStamp(), false
+	}
+	err = m.store.saveRun(run)
+	m.rt.mu.Unlock()
+	if err != nil {
+		return run, err
+	}
+	m.routineChanged(run.Routine, &run)
+	if approve {
+		if v.Target == nil {
+			m.endRun(run, "failed", "the routine no longer sends a message", true)
+			return run, nil
+		}
+		go m.sendRun(v, run, handOff(v.Message, run.Output))
+	}
+	return run, nil
 }
 
 // handOff adds the end of what a command printed to the routine's message.
@@ -1058,7 +1164,7 @@ func runRoutineCommand(c *RoutineCommand) (string, *int, error) {
 	return out.String(), &code, nil
 }
 
-// routinesAPI serves /api/routines[/{id}[/runs|/run]].
+// routinesAPI serves /api/routines[/{id}[/runs|/run|/runs/{run}/approve|dismiss]].
 func (s *Server) routinesAPI(w http.ResponseWriter, r *http.Request, rest string) {
 	m := s.Manager
 	parts := strings.Split(rest, "/")
@@ -1077,7 +1183,8 @@ func (s *Server) routinesAPI(w http.ResponseWriter, r *http.Request, rest string
 			bad(w, err)
 			return
 		}
-		v.ID, v.CreatedBy = "", "page"
+		// A preview is a file an assistant's routine names (assistant.toml).
+		v.ID, v.CreatedBy, v.Preview = "", "page", ""
 		saved, err := m.SaveRoutine(v)
 		if err != nil {
 			bad(w, err)
@@ -1090,7 +1197,7 @@ func (s *Server) routinesAPI(w http.ResponseWriter, r *http.Request, rest string
 			bad(w, err)
 			return
 		}
-		v.ID = id
+		v.ID, v.Preview = id, ""
 		saved, err := m.SaveRoutine(v)
 		if err != nil {
 			bad(w, err)
@@ -1128,6 +1235,13 @@ func (s *Server) routinesAPI(w http.ResponseWriter, r *http.Request, rest string
 			return
 		}
 		writeJSON(w, runs)
+	case len(parts) == 4 && parts[1] == "runs" && (parts[3] == "approve" || parts[3] == "dismiss") && r.Method == "POST":
+		run, err := m.ApproveRun(id, parts[2], parts[3] == "approve")
+		if err != nil {
+			bad(w, err)
+			return
+		}
+		writeJSON(w, run)
 	case len(parts) == 2 && parts[1] == "run" && r.Method == "POST":
 		run, err := m.RunRoutine(id)
 		if err != nil {

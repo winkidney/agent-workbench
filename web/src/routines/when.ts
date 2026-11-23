@@ -28,7 +28,8 @@ export type RoutineRun = {
   due: string;
   started: string;
   finished?: string;
-  status: "running" | "sent" | "queued" | "done" | "failed" | "skipped";
+  status:
+    "running" | "waiting" | "sent" | "queued" | "done" | "failed" | "skipped";
   session?: string;
   exit?: number;
   output?: string;
@@ -53,6 +54,11 @@ export type Routine = {
   recent?: RoutineRun[];
   // Its assistant is turned off: it waits.
   assistantOff?: boolean;
+  // What its command prints waits for the user's approval (ADR 0021), with
+  // a file to look at first; its runs that wait, oldest first.
+  approve?: boolean;
+  preview?: string;
+  waiting?: RoutineRun[];
 };
 
 export const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -286,6 +292,8 @@ export function runSummary(run: RoutineRun): string {
   switch (run.status) {
     case "running":
       return "Running…";
+    case "waiting":
+      return "Waiting for your approval";
     case "sent":
       return "Sent; the agent is working";
     case "queued":
@@ -302,12 +310,14 @@ export function runSummary(run: RoutineRun): string {
 }
 
 // What a run amounts to, for the heartbeat (Heartbeat.tsx):
-// active: under way; delivered: an agent answered or the command printed;
+// active: under way; waiting: its output waits for the user's approval;
+// delivered: an agent answered or the command printed;
 // failed; quiet: it ran and had nothing to say (a command that printed
 // nothing skips sending it, routine.go endRun "nothing printed"); missed: it
 // did not run (the computer slept, its assistant was off, the previous run
 // still ran).
-export type RunKind = "active" | "delivered" | "failed" | "quiet" | "missed";
+export type RunKind =
+  "active" | "waiting" | "delivered" | "failed" | "quiet" | "missed";
 
 export function runKind(run: RoutineRun): RunKind {
   switch (run.status) {
@@ -315,12 +325,18 @@ export function runKind(run: RoutineRun): RunKind {
     case "sent":
     case "queued":
       return "active";
+    case "waiting":
+      return "waiting";
     case "failed":
       return "failed";
     case "done":
       return run.session || run.output?.trim() ? "delivered" : "quiet";
     case "skipped":
-      return run.error?.startsWith("nothing printed") ? "quiet" : "missed";
+      // Dismissed by the user instead of approved (routine.go ApproveRun).
+      return run.error?.startsWith("nothing printed") ||
+        run.error?.startsWith("dismissed")
+        ? "quiet"
+        : "missed";
   }
 }
 
@@ -341,6 +357,7 @@ const KIND_WORD: Record<RunKind, string> = {
   quiet: "quiet",
   missed: "missed",
   active: "running",
+  waiting: "waiting for you",
 };
 
 // The heartbeat in words: "24 runs: 22 quiet, 1 sent, 1 failed".
@@ -348,7 +365,14 @@ export function heartbeatSummary(runs: RoutineRun[]): string {
   if (!runs.length) return "No runs yet";
   const count = new Map<RunKind, number>();
   for (const r of runs) count.set(runKind(r), (count.get(runKind(r)) ?? 0) + 1);
-  const order: RunKind[] = ["active", "quiet", "delivered", "failed", "missed"];
+  const order: RunKind[] = [
+    "active",
+    "waiting",
+    "quiet",
+    "delivered",
+    "failed",
+    "missed",
+  ];
   const parts = order
     .filter((k) => count.get(k))
     .map((k) => `${count.get(k)} ${KIND_WORD[k]}`);
@@ -358,9 +382,11 @@ export function heartbeatSummary(runs: RoutineRun[]): string {
 // What a quiet run did, in a few words; others say it with runSummary.
 export function runResult(run: RoutineRun): string {
   if (runKind(run) === "quiet")
-    return run.status === "skipped"
-      ? "Quiet: printed nothing, nothing sent"
-      : "Quiet: finished, nothing to show";
+    return run.status !== "skipped"
+      ? "Quiet: finished, nothing to show"
+      : run.error?.startsWith("dismissed")
+        ? "Dismissed: nothing was sent"
+        : "Quiet: printed nothing, nothing sent";
   if (run.status === "skipped")
     return "Missed" + (run.error ? `: ${run.error}` : "");
   const printed = firstLine(run.output);

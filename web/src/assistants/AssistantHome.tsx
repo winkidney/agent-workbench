@@ -1,5 +1,12 @@
 import { useEffect, useState } from "react";
-import { FileText, Settings, Sparkles, Wrench } from "lucide-react";
+import {
+  Eye,
+  FileText,
+  Settings,
+  ShieldAlert,
+  Sparkles,
+  Wrench,
+} from "lucide-react";
 import { api } from "../lib/api";
 import {
   openAssistantSettings,
@@ -7,7 +14,7 @@ import {
   setUpAssistant,
   type Assistant,
 } from "../lib/assistants";
-import { describeWhen, type Routine } from "../routines/when";
+import { describeWhen, firstLine, type Routine } from "../routines/when";
 import { Heartbeat } from "../routines/Heartbeat";
 import { MossIcon } from "../components/MossIcon";
 import { Button } from "../components/ui/button";
@@ -26,18 +33,41 @@ export function AssistantHome({
   // Opens one of its files in the preview panel.
   onOpenFile?: (path: string) => void;
 }) {
-  // Its routines, read for this view only.
+  // Its routines, read for this view only, and again when one changes (a
+  // run that starts waiting for approval).
   const [routines, setRoutines] = useState<Routine[] | null>(null);
   const [error, setError] = useState("");
+  const [deciding, setDeciding] = useState("");
+  const [reload, setReload] = useState(0);
   useEffect(() => {
     let live = true;
-    api<Routine[]>("routines")
-      .then((list) => live && setRoutines(routinesOf(list, a.dir)))
-      .catch(() => live && setRoutines([]));
+    const load = () =>
+      api<Routine[]>("routines")
+        .then((list) => live && setRoutines(routinesOf(list, a.dir)))
+        .catch(() => live && setRoutines([]));
+    void load();
+    window.addEventListener("workbench:routines", load);
     return () => {
       live = false;
+      window.removeEventListener("workbench:routines", load);
     };
-  }, [a.dir]);
+  }, [a.dir, reload]);
+  // Approves or dismisses every run of r that waits, oldest first: an
+  // approved run hands what its command printed to the agent (ADR 0021).
+  const decide = async (r: Routine, action: "approve" | "dismiss") => {
+    setDeciding(r.id);
+    setError("");
+    try {
+      for (const run of r.waiting ?? [])
+        await api(`routines/${r.id}/runs/${run.id}/${action}`, "POST");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDeciding("");
+      setReload((n) => n + 1);
+    }
+  };
+  const waiting = (routines ?? []).filter((r) => r.waiting?.length);
   const agent = a.agent === "codex" ? "Codex" : "Claude";
   return (
     <section className="assistant-home" aria-label={`${a.name}: about`}>
@@ -80,6 +110,50 @@ export function AssistantHome({
           </Button>
         </div>
       )}
+      {waiting.map((r) => {
+        const runs = r.waiting ?? [];
+        const said = runs.length === 1 ? firstLine(runs[0].output) : "";
+        return (
+          <div
+            key={r.id}
+            className="assistant-home-setup assistant-home-approve"
+            role="status"
+          >
+            <ShieldAlert size={14} />
+            <span>
+              {r.name}:{" "}
+              {said || `${runs.length} ${runs.length === 1 ? "run" : "runs"}`}{" "}
+              {runs.length === 1 ? "waits" : "wait"} for your approval. Nothing
+              has reached the agent yet.
+            </span>
+            {r.preview && onOpenFile && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => onOpenFile(r.preview!)}
+              >
+                <Eye size={14} />
+                Preview
+              </Button>
+            )}
+            <Button
+              size="sm"
+              disabled={deciding === r.id}
+              onClick={() => void decide(r, "approve")}
+            >
+              Approve
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={deciding === r.id}
+              onClick={() => void decide(r, "dismiss")}
+            >
+              Dismiss
+            </Button>
+          </div>
+        );
+      })}
       {error && <p className="error-text">{error}</p>}
       <p className="assistant-home-description">
         {a.description || (

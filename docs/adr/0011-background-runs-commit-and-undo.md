@@ -1,7 +1,7 @@
 # ADR 0011: Background runs keep the wiki, read outside content, and commit what they change
 
 - Date: 2026-11-19
-- Status: accepted
+- Status: accepted; decision 1's "can write in the repository" amended by 0021: only their own state/, drafts/, log.md and, for the wiki's keeper, shared/wiki/
 
 ## Context
 
