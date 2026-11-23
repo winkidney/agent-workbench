@@ -255,12 +255,32 @@ export function buildSidebar(
   const projectRoots = roots.filter(
     (n) => originOf(n.session) === "project" && !assistantOf(n),
   );
-  const paths = [
+  // A folder whose sessions are all hidden or archived (and not shown)
+  // leaves with them, unless pinned or holding a folder that stays: the
+  // workspaces list names it for those sessions alone. A registered root
+  // without sessions stays.
+  const shown = new Set(projectRoots.map((n) => namespaceOf(n.session)));
+  const held = new Set(
+    sessions
+      .filter(
+        (s) =>
+          originOf(s) === "project" &&
+          !(s.parentId && ids.has(s.parentId)) &&
+          !inAssistants(s.cwd),
+      )
+      .map(namespaceOf),
+  );
+  const emptied = (p: string) =>
+    held.has(p) && !shown.has(p) && !prefs.pinnedWorkspaces.includes(p);
+  const candidates = [
     ...new Set([
       ...(opts.workspaces ?? []),
       ...projectRoots.map((n) => namespaceOf(n.session)),
     ]),
   ].filter((p) => p && !inAssistants(p));
+  const paths = candidates.filter(
+    (p) => !emptied(p) || candidates.some((q) => !emptied(q) && within(q, p)),
+  );
   const parentOf = new Map<string, string | undefined>();
   const link = () => {
     paths.sort((a, b) => a.length - b.length || a.localeCompare(b));

@@ -542,3 +542,41 @@ describe("listedByDefault", () => {
     ]);
   });
 });
+
+describe("a folder whose sessions are all hidden or archived", () => {
+  const list = [
+    s("claude:p", "/w/pinry", "2026-11-23T10:00:00Z"),
+    s("codex:q", "/w/old", "2026-11-20T10:00:00Z", { archived: true }),
+    s("claude:r", "/w", "2026-11-19T10:00:00Z"),
+    s("codex:t", "/w/app/tool", "2026-11-18T10:00:00Z"),
+  ];
+  // The server names every session's folder, hidden or archived ones too.
+  const workspaces = ["/w", "/w/pinry", "/w/old", "/w/app/tool", "/z/empty"];
+  const prefs = { ...emptyPrefs(), hidden: ["claude:p", "claude:r"] };
+  const names = (ps: Project[]): string[] =>
+    ps.flatMap((p) => [
+      p.name,
+      ...names(p.children).map((n) => p.name + ">" + n),
+    ]);
+
+  it("leaves Projects with them", () => {
+    const m = buildSidebar(list, prefs, { workspaces });
+    // /w keeps its visible folder; a root without sessions stays.
+    expect(names(m.projects)).toEqual(["w", "w>app/tool", "empty"]);
+  });
+  it("comes back when they are shown, or when it is pinned", () => {
+    const shown = buildSidebar(list, prefs, {
+      workspaces,
+      showHidden: true,
+      showArchived: true,
+    });
+    expect(names(shown.projects)).toContain("w>pinry");
+    expect(names(shown.projects)).toContain("w>old");
+    const pinned = buildSidebar(
+      list,
+      { ...prefs, pinnedWorkspaces: ["/w/pinry"] },
+      { workspaces },
+    );
+    expect(names(pinned.projects)).toContain("w>pinry");
+  });
+});
