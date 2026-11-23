@@ -19,9 +19,10 @@ Decisions that shape how the workbench behaves, why, and what they cost. Each re
 | [0013](0013-assistants-set-up-on-first-use.md) | Assistants are set up on first use; each picks its agent; Moss makes new ones | accepted; amends 0010 |
 | [0014](0014-moss-welcomes-one-template.md) | Moss welcomes the user; assistants come from one template and are backed up to GitHub | accepted |
 | [0015](0015-an-assistant-explains-itself.md) | An assistant explains itself: metadata, a home card, its own settings | accepted; decision 5 amended by 0020 |
-| [0016](0016-moss-ships-and-comes-back.md) | Moss ships with Agent Workbench and comes back from the user's repository | accepted |
+| [0016](0016-moss-ships-and-comes-back.md) | Moss ships with Agent Workbench and comes back from the user's repository | accepted; definition extended by 0022 |
 | [0017](0017-assistants-choose-their-session-settings.md) | Assistants choose their sessions' model, effort, mode and permissions | accepted |
 | [0018](0018-keep-the-computer-awake.md) | Two switches keep the computer awake while the workbench runs | accepted |
 | [0019](0019-assistants-start-sessions-on-request.md) | An assistant starts a separate session when the user asks for one | accepted |
 | [0020](0020-assistants-ask-through-the-client.md) | Assistants ask the user through the client's question tool, one step at a time | accepted; amends 0015 |
 | [0021](0021-outside-content-waits-and-background-runs-stay-in-their-folder.md) | Outside content waits for the user's approval, and background runs change only their own files | accepted; amends 0009 and 0011 |
+| [0022](0022-moss-keeps-the-repository-committed.md) | Moss has the assistants commit their changes each evening | accepted; amends 0016 |

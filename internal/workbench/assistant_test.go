@@ -304,6 +304,9 @@ func TestAssistantsAreRenamedAndSwitchAgents(t *testing.T) {
 	if v, _ := m.store.routine(fileRoutineID("main", "Daily check")); v.Name != "Daily check" {
 		t.Fatalf("routine: %+v", v)
 	}
+	if v, _ := m.store.routine(fileRoutineID("main", "Repository sync")); v.Command == nil || v.Command.Run != "uv run tools/repo_sync.py" {
+		t.Fatalf("repository sync routine: %+v", v)
+	}
 	for _, bad := range [][2]string{{"", "gpt"}, {"two\nlines", ""}, {strings.Repeat("x", 61), ""}} {
 		if _, err := m.UpdateAssistant("main", bad[0], bad[1], nil); err == nil {
 			t.Errorf("accepted %q", bad)

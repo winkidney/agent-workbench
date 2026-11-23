@@ -1,7 +1,7 @@
 # ADR 0016: Moss ships with Agent Workbench and comes back from the user's repository
 
 - Date: 2026-11-20
-- Status: accepted
+- Status: accepted; decision 1 extended by 0022 (Moss's tools are part of its definition)
 
 ## Context
 

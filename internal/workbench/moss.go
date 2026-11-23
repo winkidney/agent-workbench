@@ -22,8 +22,10 @@ import (
 // mossFiles maps a file in the repository of assistants to its source in
 // internal/workbench/assistant.
 var mossFiles = map[string]string{
-	"main/AGENTS.md": "moss/AGENTS.md",
-	"AGENTS.md":      "root/AGENTS.md",
+	"main/AGENTS.md":                           "moss/AGENTS.md",
+	"main/tools/repo_sync.py":                  "moss/tools/repo_sync.py",
+	"main/tools/test_repo_sync.py":             "moss/tools/test_repo_sync.py",
+	"AGENTS.md":                                "root/AGENTS.md",
 	".agents/skills/create-assistant/SKILL.md": "root/skills/create-assistant/SKILL.md",
 	".agents/skills/help/SKILL.md":             "root/skills/help/SKILL.md",
 	".agents/skills/start-session/SKILL.md":    "root/skills/start-session/SKILL.md",

@@ -46,6 +46,14 @@ name = "Weekly wiki check"
 daily = "10:00"
 days = ["sun"]
 message = "Check ../shared/wiki as AGENTS.md says under Lint, fix what you can, and ask me about the rest."
+
+# Prints nothing when every folder is committed and in step with origin, so
+# most evenings nobody is woken (AGENTS.md, Repository sync).
+[[routines]]
+name = "Repository sync"
+daily = "22:00"
+command = "uv run tools/repo_sync.py"
+message = "The repository of assistants has uncommitted changes or is out of step with its remote (below). Handle it as AGENTS.md says under Repository sync."
 {{else}}
 # Its sessions' model and effort (also mode, permissions), per agent; what
 # a table leaves out follows Settings → Agents. Its Settings change them.

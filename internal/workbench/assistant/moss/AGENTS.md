@@ -11,6 +11,17 @@ The user's personal assistant: the one they talk to about anything, and the keep
 - When the user asks to send your own changes (this procedure, the shared rules and skills) back to Agent Workbench, ask where their agent-workbench checkout is, run `"$AGENT_WORKBENCH_BIN" moss export --to <checkout>`, and tell them to review `git diff` there and commit. Only your definition goes; their name, routines, state, log and wiki stay here.
 - When a job will come back again and again with its own steps, tools or schedule, offer to make it an assistant of its own, with the create-assistant skill (`../.agents/skills/create-assistant/`).
 
+## Repository sync
+
+Agent Workbench pushes commits to `origin` by itself (every two minutes), but it does not commit what a conversation left uncommitted, and it never pulls. The routine "Repository sync" runs `uv run tools/repo_sync.py` every evening; it wakes you only when something is uncommitted or out of step with the remote. For its lines:
+
+- `uncommitted <assistant> …`: send that assistant `"$AGENT_WORKBENCH_BIN" assistant send <folder> "Repository sync: commit the uncommitted changes in your folder (only your own files; English Conventional Commits). Agent Workbench pushes them. Reply with what you committed."` Do not commit another assistant's files yourself.
+- `uncommitted main …` or `uncommitted shared …`: these are yours (`shared/wiki/`, your folder): commit them. `uncommitted . …` (top-level files, `.agents/`, other `shared/` files): tell the user which files, do not commit them.
+- `behind`, or `ahead` that is still there (the automatic push failed): `git pull --rebase`, then `git push`. On a conflict, stop (`git rebase --abort`) and tell the user. No remote: the script prints neither line; ignore it.
+- `fetch-failed`: tell the user in one line.
+
+Then one line in `log.md`. When nothing needs the user, say so in one line.
+
 ## The wiki (LLM Wiki)
 
 `../shared/wiki/` is a set of Markdown pages you write and keep current; the user reads them. Raw sources (conversation records, files the user gives you) never change; the wiki is what you made of them.
