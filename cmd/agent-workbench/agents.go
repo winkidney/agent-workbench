@@ -17,8 +17,8 @@ import (
 	"github.com/winkidney/agent-workbench/internal/workbench"
 )
 
-// The agents' commands (ADR 0012): routine add|list|rm and assistant send,
-// for an agent in a workbench session (or the user in a terminal). They
+// The agents' commands (ADR 0012): routine add|list|rm, assistant send and
+// session new (ADR 0019), for an agent in a workbench session (or the user in a terminal). They
 // talk to the running workbench over /api/local/* with the token in its
 // data directory.
 
@@ -33,11 +33,14 @@ const agentUsage = `usage:
                                 [--sessions per-task|continuous]
   agent-workbench assistant reload
   agent-workbench assistant memory
+  agent-workbench session new [--folder DIR] [--agent claude|codex] [--title T] TEXT
 
 --to this (the default) is the session the command runs in; in a
 continuous assistant's folder it is that assistant, whose topic changes
 daily. An agent's routines send messages only, at most every 15 minutes,
-and at most 20 per session.
+and at most 20 per session. session new starts a session the user asked an
+assistant for (the start-session skill); it works only in an assistant's
+session, and --folder defaults to the current directory.
 `
 
 // localClient calls the running workbench's /api/local/*.
@@ -111,6 +114,12 @@ func agentCommand(group string, args []string) error {
 	var req workbench.AgentRoutineRequest
 	var days, in string
 	var made struct{ name, dir, agent, sessions string }
+	var started struct{ dir, agent, title string }
+	if group == "session" && verb == "new" {
+		flags.StringVar(&started.dir, "folder", "", "where it works (default: the current directory)")
+		flags.StringVar(&started.agent, "agent", "", "claude or codex (default: the asking session's)")
+		flags.StringVar(&started.title, "title", "", "its title (default: from the message)")
+	}
 	if group == "assistant" && verb == "new" {
 		flags.StringVar(&made.name, "name", "", "its name")
 		flags.StringVar(&made.dir, "folder", "", "its folder (default: from the name)")
@@ -230,6 +239,25 @@ func agentCommand(group string, args []string) error {
 			return err
 		}
 		fmt.Printf("Sent to %s (session %s).\n", rest[0], s.ID)
+		return nil
+	case "session new":
+		if len(rest) == 0 {
+			return errors.New(`session new [--folder DIR] "first message"`)
+		}
+		dir := started.dir
+		if dir == "" {
+			if dir, err = os.Getwd(); err != nil {
+				return err
+			}
+		}
+		if dir, err = filepath.Abs(dir); err != nil {
+			return err
+		}
+		var s workbench.Session
+		if err := c.call("POST", "sessions", map[string]string{"caller": c.caller, "dir": dir, "agent": started.agent, "title": started.title, "text": strings.Join(rest, " ")}, &s); err != nil {
+			return err
+		}
+		fmt.Printf("Started %q in %s (session %s); it is in the sidebar under its project.\n", s.Title, s.Cwd, s.ID)
 		return nil
 	}
 	return fmt.Errorf("unknown command %q\n%s", group+" "+verb, agentUsage)

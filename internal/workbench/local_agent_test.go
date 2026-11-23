@@ -217,3 +217,76 @@ func TestAgentsMakeAssistants(t *testing.T) {
 		t.Fatal("main ignores its raw/sessions records")
 	}
 }
+
+func TestAssistantsStartSessionsTheUserAskedFor(t *testing.T) {
+	m, p := fixture(t)
+	root := t.TempDir()
+	_ = m.store.setting("assistants", assistantsSetting{Root: root})
+	writeToml(t, filepath.Join(root, "main", "assistant.toml"), "name = \"Moss\"\nagent = \"codex\"\nsessions = \"continuous\"")
+	project := t.TempDir()
+	moss := Session{ID: "codex:moss", Agent: "codex", Title: "Today", Cwd: filepath.Join(root, "main")}
+	other := Session{ID: "codex:other", Agent: "codex", Title: "Work", Cwd: project}
+	m.as.lookup = func(id string) (Session, bool) {
+		switch id {
+		case moss.ID:
+			return moss, true
+		case other.ID:
+			return other, true
+		}
+		return Session{}, false
+	}
+	// Only an assistant's session starts one: not a terminal, not a session
+	// elsewhere.
+	for _, caller := range []string{"", other.ID} {
+		if _, err := m.AgentNewSession(caller, project, "", "", "Fix the login bug"); err == nil {
+			t.Fatalf("started a session for %q", caller)
+		}
+	}
+	if _, err := m.AgentNewSession(moss.ID, project, "", "", " "); err == nil {
+		t.Fatal("an empty message was accepted")
+	}
+	if _, err := m.AgentNewSession(moss.ID, filepath.Join(project, "missing"), "", "", "hi"); err == nil {
+		t.Fatal("a missing folder was accepted")
+	}
+	// The engine answers as the session starts, so the native id arrives.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 500; i++ {
+			time.Sleep(5 * time.Millisecond)
+			m.mu.Lock()
+			var r *runtime
+			for _, x := range m.sessions {
+				if x.session.Cwd != "" && x.proc != nil && x.session.NativeID == "" {
+					r = x
+				}
+			}
+			m.mu.Unlock()
+			if r != nil {
+				m.receive(r.session.ID, r.generation, map[string]any{"id": "init", "result": map[string]any{}})
+				m.receive(r.session.ID, r.generation, map[string]any{"id": "thread", "result": map[string]any{"thread": map[string]any{"id": "new"}}})
+				return
+			}
+		}
+	}()
+	s, err := m.AgentNewSession(moss.ID, project, "", "Login bug", "Fix the login bug")
+	<-done
+	if err != nil {
+		t.Fatal(err)
+	}
+	real, _ := filepath.EvalSymlinks(project)
+	if s.Cwd != real || s.Agent != "codex" || s.Title != "Login bug" || s.ParentID != "" {
+		t.Fatalf("session: %+v", s)
+	}
+	p.mu.Lock()
+	var text string
+	for _, in := range p.in {
+		if in["method"] == "turn/start" {
+			text = str(obj(obj(in["params"])["input"].([]any)[0])["text"])
+		}
+	}
+	p.mu.Unlock()
+	if text != "[From another session: Moss: Today]\n\nFix the login bug" {
+		t.Fatalf("sent %q", text)
+	}
+}

@@ -68,7 +68,7 @@ func TestSettingUpAssistantsWritesOnlyWhatIsMissing(t *testing.T) {
 	if b, _ := os.ReadFile(filepath.Join(root, "AGENTS.md")); string(b) != "my rules\n" {
 		t.Fatalf("overwrote AGENTS.md: %q", b)
 	}
-	for _, p := range []string{"CLAUDE.md", ".gitignore", "shared/wiki/index.md", "main/assistant.toml", "main/AGENTS.md", "main/CLAUDE.md", "main/state/loops.md", "main/state/handoff.md", "main/log.md", "main/.agents/skills/.gitkeep"} {
+	for _, p := range []string{"CLAUDE.md", ".gitignore", "shared/wiki/index.md", "main/assistant.toml", "main/AGENTS.md", "main/CLAUDE.md", "main/state/loops.md", "main/state/handoff.md", "main/log.md", "main/.agents/skills/.gitkeep", ".agents/skills/start-session/SKILL.md"} {
 		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(p))); err != nil {
 			t.Errorf("missing %s", p)
 		}

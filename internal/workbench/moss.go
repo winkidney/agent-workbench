@@ -26,6 +26,7 @@ var mossFiles = map[string]string{
 	"AGENTS.md":      "root/AGENTS.md",
 	".agents/skills/create-assistant/SKILL.md": "root/skills/create-assistant/SKILL.md",
 	".agents/skills/help/SKILL.md":             "root/skills/help/SKILL.md",
+	".agents/skills/start-session/SKILL.md":    "root/skills/start-session/SKILL.md",
 	"shared/tools/secret.py":                   "root/tools/secret.py",
 	"shared/tools/test_secret.py":              "root/tools/test_secret.py",
 }

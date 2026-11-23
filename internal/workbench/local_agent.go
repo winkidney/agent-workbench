@@ -173,6 +173,13 @@ func (m *Manager) AgentSend(caller, dir, text string) (Session, error) {
 	if len(text) > agentMessageMax {
 		return Session{}, fmt.Errorf("the message: at most %d bytes", agentMessageMax)
 	}
+	s, _, err := m.AssistantMessage(dir, m.fromLabel(caller)+text, nil, "")
+	return s, err
+}
+
+// fromLabel starts a message one session hands another: who sent it, so
+// the receiving agent knows nobody typed it.
+func (m *Manager) fromLabel(caller string) string {
 	from := "a terminal"
 	if s, ok := m.callerSession(caller); ok {
 		from = s.Title
@@ -182,9 +189,44 @@ func (m *Manager) AgentSend(caller, dir, text string) (Session, error) {
 			}
 		}
 	}
-	label := agentMessagePrefix + strings.ReplaceAll(strings.ReplaceAll(from, "]", ")"), "\n", " ") + "]\n\n"
-	s, _, err := m.AssistantMessage(dir, label+text, nil, "")
-	return s, err
+	return agentMessagePrefix + strings.ReplaceAll(strings.ReplaceAll(from, "]", ")"), "\n", " ") + "]\n\n"
+}
+
+// AgentNewSession starts a session the user asked an assistant for (the
+// start-session skill, ADR 0019): an ordinary session in dir with the
+// user's new-session settings and the assistant's message as its first.
+// Only an assistant's session may ask, not a terminal or another session.
+func (m *Manager) AgentNewSession(caller, dir, agent, title, text string) (Session, error) {
+	from, ok := m.callerSession(caller)
+	assistant := false
+	if ok {
+		for _, a := range m.Assistants() {
+			if a.Path == from.Cwd {
+				assistant = true
+			}
+		}
+	}
+	if !assistant {
+		return Session{}, errors.New("only an assistant starts sessions this way, when the user asks it to; start one from the page instead")
+	}
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return Session{}, errors.New("the first message is empty")
+	}
+	if len(text) > agentMessageMax {
+		return Session{}, fmt.Errorf("the first message: at most %d bytes", agentMessageMax)
+	}
+	if strings.TrimSpace(dir) == "" {
+		return Session{}, errors.New("--folder is missing")
+	}
+	if agent == "" {
+		agent = from.Agent
+	}
+	named := strings.TrimSpace(title)
+	if named == "" {
+		named = text
+	}
+	return m.createWithMessage(agent, dir, strings.TrimSpace(title), named, m.fromLabel(caller)+text, nil, nil, "")
 }
 
 // AgentNewAssistant makes an assistant an agent proposed and the user
@@ -203,7 +245,8 @@ func (m *Manager) AgentNewAssistant(name, dir, agent, sessions string) (Assistan
 	return m.NewAssistant(name, dir, agent, sessions)
 }
 
-// localAgentAPI serves /api/local/(routines[/{id}] | assistants/{dir}/send)
+// localAgentAPI serves /api/local/(routines[/{id}] | assistants/{dir}/send |
+// sessions)
 // to the command on this computer.
 func (s *Server) localAgentAPI(w http.ResponseWriter, r *http.Request) {
 	host, _, _ := net.SplitHostPort(r.RemoteAddr)
@@ -278,6 +321,18 @@ func (s *Server) localAgentAPI(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, map[string]any{"started": started})
+	case rest == "sessions" && r.Method == "POST":
+		var v struct{ Caller, Dir, Agent, Title, Text string }
+		if err := decode(w, r, &v); err != nil {
+			bad(w, err)
+			return
+		}
+		session, err := m.AgentNewSession(v.Caller, v.Dir, v.Agent, v.Title, v.Text)
+		if err != nil {
+			bad(w, err)
+			return
+		}
+		writeJSON(w, session)
 	case rest == "assistants/reload" && r.Method == "POST":
 		// An agent changed an assistant.toml: apply it now (ADR 0014).
 		m.assistantsChanged()

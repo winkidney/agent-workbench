@@ -143,3 +143,34 @@ func TestAssistantNewSendsItsFlags(t *testing.T) {
 		t.Fatal("a stray argument was accepted")
 	}
 }
+
+func TestSessionNewSendsTheFolderAndMessage(t *testing.T) {
+	var got map[string]any
+	var path string
+	// An absolute path on every platform.
+	app := t.TempDir()
+	dir := agentServer(t, func(r *http.Request, body map[string]any) any {
+		got, path = body, r.Method+" "+r.URL.Path
+		return workbench.Session{ID: "codex:n", Title: "Login bug", Cwd: app}
+	})
+	t.Setenv(workbench.EnvDataDir, dir)
+	t.Setenv(workbench.EnvSession, "codex:moss")
+	out := captureStdout(t, func() error {
+		return agentCommand("session", []string{"new", "--folder", app, "--title", "Login bug", "Fix the login bug"})
+	})
+	if path != "POST /api/local/sessions" || got["caller"] != "codex:moss" || got["dir"] != app || got["title"] != "Login bug" || got["agent"] != "" || got["text"] != "Fix the login bug" {
+		t.Fatalf("%s %v", path, got)
+	}
+	if !strings.Contains(out, `Started "Login bug" in `+app+` (session codex:n)`) {
+		t.Fatalf("out: %q", out)
+	}
+	// Without --folder it is the current directory.
+	wd, _ := os.Getwd()
+	captureStdout(t, func() error { return agentCommand("session", []string{"new", "hi"}) })
+	if got["dir"] != wd {
+		t.Fatalf("dir: %v, want %s", got["dir"], wd)
+	}
+	if err := agentCommand("session", []string{"new", "--folder", app}); err == nil {
+		t.Fatal("no message was accepted")
+	}
+}

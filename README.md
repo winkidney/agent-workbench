@@ -71,6 +71,7 @@ agent-workbench uninstall   remove the login start (--purge also deletes data)
 agent-workbench doctor      check claude, codex and the platform
 agent-workbench routine     add, list or remove routines
 agent-workbench assistant   send an assistant a message, make or reload assistants
+agent-workbench session     session new: an assistant starts a session you asked for
 ```
 
 Common flags: `--listen HOST:PORT` (default `0.0.0.0:17880`), `--data-dir PATH`, `--idle 5m`. A second workbench takes its own `--data-dir` and `--listen` ([details](docs/install.md#more-than-one-workbench)).

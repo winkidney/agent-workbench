@@ -42,6 +42,7 @@ Commands:
   version     print the version
   routine     add, list or remove routines (agent-workbench routine help)
   assistant   send an assistant a message (agent-workbench assistant help)
+  session     session new: an assistant starts a session the user asked for
   moss        moss export --to REPO: copy your Moss's definition into an
               agent-workbench checkout, for review and a commit there
 
@@ -85,7 +86,7 @@ func run() error {
 		args = args[1:]
 	}
 	// The agents' commands take their own flags (agents.go).
-	if action == "routine" || action == "assistant" {
+	if action == "routine" || action == "assistant" || action == "session" {
 		return agentCommand(action, args)
 	}
 	if action == "moss" {

@@ -643,6 +643,7 @@ var sharedFiles = map[string]string{
 	"shared/tools/secret.py":                   "root/tools/secret.py",
 	"shared/tools/test_secret.py":              "root/tools/test_secret.py",
 	".agents/skills/help/SKILL.md":             "root/skills/help/SKILL.md",
+	".agents/skills/start-session/SKILL.md":    "root/skills/start-session/SKILL.md",
 }
 
 // writeShared writes the shared files and templates root lacks and links

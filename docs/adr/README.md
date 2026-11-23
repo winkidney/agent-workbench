@@ -22,3 +22,4 @@ Decisions that shape how the workbench behaves, why, and what they cost. Each re
 | [0016](0016-moss-ships-and-comes-back.md) | Moss ships with Agent Workbench and comes back from the user's repository | accepted |
 | [0017](0017-assistants-choose-their-session-settings.md) | Assistants choose their sessions' model, effort, mode and permissions | accepted |
 | [0018](0018-keep-the-computer-awake.md) | Two switches keep the computer awake while the workbench runs | accepted |
+| [0019](0019-assistants-start-sessions-on-request.md) | An assistant starts a separate session when the user asks for one | accepted |
