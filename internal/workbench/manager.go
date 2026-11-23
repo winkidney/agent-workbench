@@ -127,6 +127,9 @@ type Manager struct {
 	// codexThread sends one thread request (archive, unarchive, delete)
 	// through a short-lived app-server; replaced in tests.
 	codexThread func(method string, params map[string]any) error
+	// codexThreads sends one thread request for each thread through a
+	// single app-server, returning the failures; replaced in tests.
+	codexThreads func(method string, threads []string) map[string]error
 
 	// Incremental readers of native records other clients are writing.
 	usageMu sync.Mutex
@@ -158,7 +161,7 @@ type Manager struct {
 
 func NewManager(store *Store, launch Launch, idle time.Duration) (*Manager, error) {
 	m := &Manager{store: store, launch: launch, idle: idle, sessions: map[string]*runtime{}, changes: newNotifier(), activity: NewActivityIndex(store), uploads: &Uploads{dir: filepath.Join(store.dir, "uploads")}, rt: newRoutines(), awake: newKeepAwake(holdAwake)}
-	m.renameCodex, m.codexThread = m.codexRename, m.codexThreadRequest
+	m.renameCodex, m.codexThread, m.codexThreads = m.codexRename, m.codexThreadRequest, m.codexThreadRequests
 	m.catalog = NewNativeCatalog()
 	m.catalog.startCodex = m.startCodexClient
 	m.loadAgents()

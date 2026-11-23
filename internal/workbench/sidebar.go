@@ -17,6 +17,11 @@ type SidebarPrefs struct {
 
 const prefsLimit = 200
 
+// hiddenLimit keeps far more hidden sessions: a folder's sessions are
+// hidden at once (FolderSessions), and an older one dropped from the list
+// would come back to the sidebar.
+const hiddenLimit = 20000
+
 func (m *Manager) Prefs() SidebarPrefs {
 	var p SidebarPrefs
 	m.store.readSetting("sidebar", &p)
@@ -35,15 +40,17 @@ func (m *Manager) Prefs() SidebarPrefs {
 	return p
 }
 
-func addUnique(list []string, id string) []string {
+func addUnique(list []string, id string) []string { return addUniqueMax(list, id, prefsLimit) }
+
+func addUniqueMax(list []string, id string, max int) []string {
 	for _, v := range list {
 		if v == id {
 			return list
 		}
 	}
 	list = append(list, id)
-	if len(list) > prefsLimit {
-		list = list[len(list)-prefsLimit:]
+	if len(list) > max {
+		list = list[len(list)-max:]
 	}
 	return list
 }
@@ -86,7 +93,7 @@ func (m *Manager) UpdatePrefs(op, id string) (SidebarPrefs, error) {
 	case "unpinWorkspace":
 		p.PinnedWorkspaces = without(p.PinnedWorkspaces, id)
 	case "hide":
-		p.Hidden = addUnique(p.Hidden, id)
+		p.Hidden = addUniqueMax(p.Hidden, id, hiddenLimit)
 		p.PinnedSessions = without(p.PinnedSessions, id)
 	case "unhide":
 		p.Hidden = without(p.Hidden, id)

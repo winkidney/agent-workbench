@@ -3,8 +3,10 @@ package workbench
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -170,5 +172,97 @@ func TestCodexHistoryMarksSteeredUserMessages(t *testing.T) {
 	}
 	if len(marks) != 2 || marks[0] != nil || marks[1] != true {
 		t.Fatalf("marks: %v", marks)
+	}
+}
+
+// A folder's sessions: Codex threads and a Claude session in a project,
+// its subfolder, a sibling with the same prefix, and the assistants under it.
+func folderFixture(t *testing.T) (*Manager, string, *[]string) {
+	t.Helper()
+	posixOnly(t)
+	saved := temporaryRoots
+	temporaryRoots = []string{"/nonexistent-temporary-root"}
+	t.Cleanup(func() { temporaryRoots = saved })
+	m, _ := fixture(t)
+	root := realTempDir(t)
+	app := filepath.Join(root, "app")
+	for _, d := range []string{"app/sub", "app2", "app/assistants/main"} {
+		os.MkdirAll(filepath.Join(root, d), 0o700)
+	}
+	_ = m.store.setting("assistants", assistantsSetting{Root: filepath.Join(app, "assistants")})
+	codex := filepath.Join(root, "codex")
+	claude := filepath.Join(root, "claude")
+	os.MkdirAll(codex, 0o700)
+	os.MkdirAll(filepath.Join(claude, "projects", "app"), 0o700)
+	db, _ := sql.Open("sqlite", filepath.Join(codex, "state_5.sqlite"))
+	_, err := db.Exec(`CREATE TABLE threads(id TEXT,cwd TEXT,name TEXT,title TEXT,updated_at INTEGER,source TEXT,rollout_path TEXT,archived INTEGER);
+INSERT INTO threads VALUES('one',?1,'one','',10,'cli','',0),('two',?2,'two','',10,'cli','',0),('old',?1,'old','',10,'cli','',1),
+('busy',?1,'busy','',10,'cli','',0),('next',?3,'next','',10,'cli','',0),('moss',?4,'moss','',10,'cli','',0)`,
+		app, filepath.Join(app, "sub"), filepath.Join(root, "app2"), filepath.Join(app, "assistants", "main"))
+	db.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _ := json.Marshal(map[string]any{"type": "user", "uuid": "u", "cwd": app, "message": map[string]any{"content": "hello"}})
+	os.WriteFile(filepath.Join(claude, "projects", "app", "k.jsonl"), append(data, '\n'), 0o600)
+	m.catalog.CodexHome, m.catalog.ClaudeHome = codex, claude
+	m.sessions["codex:busy"] = &runtime{session: Session{ID: "codex:busy", Agent: "codex", NativeID: "busy"}, turn: true, pending: map[string]any{}, previews: map[string]*Preview{}}
+	var calls []string
+	m.codexThreads = func(method string, threads []string) map[string]error {
+		failed := map[string]error{}
+		for _, th := range threads {
+			calls = append(calls, method+" "+th)
+			if method == "thread/delete" && th == "two" {
+				failed[th] = errors.New("refused")
+			}
+		}
+		return failed
+	}
+	return m, app, &calls
+}
+
+func TestFolderArchiveTakesTheFolderAndItsSubfolders(t *testing.T) {
+	m, app, calls := folderFixture(t)
+	m.UpdatePrefs("pinSession", "claude:k")
+	plan, err := m.FolderSessions(app+"/", "archive", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Codex != 2 || plan.Claude != 1 || len(plan.Skipped) != 1 || plan.Skipped[0].ID != "codex:busy" || len(*calls) != 0 {
+		t.Fatalf("dry run: %+v %v", plan, *calls)
+	}
+	done, err := m.FolderSessions(app, "archive", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if done.Codex != 2 || done.Claude != 1 || strings.Join(*calls, ",") != "thread/archive one,thread/archive two" {
+		t.Fatalf("archive: %+v %v", done, *calls)
+	}
+	p := m.Prefs()
+	if len(p.Hidden) != 1 || p.Hidden[0] != "claude:k" || len(p.PinnedSessions) != 0 {
+		t.Fatalf("prefs: %+v", p)
+	}
+	if _, err := m.FolderSessions(app, "rename", true); err == nil {
+		t.Fatal("an unknown op was accepted")
+	}
+	if _, err := m.FolderSessions("app", "archive", true); err == nil {
+		t.Fatal("a relative folder was accepted")
+	}
+}
+
+func TestFolderDeleteReportsWhatFailed(t *testing.T) {
+	m, app, calls := folderFixture(t)
+	m.Rename("codex:one", "")
+	done, err := m.FolderSessions(app, "delete", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The archived thread is deleted too; one refused stays.
+	sort.Strings(*calls)
+	if strings.Join(*calls, ",") != "thread/delete old,thread/delete one,thread/delete two" {
+		t.Fatalf("calls: %v", *calls)
+	}
+	if done.Codex != 2 || len(done.Failed) != 1 || done.Failed[0].ID != "codex:two" || done.Failed[0].Reason != "refused" {
+		t.Fatalf("delete: %+v", done)
 	}
 }

@@ -3336,6 +3336,7 @@ textarea {
 .session-row:hover .side-actions,
 .session-row:has(:focus-visible) .side-actions,
 .session-row.menu-open .side-actions,
+.project-row.menu-open .side-actions,
 .side-actions:focus-within {
   opacity: 1;
   pointer-events: auto;
@@ -3604,6 +3605,18 @@ textarea {
 }
 .confirm-dialog strong {
   overflow-wrap: anywhere;
+}
+.confirm-dialog .subtle {
+  overflow-wrap: anywhere;
+}
+.folder-plan {
+  margin: 8px 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.folder-plan li + li {
+  margin-top: 4px;
 }
 .confirm-actions {
   display: flex;

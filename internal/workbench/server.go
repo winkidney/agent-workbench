@@ -801,6 +801,22 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, v)
+	case path == "folders/sessions" && r.Method == "POST":
+		// Archive or delete a project folder's sessions (archive.go).
+		var v struct {
+			Path, Op string
+			DryRun   bool
+		}
+		if err := decode(w, r, &v); err != nil {
+			bad(w, err)
+			return
+		}
+		res, err := m.FolderSessions(v.Path, v.Op, v.DryRun)
+		if err != nil {
+			bad(w, err)
+			return
+		}
+		writeJSON(w, res)
 	case path == "sessions" && r.Method == "POST":
 		var v struct {
 			Agent, Cwd, Title, InitialMessage, RequestID string

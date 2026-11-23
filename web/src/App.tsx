@@ -21,6 +21,7 @@ type SteerResult = {
 };
 import { Sidebar, statusLabels as labels } from "./sidebar/Sidebar";
 import { usePrefs } from "./sidebar/usePrefs";
+import { FolderDialog, type FolderTarget } from "./sidebar/FolderDialog";
 import { displayTitle, listedByDefault, type Session } from "./sidebar/tree";
 import { api, download } from "./lib/api";
 import { randomUUID } from "./lib/uuid";
@@ -209,6 +210,8 @@ export default function App() {
     [serviceOpen, setServiceOpen] = useState(false),
     // The Codex session waiting for the user to confirm its deletion.
     [deleting, setDeleting] = useState<Session | null>(null),
+    // A project folder whose sessions are to be archived or deleted.
+    [folderOp, setFolderOp] = useState<FolderTarget | null>(null),
     // Why the last steer was queued instead (shown with the queue).
     [steerNote, setSteerNote] = useState(""),
     [deleteBusy, setDeleteBusy] = useState(false),
@@ -810,6 +813,8 @@ export default function App() {
     void api(`sessions/${s.id}/${archived ? "archive" : "unarchive"}`, "POST")
       .then(() => refresh())
       .catch(catchError);
+  const onFolder = (path: string, name: string, op: FolderTarget["op"]) =>
+    setFolderOp({ path, name, op });
   const deleteSession = async (s: Session) => {
     setDeleteBusy(true);
     try {
@@ -1296,6 +1301,7 @@ export default function App() {
             onRename={renameSession}
             onArchive={archiveSession}
             onDelete={setDeleting}
+            onFolder={onFolder}
             onSchedule={scheduleFor}
             assistants={assistantList.assistants}
             installedAgents={assistantList.installed}
@@ -2178,6 +2184,13 @@ export default function App() {
               </div>
             </DialogContent>
           </Dialog>
+        )}
+        {folderOp && (
+          <FolderDialog
+            target={folderOp}
+            onClose={() => setFolderOp(null)}
+            onDone={() => void refresh()}
+          />
         )}
         {serviceOpen && (
           <Dialog

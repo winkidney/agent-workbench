@@ -100,6 +100,8 @@ const writeStored = (key: string, k: string, v: boolean) => {
   } catch {}
 };
 
+export type FolderOp = "archive" | "delete";
+
 type Actions = {
   activeId: string;
   prefs: Prefs;
@@ -112,6 +114,8 @@ type Actions = {
   // Native thread operations (Codex only).
   onArchive: (session: Session, archived: boolean) => void;
   onDelete: (session: Session) => void;
+  // Archive or delete every session in a project folder and its folders.
+  onFolder: (path: string, name: string, op: FolderOp) => void;
   // Schedule a message to the session (routines).
   onSchedule: (session: Session) => void;
   setMenu: (key: string | null) => void;
@@ -499,6 +503,12 @@ function ProjectNode({
   );
   const [limit, setLimit] = useState(6);
   const [relatedOpen, setRelatedOpen] = useState(false);
+  const [anchor, setAnchor] = useState<DOMRect | null>(null);
+  const menuKey = "folder:" + project.path;
+  const folder = (op: FolderOp) => {
+    actions.setMenu(null);
+    actions.onFolder(project.path, project.name, op);
+  };
   useEffect(() => {
     if (holdsActive) setOpen(true);
   }, [holdsActive]);
@@ -521,7 +531,12 @@ function ProjectNode({
       data-namespace={project.path}
       style={{ "--depth": depth } as React.CSSProperties}
     >
-      <div className="project-row" style={{ paddingLeft: depth * 12 }}>
+      <div
+        className={
+          "project-row" + (actions.menu === menuKey ? " menu-open" : "")
+        }
+        style={{ paddingLeft: depth * 12 }}
+      >
         <button
           type="button"
           className="project-toggle"
@@ -572,8 +587,46 @@ function ProjectNode({
           >
             <Plus size={14} />
           </button>
+          <button
+            type="button"
+            className="row-more"
+            aria-label="Project actions"
+            aria-haspopup="menu"
+            aria-expanded={actions.menu === menuKey}
+            onClick={(e) => {
+              setAnchor(e.currentTarget.getBoundingClientRect());
+              actions.setMenu(actions.menu === menuKey ? null : menuKey);
+            }}
+          >
+            <MoreHorizontal size={14} />
+          </button>
         </div>
       </div>
+      {actions.menu === menuKey && anchor && (
+        <PopMenu
+          anchor={anchor}
+          onClose={() => actions.setMenu(null)}
+          label="Project actions"
+        >
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => folder("archive")}
+          >
+            <Archive size={14} />
+            <span>Archive all sessions…</span>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="danger"
+            onClick={() => folder("delete")}
+          >
+            <Trash2 size={14} />
+            <span>Delete all sessions…</span>
+          </button>
+        </PopMenu>
+      )}
       {expanded && (
         <div className="project-sessions">
           {shown.map((e) =>
@@ -1204,6 +1257,7 @@ export function Sidebar({
   onRename,
   onArchive,
   onDelete,
+  onFolder,
   onSchedule,
   assistants,
   assistantRoot,
@@ -1224,6 +1278,7 @@ export function Sidebar({
   onRename: (id: string, title: string) => void;
   onArchive: (session: Session, archived: boolean) => void;
   onDelete: (session: Session) => void;
+  onFolder: (path: string, name: string, op: FolderOp) => void;
   onSchedule: (session: Session) => void;
   // The assistants and their folder (lib/assistants.ts).
   assistants: Assistant[];
@@ -1308,6 +1363,7 @@ export function Sidebar({
       onRename,
       onArchive,
       onDelete,
+      onFolder,
       onSchedule,
       setMenu,
       setEditing,
@@ -1325,6 +1381,7 @@ export function Sidebar({
       onRename,
       onArchive,
       onDelete,
+      onFolder,
       onSchedule,
       onNew,
       query,

@@ -170,6 +170,7 @@ HTML and dev-server previews use `p-*.agent.localhost` addresses in a browser on
 - **Hover a row** (or focus it with the keyboard) to show its pin button and "⋯" menu: rename, copy the resume command, copy the session ID, and
   - **Codex:** Archive / Unarchive and Delete. Both use Codex's own thread operations, so the Codex app and CLI see the same change. Delete asks first and is permanent. Archived sessions open read-only with an Unarchive button; **Archived N** at the bottom shows them.
   - **Claude:** Claude Code has no archive or delete for local sessions, so the menu offers **Hide from sidebar**, which never touches its records. **Hidden N** at the bottom shows hidden sessions.
+- **A project folder's "⋯" menu** archives or deletes every session started in that folder and the folders under it: **Archive all sessions…** or **Delete all sessions…**. The dialog first says how many it will change. Codex sessions are archived or deleted as above (deleting includes archived ones); Claude sessions are hidden in both cases. Related sessions started elsewhere are left alone, and sessions at work or open in another client are skipped. To delete a folder whose sessions are all archived, show them first with **Archived N**.
 
 - **The connection line** at the bottom says where this page is and whether its live updates arrive:
   - **Connected locally** on the workbench computer, **Connected remotely** on another device or through a tunnel. Hover it for how the page signed in and whether the connection is encrypted.
