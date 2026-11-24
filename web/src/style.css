@@ -4306,8 +4306,16 @@ textarea {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
   padding: 24px 24px 12vh;
+}
+/* Centered by auto margins, not justify-content: content taller than the
+   page (an assistant's card with its preview open) then starts at the top
+   and scrolls, instead of overflowing above where no scroll reaches. */
+.new-session > :first-child {
+  margin-top: auto;
+}
+.new-session > :last-child {
+  margin-bottom: auto;
 }
 .new-hero {
   text-align: center;
