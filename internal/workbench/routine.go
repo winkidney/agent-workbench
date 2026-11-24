@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -962,6 +963,51 @@ func (m *Manager) ApproveRun(routine, id string, approve bool) (RoutineRun, erro
 	return run, nil
 }
 
+// routinePreviewMax caps the preview file the page reads (ADR 0023).
+const routinePreviewMax = 1 << 20
+
+// RoutinePreview is the text of the file a routine's preview names, read by
+// the workbench so the user sees it on the assistant's page before deciding,
+// with or without a session (ADR 0023). Only a file inside the assistant's
+// folder, after following links, and only up to routinePreviewMax.
+func (m *Manager) RoutinePreview(routine string) (string, error) {
+	v, err := m.store.routine(routine)
+	if err != nil {
+		return "", err
+	}
+	if v.Preview == "" || v.Command == nil {
+		return "", errors.New("this routine has no preview")
+	}
+	dir, err := filepath.EvalSymlinks(v.Command.Dir)
+	if err != nil {
+		return "", err
+	}
+	full, err := filepath.EvalSymlinks(v.Preview)
+	if err != nil {
+		return "", err
+	}
+	if rel, err := filepath.Rel(dir, full); err != nil || rel == "." || !filepath.IsLocal(rel) {
+		return "", errors.New("the preview is outside the assistant's folder")
+	}
+	f, err := os.Open(full)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	if info, err := f.Stat(); err != nil || !info.Mode().IsRegular() {
+		return "", errors.New("the preview is not a file")
+	}
+	b := make([]byte, routinePreviewMax+1)
+	n, err := io.ReadFull(f, b)
+	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) && !errors.Is(err, io.EOF) {
+		return "", err
+	}
+	if n > routinePreviewMax {
+		return string(b[:routinePreviewMax]) + "\n\n… (cut at 1 MB)\n", nil
+	}
+	return string(b[:n]), nil
+}
+
 // handOff adds the end of what a command printed to the routine's message.
 func handOff(message, out string) string {
 	out = strings.TrimSpace(out)
@@ -1164,7 +1210,7 @@ func runRoutineCommand(c *RoutineCommand) (string, *int, error) {
 	return out.String(), &code, nil
 }
 
-// routinesAPI serves /api/routines[/{id}[/runs|/run|/runs/{run}/approve|dismiss]].
+// routinesAPI serves /api/routines[/{id}[/runs|/run|/preview|/runs/{run}/approve|dismiss]].
 func (s *Server) routinesAPI(w http.ResponseWriter, r *http.Request, rest string) {
 	m := s.Manager
 	parts := strings.Split(rest, "/")
@@ -1235,6 +1281,17 @@ func (s *Server) routinesAPI(w http.ResponseWriter, r *http.Request, rest string
 			return
 		}
 		writeJSON(w, runs)
+	case len(parts) == 2 && parts[1] == "preview" && r.Method == "GET":
+		text, err := m.RoutinePreview(id)
+		if errors.Is(err, os.ErrNotExist) {
+			http.Error(w, "the preview file is not there yet", http.StatusNotFound)
+			return
+		} else if err != nil {
+			bad(w, err)
+			return
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		writeJSON(w, map[string]string{"text": text})
 	case len(parts) == 4 && parts[1] == "runs" && (parts[3] == "approve" || parts[3] == "dismiss") && r.Method == "POST":
 		run, err := m.ApproveRun(id, parts[2], parts[3] == "approve")
 		if err != nil {

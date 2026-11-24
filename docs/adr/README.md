@@ -24,5 +24,6 @@ Decisions that shape how the workbench behaves, why, and what they cost. Each re
 | [0018](0018-keep-the-computer-awake.md) | Two switches keep the computer awake while the workbench runs | accepted |
 | [0019](0019-assistants-start-sessions-on-request.md) | An assistant starts a separate session when the user asks for one | accepted |
 | [0020](0020-assistants-ask-through-the-client.md) | Assistants ask the user through the client's question tool, one step at a time | accepted; amends 0015 |
-| [0021](0021-outside-content-waits-and-background-runs-stay-in-their-folder.md) | Outside content waits for the user's approval, and background runs change only their own files | accepted; amends 0009 and 0011 |
+| [0021](0021-outside-content-waits-and-background-runs-stay-in-their-folder.md) | Outside content waits for the user's approval, and background runs change only their own files | accepted; amends 0009 and 0011; decision 1 amended by 0023 |
 | [0022](0022-moss-keeps-the-repository-committed.md) | Moss has the assistants commit their changes each evening | accepted; amends 0016 |
+| [0023](0023-the-preview-is-read-before-approve.md) | The preview shows on the assistant's page, and Approve waits for it | accepted; amends 0021 |

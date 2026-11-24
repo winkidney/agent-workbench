@@ -12,7 +12,7 @@ The user asked that the senders and subjects be shown to them first, by the work
 ## Decision
 
 1. **A routine can wait for approval.** `approve = true` on a routine in `assistant.toml` (it needs a command and a message) keeps what the command printed: the run's status becomes `waiting`, it notifies, and nothing is sent. `preview = "<file>"`, a path inside the assistant's folder, names a file the command writes for the user to look at first.
-   - The assistant's home card shows each routine with waiting runs: the first line of the output, **Preview** (opens the file in the preview panel, rendered as Markdown with no HTML run), **Approve** and **Dismiss**. Both act on every waiting run of the routine, oldest first.
+   - The assistant's home card shows each routine with waiting runs: the first line of the output, **Preview** (opens the file in the preview panel, rendered as Markdown with no HTML run), **Approve** and **Dismiss**. Both act on every waiting run of the routine, oldest first. (Amended by [0023](0023-the-preview-is-read-before-approve.md): the card shows the preview itself, and Approve waits until it was opened.)
    - `POST /api/routines/{id}/runs/{run}/approve` sends the routine's message with the run's output, as an unapproved routine would have; `…/dismiss` ends the run as skipped. A run is answered once; a second answer is refused.
    - A waiting run survives restarts and is not pushed out by newer runs; it is dropped after a month like any run.
    - The page cannot set a preview: only an assistant's file names one.

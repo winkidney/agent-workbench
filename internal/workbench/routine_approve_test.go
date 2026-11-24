@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -213,6 +214,43 @@ preview = "raw/preview.md"
 	}
 	if _, err := m.store.run(third.ID); err == nil {
 		t.Fatal("kept a waiting run past a month")
+	}
+}
+
+func TestRoutinePreviewIsReadFromTheAssistantsFolder(t *testing.T) {
+	m, root := assistantsWithGit(t)
+	dir := mailAssistant(t, m, root, `approve = true
+preview = "raw/preview.md"
+`)
+	id := fileRoutineID("mail", "Check mail")
+	preview := filepath.Join(dir, "raw", "preview.md")
+
+	// Not written yet: the page says so.
+	if _, err := m.RoutinePreview(id); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("missing preview: %v", err)
+	}
+	writeToml(t, preview, "# Mail\n\n- **new** · Ana · Friday\n")
+	if text, err := m.RoutinePreview(id); err != nil || text != "# Mail\n\n- **new** · Ana · Friday\n" {
+		t.Fatalf("preview: %q %v", text, err)
+	}
+
+	// A link out of the folder is not followed.
+	outside := filepath.Join(t.TempDir(), "secret")
+	writeToml(t, outside, "secret\n")
+	if err := os.Remove(preview); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, preview); err != nil {
+		t.Fatal(err)
+	}
+	if text, err := m.RoutinePreview(id); err == nil {
+		t.Fatalf("read outside the folder: %q", text)
+	}
+
+	// Only a routine that names a preview has one.
+	other := fileRoutineID("mail", "Other")
+	if _, err := m.RoutinePreview(other); err == nil {
+		t.Fatal("preview of an unknown routine")
 	}
 }
 

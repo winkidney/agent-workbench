@@ -18,6 +18,8 @@ import { describeWhen, firstLine, type Routine } from "../routines/when";
 import { Heartbeat } from "../routines/Heartbeat";
 import { MossIcon } from "../components/MossIcon";
 import { Button } from "../components/ui/button";
+import { Markdown } from "../transcript/Markdown";
+import { EnvContext, type Env } from "../transcript/media";
 
 // An assistant's home card (ADR 0015): what it does, what it can do,
 // requests to try, its routines, and whether it is set up. Shown above a new
@@ -110,50 +112,14 @@ export function AssistantHome({
           </Button>
         </div>
       )}
-      {waiting.map((r) => {
-        const runs = r.waiting ?? [];
-        const said = runs.length === 1 ? firstLine(runs[0].output) : "";
-        return (
-          <div
-            key={r.id}
-            className="assistant-home-setup assistant-home-approve"
-            role="status"
-          >
-            <ShieldAlert size={14} />
-            <span>
-              {r.name}:{" "}
-              {said || `${runs.length} ${runs.length === 1 ? "run" : "runs"}`}{" "}
-              {runs.length === 1 ? "waits" : "wait"} for your approval. Nothing
-              has reached the agent yet.
-            </span>
-            {r.preview && onOpenFile && (
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => onOpenFile(r.preview!)}
-              >
-                <Eye size={14} />
-                Preview
-              </Button>
-            )}
-            <Button
-              size="sm"
-              disabled={deciding === r.id}
-              onClick={() => void decide(r, "approve")}
-            >
-              Approve
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={deciding === r.id}
-              onClick={() => void decide(r, "dismiss")}
-            >
-              Dismiss
-            </Button>
-          </div>
-        );
-      })}
+      {waiting.map((r) => (
+        <WaitingCard
+          key={r.id}
+          routine={r}
+          deciding={deciding === r.id}
+          onDecide={(action) => void decide(r, action)}
+        />
+      ))}
       {error && <p className="error-text">{error}</p>}
       <p className="assistant-home-description">
         {a.description || (
@@ -245,5 +211,112 @@ export function AssistantHome({
         )}
       </footer>
     </section>
+  );
+}
+
+// Links in a preview do nothing: it shows outside content (a mail's sender
+// and subject), and the user only reads it before deciding (ADR 0023).
+const PREVIEW_ENV: Env = {
+  cwd: "",
+  openUrl: () => {},
+  openPath: () => {},
+  thumb: () => null,
+  reveal: () => {},
+  locate: () => {},
+  view: () => {},
+};
+
+// A routine whose runs wait for approval (ADR 0021). With a preview, the
+// workbench reads the file itself and shows it here, on any page, and
+// Approve waits until the user has opened what the waiting runs wrote
+// (ADR 0023). Dismiss never waits: it sends nothing.
+export function WaitingCard({
+  routine: r,
+  deciding,
+  onDecide,
+}: {
+  routine: Routine;
+  deciding: boolean;
+  onDecide: (action: "approve" | "dismiss") => void;
+}) {
+  const runs = r.waiting ?? [];
+  const said = runs.length === 1 ? firstLine(runs[0].output) : "";
+  // The runs it waits for: a newer one rewrites the preview, so it is read
+  // again before Approve.
+  const runsKey = runs.map((run) => run.id).join(",");
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState<string | null>(null);
+  const [failed, setFailed] = useState("");
+  const [seen, setSeen] = useState("");
+  const show = async () => {
+    if (open) return setOpen(false);
+    setOpen(true);
+    setFailed("");
+    try {
+      const v = await api<{ text: string }>(
+        `routines/${encodeURIComponent(r.id)}/preview`,
+      );
+      setText(v.text);
+      setSeen(runsKey);
+    } catch (e) {
+      setText(null);
+      setFailed(e instanceof Error ? e.message : String(e));
+    }
+  };
+  const mustSee = !!r.preview && seen !== runsKey;
+  return (
+    <div className="assistant-home-setup assistant-home-approve" role="status">
+      <ShieldAlert size={14} />
+      <span>
+        {r.name}:{" "}
+        {said || `${runs.length} ${runs.length === 1 ? "run" : "runs"}`}{" "}
+        {runs.length === 1 ? "waits" : "wait"} for your approval. Nothing has
+        reached the agent yet.
+        {mustSee && " Open the preview first."}
+      </span>
+      {r.preview && (
+        <Button
+          size="sm"
+          variant="ghost"
+          aria-expanded={open}
+          onClick={() => void show()}
+        >
+          <Eye size={14} />
+          {open ? "Hide preview" : "Preview"}
+        </Button>
+      )}
+      <Button
+        size="sm"
+        disabled={deciding || mustSee}
+        title={mustSee ? "Open the preview first" : undefined}
+        onClick={() => onDecide("approve")}
+      >
+        Approve
+      </Button>
+      <Button
+        size="sm"
+        variant="ghost"
+        disabled={deciding}
+        onClick={() => onDecide("dismiss")}
+      >
+        Dismiss
+      </Button>
+      {open && (
+        <div className="assistant-home-preview">
+          <p className="subtle" title={r.preview}>
+            {r.preview}
+          </p>
+          {failed ? (
+            <p className="error-text">{failed}</p>
+          ) : text === null ? (
+            <p className="subtle">Loading…</p>
+          ) : (
+            <EnvContext.Provider value={PREVIEW_ENV}>
+              <Markdown text={text} />
+            </EnvContext.Provider>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
