@@ -6316,6 +6316,23 @@ span.heartbeat.compact {
 .routine-last-failed {
   color: var(--destructive);
 }
+/* Run now and the short note after a click (routines/RunNowButton.tsx). */
+.run-now {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.run-now-note {
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+.run-now-note:empty {
+  display: none;
+}
+.run-now-note.failed {
+  color: var(--destructive);
+}
 .run-history {
   display: flex;
   flex-direction: column;

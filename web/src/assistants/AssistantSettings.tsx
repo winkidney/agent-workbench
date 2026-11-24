@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { FileText, Loader2, Play, X } from "lucide-react";
+import { FileText, Loader2, X } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "../components/ui/dialog";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -13,6 +13,7 @@ import {
   type Assistant,
 } from "../lib/assistants";
 import { describeWhen, type Routine } from "../routines/when";
+import { RunNowButton } from "../routines/RunNowButton";
 
 type Agent = "claude" | "codex";
 
@@ -284,16 +285,12 @@ export function AssistantSettings({
                     >
                       {r.enabled ? "On" : "Off"}
                     </button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
+                    <RunNowButton
+                      id={r.id}
+                      iconSize={13}
                       disabled={r.assistantOff}
-                      onClick={() => void act(`routines/${r.id}/run`, "POST")}
-                    >
-                      <Play size={13} />
-                      Run now
-                    </Button>
+                      onStarted={() => void loadRoutines()}
+                    />
                   </li>
                 ))}
               </ul>

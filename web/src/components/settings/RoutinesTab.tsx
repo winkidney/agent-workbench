@@ -3,7 +3,6 @@ import {
   ChevronDown,
   ChevronRight,
   Pencil,
-  Play,
   Plus,
   Trash2,
 } from "lucide-react";
@@ -22,6 +21,7 @@ import {
   type RoutineRun,
 } from "../../routines/when";
 import { Heartbeat } from "../../routines/Heartbeat";
+import { RunNowButton } from "../../routines/RunNowButton";
 import { Button } from "../ui/button";
 import { groupRoutines, type Assistant } from "../../lib/assistants";
 
@@ -210,18 +210,13 @@ export function RoutinesTab({
                   {open && (
                     <div className="routine-details">
                       <div className="routine-actions">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() =>
-                            void act(`routines/${r.id}/run`, "POST").then(() =>
-                              loadRuns(r.id),
-                            )
-                          }
-                        >
-                          <Play size={14} />
-                          Run now
-                        </Button>
+                        <RunNowButton
+                          id={r.id}
+                          onStarted={() => {
+                            void load();
+                            void loadRuns(r.id);
+                          }}
+                        />
                         {/* An assistant's routines change in its file. */}
                         {!r.createdBy.startsWith("file:") && (
                           <>
