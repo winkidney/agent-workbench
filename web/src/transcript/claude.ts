@@ -111,7 +111,49 @@ export function injectedKind(
   if (kind && kind !== "human") return kind;
   if (data.promptSource === "system") return kind || "system";
   if (/^\s*<task-notification>/.test(raw)) return "task-notification";
+  // Older records without origin metadata.
+  if (PEER_RE.test(raw)) return "peer";
   return undefined;
+}
+
+const PEER_RE = /^\s*Another [^\n]* sent a message:\s*<agent-message[\s>]/;
+
+// A message another session or a subagent sent this one (origin.kind
+// "peer"). Its text is Markdown: a subagent's report keeps its own copy in
+// handbackReportText; otherwise it is taken out of the <agent-message>,
+// without the harness's hand-back preamble and the indent it adds.
+export function peerMessage(
+  data: Record<string, unknown>,
+  raw: string,
+): { from: string; label: string; body: string } {
+  const origin = record(data.origin);
+  const id =
+    text(origin.from) || /<agent-message from="([^"]+)"/.exec(raw)?.[1];
+  let body = text(origin.handbackReportText);
+  let handback = origin.handback === true || !!body;
+  if (!body && !handback) body = text(origin.body);
+  if (!body) {
+    const inner =
+      /<agent-message[^>]*>([\s\S]*?)<\/agent-message>/.exec(raw)?.[1] ?? "";
+    const report =
+      /^\s*\[Subagent hand-back\][\s\S]*?The report follows:\n/.exec(inner);
+    handback ||= !!report;
+    body = report
+      ? inner
+          .slice(report[0].length)
+          .split("\n")
+          .map((l) => l.replace(/^ {2}/, ""))
+          .join("\n")
+      : inner;
+  }
+  const name = text(origin.name);
+  return {
+    label: handback ? "subagent" : "session",
+    from: handback
+      ? `From subagent ${name || id || ""}`.trim()
+      : `From another session${id ? ` ${id}` : ""}`,
+    body: body.trim(),
+  };
 }
 
 const stripTags = (s: string) =>
@@ -145,17 +187,6 @@ export function systemNotice(
       label: "task",
       text: parts.join(" · "),
       tone: /fail|error|kill/i.test(status) ? "warn" : undefined,
-    };
-  }
-  if (kind === "peer") {
-    const from = /<agent-message from="([^"]+)"/.exec(raw)?.[1];
-    const inner = /<agent-message[^>]*>([\s\S]*?)<\/agent-message>/.exec(
-      raw,
-    )?.[1];
-    const body = stripTags(inner ?? raw);
-    return {
-      label: "peer",
-      text: `Message from another session${from ? ` ${from}` : ""}: ${body.slice(0, 160)}`,
     };
   }
   return { label: kind, text: stripTags(raw).slice(0, 200) || kind };
@@ -287,6 +318,18 @@ function user(d: Draft, data: Record<string, unknown>, ctx: Context) {
   if (parent || (!texts.length && !media.length)) return;
   const joined = texts.join("\n");
   const injected = injectedKind(data, joined);
+  if (injected === "peer") {
+    const m = peerMessage(data, joined);
+    d.upsert({
+      key,
+      kind: "notice",
+      markdown: true,
+      label: m.label,
+      from: m.from,
+      text: m.body,
+    });
+    return;
+  }
   if (injected) {
     d.upsert({
       key,

@@ -603,6 +603,20 @@ function NoticeRow({ block, open, onToggle }: RowProps) {
         </div>
       </div>
     );
+  if (block.markdown && block.from)
+    // A message from another session or a subagent's report: read in full.
+    return (
+      <div className="row notice peer-message">
+        <span className="mark">◇</span>
+        <div className="body">
+          <div className="peer-message-head">
+            {block.label && <span className="event-label">{block.label}</span>}
+            <span>{block.from}</span>
+          </div>
+          <Markdown text={block.text ?? ""} />
+        </div>
+      </div>
+    );
   if (block.markdown)
     // Output of a local command (/context): tables and headings.
     return (

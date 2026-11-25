@@ -300,3 +300,20 @@ func TestClaudeHistoryShowsLocalCommandOutput(t *testing.T) {
 		t.Fatalf("local command record: %v", v)
 	}
 }
+
+func TestClaudeHistoryShowsPeerMessages(t *testing.T) {
+	path := t.TempDir() + "/s.jsonl"
+	lines := []string{
+		`{"type":"user","uuid":"u1","parentUuid":null,"message":{"role":"user","content":"review it"}}`,
+		`{"type":"user","uuid":"m1","parentUuid":"u1","isMeta":true,"message":{"role":"user","content":"<system-reminder>hidden</system-reminder>"}}`,
+		`{"type":"user","uuid":"p1","parentUuid":"m1","isMeta":true,"promptSource":"system","origin":{"kind":"peer","from":"ac77","handback":true,"handbackReportText":"## Report"},"message":{"role":"user","content":"Another Claude session sent a message:\n<agent-message from=\"ac77\">\n  ## Report\n</agent-message>"}}`,
+	}
+	os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o600)
+	page, err := readClaudeHistory(path, Session{ID: "claude:x"}, "", 10)
+	if err != nil || len(page.Events) != 2 {
+		t.Fatalf("%d events: %v", len(page.Events), err)
+	}
+	if !strings.Contains(string(page.Events[1].Data), "agent-message") {
+		t.Fatalf("peer record: %s", page.Events[1].Data)
+	}
+}

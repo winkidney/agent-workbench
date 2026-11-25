@@ -5828,6 +5828,27 @@ body.resizing iframe {
   color: var(--foreground);
   font-size: 13px;
 }
+/* A message from another session or a subagent (transcript/Timeline.tsx):
+   its Markdown reads like the reply text, set off by a rule on the left. */
+.row.notice.peer-message {
+  color: var(--foreground);
+  font-size: 13px;
+}
+.row.notice.peer-message > .body {
+  min-width: 0;
+  border-left: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding-left: 10px;
+}
+.peer-message-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
 
 .manual-copy-text {
   width: 100%;

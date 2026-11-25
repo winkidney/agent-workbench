@@ -87,8 +87,10 @@ export type Block = {
   cwd?: string;
   // A message this page sent that the server has not echoed yet.
   sending?: boolean;
-  // Notice text is Markdown (local command output).
+  // Notice text is Markdown (local command output, a peer's message).
   markdown?: boolean;
+  // A message from another session or a subagent: who sent it.
+  from?: string;
   // Codex: questions the agent asked to be answered in place (questions.ts).
   questions?: AskQuestion[];
   // A message sent into a turn that was already running (steering).

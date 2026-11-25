@@ -153,7 +153,10 @@ func (x *claudeIndex) scan(f *os.File, final bool) error {
 			Time          string `json:"timestamp"`
 			Meta          bool   `json:"isMeta"`
 			Sidechain     bool   `json:"isSidechain"`
-			Attachment    struct {
+			Origin        struct {
+				Kind string `json:"kind"`
+			} `json:"origin"`
+			Attachment struct {
 				Type        string `json:"type"`
 				CommandMode string `json:"commandMode"`
 			} `json:"attachment"`
@@ -173,7 +176,9 @@ func (x *claudeIndex) scan(f *os.File, final bool) error {
 				parent = v.LogicalParent
 			}
 			// A subagent transcript is entirely sidechain records; main transcripts hide them.
-			hidden := v.Meta || (v.Sidechain && !x.subagent)
+			// A message from another session or a subagent's report is a meta
+			// record too, but the page shows it (transcript/claude.ts peerMessage).
+			hidden := (v.Meta && v.Origin.Kind != "peer") || (v.Sidechain && !x.subagent)
 			node := transcriptNode{v.UUID, parent, v.Type, v.Time, x.offset, len(line), hidden, v.Type == "user" && bytes.Contains(line, []byte(`"tool_result"`))}
 			x.nodes[v.UUID] = node
 			if node.message() {

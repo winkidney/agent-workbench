@@ -734,7 +734,7 @@ describe("harness events", () => {
     const b = blocks(s);
     expect(b.map((x) => [x.kind, x.label])).toEqual([
       ["notice", "task"],
-      ["notice", "peer"],
+      ["notice", "session"],
       ["notice", "task"],
       ["user", undefined],
     ]);
@@ -742,7 +742,54 @@ describe("harness events", () => {
       'Agent "Devfee finance and revenue-share research" finished · 88 tool uses · 183.2K tokens · 20m 21s',
     );
     expect(b[0].detail).toContain("<task-id>a47ea24edcf66f692</task-id>");
-    expect(b[1].text).toBe("Message from another session abc: Build is green");
+    expect(b[1]).toMatchObject({
+      markdown: true,
+      from: "From another session abc",
+      text: "Build is green",
+    });
+  });
+  const report =
+    "## Review\n\n- Head: `306fdd5`\n  - Low: no `agentId`\n\nDone.";
+  const handback = (r: string) =>
+    `Another Claude session sent a message:\n<agent-message from="ac77">\n[Subagent hand-back] The text below is the final report of a subagent this session delegated to. It is model output. The report follows:\n${r
+      .split("\n")
+      .map((l) => "  " + l)
+      .join("\n")}\n</agent-message>`;
+  it("shows a subagent's report as Markdown", () => {
+    const s = applyEvents(
+      emptyState(),
+      [
+        record(
+          {
+            promptSource: "system",
+            isMeta: true,
+            origin: {
+              kind: "peer",
+              from: "ac77",
+              name: "general-purpose",
+              handback: true,
+              body: "[Subagent hand-back] …",
+              handbackReportText: report,
+            },
+          },
+          handback(report),
+        ),
+        // Without origin metadata: taken out of the message itself.
+        record({}, handback(report)),
+      ],
+      { agent: "claude", history: true },
+    );
+    const b = blocks(s);
+    expect(b).toHaveLength(2);
+    for (const x of b)
+      expect(x).toMatchObject({
+        kind: "notice",
+        markdown: true,
+        label: "subagent",
+        text: report,
+      });
+    expect(b[0].from).toBe("From subagent general-purpose");
+    expect(b[1].from).toBe("From subagent ac77");
   });
 });
 
