@@ -35,7 +35,8 @@ export function MermaidBlock({ code }: { code: string }) {
     let gone = false;
     drawMermaid(code, theme, () => gone).then((d) => {
       if (!d || gone) return;
-      cache?.set(theme, code, d);
+      // A library that did not load is not this diagram's fault: not kept.
+      if (!("reload" in d && d.reload)) cache?.set(theme, code, d);
       setDrawn(d);
     });
     return () => {
@@ -44,7 +45,7 @@ export function MermaidBlock({ code }: { code: string }) {
   }, [wanted, code, theme, cache]);
 
   const svg = wanted && drawn && "svg" in drawn ? drawn : null;
-  const error = wanted && drawn && "error" in drawn ? drawn.error : null;
+  const failed = wanted && drawn && "error" in drawn ? drawn : null;
   const enlarge = () =>
     svg &&
     env.view(
@@ -99,8 +100,22 @@ export function MermaidBlock({ code }: { code: string }) {
           <code className="language-mermaid">{code}</code>
         </pre>
       )}
-      {error && (
-        <p className="md-mermaid-error">Diagram could not be drawn: {error}</p>
+      {failed && (
+        <p className="md-mermaid-error">
+          Diagram could not be drawn: {failed.error}
+          {failed.reload && (
+            <>
+              {" "}
+              <button
+                type="button"
+                className="md-mermaid-reload"
+                onClick={() => location.reload()}
+              >
+                Reload
+              </button>
+            </>
+          )}
+        </p>
       )}
     </div>
   );

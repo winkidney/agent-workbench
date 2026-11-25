@@ -14,7 +14,20 @@ export const isMermaid = (lang?: string) => lang?.toLowerCase() === "mermaid";
 // Whether the Markdown is still being written: diagrams wait for the end.
 export const StreamingContext = createContext(false);
 
-export type Drawn = { svg: string; background: string } | { error: string };
+// reload: a part of the library could not load (isLoadError).
+export type Drawn =
+  { svg: string; background: string } | { error: string; reload?: boolean };
+
+// A file of the page's own build that is gone: the workbench was updated
+// since the page loaded, and the new build names its files anew (server.go
+// answers 404). Browsers word it differently; an older server sent the page
+// itself, which Firefox reports as "expected expression, got '<'".
+export function isLoadError(e: unknown): boolean {
+  const m = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+  return /dynamically imported module|Importing a module script failed|ChunkLoadError|expected expression, got '<'|Unexpected token '<'/i.test(
+    m,
+  );
+}
 
 // The diagrams one view drew (a session's transcript), so a row that scrolls
 // back into view shows its diagram at once. Bounded, emptied when the theme
@@ -249,15 +262,28 @@ export function drawMermaid(
 ): Promise<Drawn | null> {
   return enqueue(
     async () => {
-      library ??= import("mermaid").then((m) => m.default);
-      const mermaid = await library;
-      if (cancelled() || themeKey() !== theme) return null;
-      configure(mermaid, theme);
       const id = `mmd-${++seq}`;
       try {
+        // A failed load is tried again next time, not kept.
+        library ??= import("mermaid").then(
+          (m) => m.default,
+          (e) => {
+            library = null;
+            throw e;
+          },
+        );
+        const mermaid = await library;
+        if (cancelled() || themeKey() !== theme) return null;
+        configure(mermaid, theme);
+        // Each kind of diagram loads its own part of the library here.
         const { svg } = await mermaid.render(id, code);
         return { svg, background };
       } catch (e) {
+        if (isLoadError(e))
+          return {
+            error: "the workbench was updated since this page loaded",
+            reload: true,
+          };
         const text = e instanceof Error ? e.message : String(e);
         return { error: text.split("\n")[0].trim() || "invalid diagram" };
       } finally {

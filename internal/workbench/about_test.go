@@ -170,8 +170,8 @@ func TestTheTabIconIsServedAsAnImage(t *testing.T) {
 }
 
 // Built assets are named by their content, so the browser keeps them; the
-// page that names them is checked every time, and so is what stands in for a
-// missing asset.
+// page that names them is checked every time, and a missing asset's 404 is
+// not kept either.
 func TestBuiltAssetsAreKeptByTheBrowser(t *testing.T) {
 	m, _ := fixture(t)
 	s := NewServer(m, fstest.MapFS{
@@ -186,7 +186,11 @@ func TestBuiltAssetsAreKeptByTheBrowser(t *testing.T) {
 		"/assets/gone-000000.js": "no-cache",
 	} {
 		w := request(t, s, s.Host, "GET", path, "", nil)
-		if w.Code != 200 || w.Header().Get("Cache-Control") != want {
+		code := 200
+		if strings.Contains(path, "gone") {
+			code = 404
+		}
+		if w.Code != code || w.Header().Get("Cache-Control") != want {
 			t.Fatalf("%s: %d %q, want %q", path, w.Code, w.Header().Get("Cache-Control"), want)
 		}
 	}

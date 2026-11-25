@@ -313,6 +313,12 @@ func (s *Server) static(w http.ResponseWriter, r *http.Request) {
 		// index.html (always checked) points to. Kept by the browser alone.
 		w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
 	}
+	if err != nil && strings.HasPrefix(path, "assets/") {
+		// A file of another build (a page loaded before an update asks for
+		// a chunk by its old name): the page would read itself as a script.
+		http.NotFound(w, r)
+		return
+	}
 	if err != nil {
 		data, err = fs.ReadFile(s.Assets, "index.html")
 	}

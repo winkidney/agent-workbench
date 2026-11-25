@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { Markdown } from "./Markdown";
 import {
   DiagramCache,
+  isLoadError,
   isMermaid,
   MERMAID_MAX,
   mermaidTheme,
@@ -14,6 +15,18 @@ import {
 const FENCE = "Before\n\n```mermaid\ngraph TD\n  A-->B\n```\n\nAfter";
 
 describe("mermaid diagrams", () => {
+  it("tells a missing part of the build from a bad diagram", () => {
+    for (const m of [
+      // Firefox, Chrome, Safari; Firefox reading the page as a script.
+      "error loading dynamically imported module: http://h/assets/flowDiagram-OLD.js",
+      "Failed to fetch dynamically imported module: http://h/assets/mermaid-OLD.js",
+      "Importing a module script failed.",
+      "expected expression, got '<'",
+    ])
+      expect(isLoadError(new TypeError(m))).toBe(true);
+    expect(isLoadError(new Error("Parse error on line 3:"))).toBe(false);
+    expect(isLoadError("Lexical error on line 1")).toBe(false);
+  });
   it("takes fences named mermaid, in any case", () => {
     expect(isMermaid("mermaid")).toBe(true);
     expect(isMermaid("Mermaid")).toBe(true);

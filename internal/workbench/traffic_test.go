@@ -255,3 +255,30 @@ func TestStreamsSayWhereTheyStart(t *testing.T) {
 		t.Fatalf("hello: %q, want prefix %q", w.Body.String(), want)
 	}
 }
+
+// A page loaded before an update asks for chunks by their old names: those
+// are missing, not the page (which a browser would read as a broken script).
+func TestMissingAssetIsNotFound(t *testing.T) {
+	m, _ := fixture(t)
+	s := NewServer(m, fstest.MapFS{
+		"index.html":    {Data: []byte("<!doctype html><title>x</title>")},
+		"assets/app.js": {Data: []byte("console.log(1)")},
+	}, "agent.localhost:17880", "")
+	get := func(path string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("GET", "http://"+s.Host+path, nil)
+		r.Host, r.RemoteAddr = s.Host, "127.0.0.1:1234"
+		w := httptest.NewRecorder()
+		s.ServeHTTP(w, r)
+		return w
+	}
+	if w := get("/assets/mermaid-OLD.js"); w.Code != 404 || strings.Contains(w.Body.String(), "<!doctype") || w.Header().Get("Cache-Control") == "private, max-age=31536000, immutable" {
+		t.Fatalf("old chunk: %d %q %q", w.Code, w.Header().Get("Cache-Control"), w.Body.String())
+	}
+	if w := get("/assets/app.js"); w.Code != 200 || w.Body.String() != "console.log(1)" {
+		t.Fatalf("chunk: %d", w.Code)
+	}
+	// Anything else is the app.
+	if w := get("/some/page"); w.Code != 200 || !strings.Contains(w.Body.String(), "<!doctype") {
+		t.Fatalf("page: %d", w.Code)
+	}
+}
