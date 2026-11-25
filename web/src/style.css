@@ -1687,19 +1687,6 @@ p {
   flex-direction: column;
   min-width: 0;
 }
-.artifact-header {
-  height: 85px;
-  padding: 20px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  border-bottom: 1px solid var(--border);
-}
-.artifact-header h3 {
-  font-size: 15px;
-  font-weight: 400;
-  margin: 3px 0 0;
-}
 .file-path {
   display: flex;
   align-items: center;
@@ -2574,18 +2561,45 @@ textarea {
   color: var(--muted-foreground);
   border-top: 1px solid var(--border);
 }
-.artifact-header {
+/* The right panel's heading, the same for the Outputs and the side chat:
+   48px, an icon, the name, then ghost icon buttons (ADR 0024). */
+.panel-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
   height: 48px;
-  min-height: 48px;
-  padding: 8px 14px;
-  border-bottom: 0;
+  padding: 6px 10px 6px 16px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted-foreground);
 }
-.artifact-header .eyebrow {
+.panel-header h3 {
+  flex: 1;
+  min-width: 0;
+  margin: 0 0 0 4px;
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 600;
+}
+.panel-header > button {
+  width: 30px;
+  height: 30px;
+  color: var(--muted-foreground);
+}
+/* The right panel shows the Outputs or the side chat; the other stays
+   mounted, hidden. */
+.workbench > .artifacts,
+.workbench > .side-chat {
+  grid-column: -2;
+  grid-row: 1;
+}
+.artifacts.hidden {
   display: none;
 }
-.artifact-header h3 {
-  margin: 0;
-  font-size: 13px;
+/* The header's panel buttons say which panel shows. */
+.conversation-heading .panel-toggle[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--foreground);
 }
 .files > button {
   padding-top: 6px;
@@ -5918,44 +5932,16 @@ body.resizing iframe {
   border-bottom: 1px solid var(--border);
 }
 
-/* Side chat: a drawer over the conversation, drawn like the other panels —
-   48px heading, ghost icon buttons, the main composer, theme tokens only. */
+/* Side chat: in the right panel, in place of the Outputs (ADR 0024), and
+   drawn like it — the panel heading, the main composer, theme tokens only. */
 .side-chat {
-  position: fixed;
-  z-index: 15;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: min(560px, 48vw);
   display: flex;
   flex-direction: column;
-  background: var(--background);
-  color: var(--foreground);
-  /* Flat, like the other panels: the border alone sets it apart. */
-  border-left: 1px solid var(--border);
-}
-.side-chat-header {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-  height: 48px;
-  padding: 6px 10px 6px 16px;
-  border-bottom: 1px solid var(--border);
-  color: var(--muted-foreground);
-}
-.side-chat-header h3 {
-  flex: 1;
   min-width: 0;
-  margin: 0 0 0 4px;
-  color: var(--foreground);
-  font-size: 14px;
-  font-weight: 600;
-}
-.side-chat-header > button {
-  width: 30px;
-  height: 30px;
-  color: var(--muted-foreground);
+  min-height: 0;
+  background: var(--sidebar);
+  color: var(--sidebar-foreground);
+  border-left: 1px solid var(--border);
 }
 .side-chat-nav {
   display: flex;
@@ -6038,9 +6024,17 @@ body.resizing iframe {
     animation: none;
   }
 }
+/* On a narrow screen it is a drawer under the header, like the Outputs. */
 @media (max-width: 850px) {
   .side-chat {
-    width: 100vw;
+    position: fixed;
+    z-index: 10;
+    top: 48px;
+    right: 0;
+    bottom: 0;
+    width: min(400px, 90vw);
+    background: var(--popover);
+    box-shadow: var(--shadow-drawer);
   }
 }
 
@@ -6817,4 +6811,14 @@ span.heartbeat.compact {
     padding: 6px 12px;
     font-size: 13px;
   }
+}
+
+/* An assistant row with routine runs waiting for approval (ADR 0021). */
+.assistant-waiting {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--warning);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }

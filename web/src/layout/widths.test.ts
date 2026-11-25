@@ -4,7 +4,9 @@ import {
   MIN_CONVERSATION,
   clampWidths,
   limitWidth,
+  loadSideOpen,
   loadWidths,
+  saveSideOpen,
   saveWidths,
 } from "./widths";
 
@@ -80,8 +82,54 @@ describe("panel widths", () => {
     });
     saveWidths({ left: 333, right: 444 });
     // No preview width yet: half the window.
-    expect(loadWidths()).toEqual({ left: 333, right: 444, preview: 0 });
-    saveWidths({ left: 333, right: 444, preview: 900 });
-    expect(loadWidths()).toEqual({ left: 333, right: 444, preview: 900 });
+    expect(loadWidths()).toEqual({
+      left: 333,
+      right: 444,
+      preview: 0,
+      side: 0,
+    });
+    saveWidths({ left: 333, right: 444, preview: 900, side: 520 });
+    expect(loadWidths()).toEqual({
+      left: 333,
+      right: 444,
+      preview: 900,
+      side: 520,
+    });
+    // The side chat's width stays inside the right panel's range.
+    saveWidths({ left: 333, right: 444, side: 100 });
+    expect(loadWidths().side).toBe(280);
+  });
+});
+
+describe("side chat panels shown", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("round-trips the sessions that show one, the latest few", () => {
+    const store = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => store.set(k, v),
+    });
+    expect(loadSideOpen()).toEqual({});
+    saveSideOpen({ a: true, b: false, c: true });
+    expect(loadSideOpen()).toEqual({ a: true, c: true });
+    const many = Object.fromEntries(
+      Array.from({ length: 30 }, (_, i) => ["s" + i, true]),
+    );
+    saveSideOpen(many);
+    const kept = Object.keys(loadSideOpen());
+    expect(kept).toHaveLength(20);
+    expect(kept[0]).toBe("s10");
+  });
+
+  it("survives broken storage", () => {
+    vi.stubGlobal("localStorage", {
+      getItem: () => "not json",
+      setItem: () => {
+        throw new Error("blocked");
+      },
+    });
+    expect(loadSideOpen()).toEqual({});
+    expect(() => saveSideOpen({ a: true })).not.toThrow();
   });
 });

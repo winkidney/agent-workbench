@@ -296,9 +296,20 @@ export function pickStarter(s: Starter, fill: (text: string) => void) {
   else fill(s.text);
 }
 
-// Routines grouped by the assistant they belong to: those in its file and
-// those sent to it; any other routine is Moss's. Groups follow the
-// assistants' order, Moss first.
+// The assistant a routine belongs to: the one whose file has it, or the
+// one it is sent to; any other routine is Moss's.
+export const routineOwner = (r: {
+  createdBy: string;
+  target?: { kind: string; assistant?: string };
+}) =>
+  r.createdBy.startsWith("file:")
+    ? r.createdBy.slice(5)
+    : r.target?.kind === "assistant" && r.target.assistant
+      ? r.target.assistant
+      : "main";
+
+// Routines grouped by the assistant they belong to (routineOwner). Groups
+// follow the assistants' order, Moss first.
 export function groupRoutines<
   R extends {
     createdBy: string;
@@ -308,15 +319,9 @@ export function groupRoutines<
   list: R[],
   assistants: Pick<Assistant, "dir" | "name">[],
 ): { dir: string; name: string; items: R[] }[] {
-  const owner = (r: R) =>
-    r.createdBy.startsWith("file:")
-      ? r.createdBy.slice(5)
-      : r.target?.kind === "assistant" && r.target.assistant
-        ? r.target.assistant
-        : "main";
   const groups = new Map<string, R[]>();
   for (const r of list) {
-    const d = owner(r);
+    const d = routineOwner(r);
     groups.set(d, [...(groups.get(d) ?? []), r]);
   }
   const order = [

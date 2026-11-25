@@ -6,7 +6,7 @@ Decisions that shape how the workbench behaves, why, and what they cost. Each re
 | --- | --- | --- |
 | [0001](0001-live-view-never-stalls.md) | The live view never stalls, and the page never stops connecting | accepted |
 | [0002](0002-plan-continues-in-the-mode-it-left.md) | An approved plan continues in the mode the session left for it | accepted |
-| [0003](0003-side-chat-hides-and-closes.md) | A side chat hides without ending, and closes only when asked | accepted; decision 4 amended by 0005 |
+| [0003](0003-side-chat-hides-and-closes.md) | A side chat hides without ending, and closes only when asked | accepted; decision 4 amended by 0005; panel and Esc amended by 0024 |
 | [0004](0004-file-links-preview-or-locate.md) | A file link previews what the browser can show, and locates the rest in the file list | accepted; extended by 0007, amended by 0008 for media |
 | [0005](0005-side-chat-steers-and-stops.md) | A side answer can be steered or stopped without closing the side chat | accepted |
 | [0006](0006-terminal-tabs-live-until-closed.md) | A terminal tab lives until it is closed | accepted |
@@ -27,3 +27,4 @@ Decisions that shape how the workbench behaves, why, and what they cost. Each re
 | [0021](0021-outside-content-waits-and-background-runs-stay-in-their-folder.md) | Outside content waits for the user's approval, and background runs change only their own files | accepted; amends 0009 and 0011; decision 1 amended by 0023 |
 | [0022](0022-moss-keeps-the-repository-committed.md) | Moss has the assistants commit their changes each evening | accepted; amends 0016 |
 | [0023](0023-the-preview-is-read-before-approve.md) | The preview shows on the assistant's page, and Approve waits for it | accepted; amends 0021 |
+| [0024](0024-side-chat-shares-the-right-panel.md) | The side chat shares the right panel with the Outputs | accepted; amends 0003 |

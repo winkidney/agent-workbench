@@ -25,7 +25,6 @@ import { ApprovalCard } from "../approval/ApprovalCard";
 import { StatusLine } from "../composer/StatusLine";
 import { Button } from "../components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "../components/ui/dialog";
-import { inTerminal } from "../preview/terminal";
 import {
   canSteer,
   echoed,
@@ -119,34 +118,30 @@ export function SidePanel({
   const live = liveSide(list);
   useEffect(() => onLive(live?.status ?? null), [live?.status]);
   useEffect(() => () => onLive(null), []);
-  useEffect(() => {
-    if (!open) return;
-    const escape = (event: KeyboardEvent) => {
-      if (
-        event.key !== "Escape" ||
-        event.isComposing ||
-        ask ||
-        inTerminal(event.target)
-      )
-        return;
-      event.preventDefault();
-      event.stopPropagation();
-      onHide();
-    };
-    window.addEventListener("keydown", escape, true);
-    return () => window.removeEventListener("keydown", escape, true);
-  }, [open, ask]);
   const current = list.find((x) => x.id === selected);
   const closable =
     !!current && !terminal(current.status) && current.status !== "closing";
   return (
+    // In the right panel, in place of the Outputs (ADR 0024). Esc hides it
+    // only while focus is in it (a running answer stops first, SideView);
+    // elsewhere Esc keeps interrupting the main turn.
     <aside
       className={"side-chat" + (open ? "" : " hidden")}
-      role="dialog"
       aria-label="Side chat"
       aria-hidden={!open}
+      onKeyDown={(e) => {
+        if (
+          e.key !== "Escape" ||
+          e.defaultPrevented ||
+          e.nativeEvent.isComposing ||
+          ask
+        )
+          return;
+        e.preventDefault();
+        onHide();
+      }}
     >
-      <header className="side-chat-header">
+      <header className="panel-header">
         <MessagesSquare size={15} aria-hidden />
         <h3>Side chat</h3>
         <Button
@@ -186,7 +181,7 @@ export function SidePanel({
           variant="ghost"
           size="icon"
           aria-label="Hide side chat"
-          title="Hide (Esc) — it keeps going"
+          title="Hide side chat (Esc) — it keeps going"
           onClick={onHide}
         >
           <ChevronsRight size={17} />
@@ -474,7 +469,7 @@ function SideView({
             hint={
               side?.status === "closing"
                 ? "releasing its resources"
-                : "esc hides"
+                : "esc stops"
             }
           />
         </div>
@@ -513,6 +508,17 @@ function SideView({
                 value={text}
                 onChange={(e) => setText(e.target.value)}
                 onKeyDown={(e) => {
+                  // Like the main composer, Esc stops a running answer;
+                  // otherwise it hides the panel (SidePanel).
+                  if (
+                    e.key === "Escape" &&
+                    running &&
+                    !e.nativeEvent.isComposing
+                  ) {
+                    e.preventDefault();
+                    void stop();
+                    return;
+                  }
                   // Same keys as the main composer: Enter sends.
                   if (newlineKey(e)) return;
                   if (e.key === "Enter" && !e.nativeEvent.isComposing) {
@@ -558,7 +564,7 @@ function SideView({
               </div>
             </form>
             <div className="composer-hint">
-              ↵ send · ⇧↵ / Alt↵ new line · esc hide
+              ↵ send · ⇧↵ / Alt↵ new line · esc {running ? "stops" : "hides"}
             </div>
           </div>
         )

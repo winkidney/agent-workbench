@@ -58,6 +58,7 @@ import {
   setUpAssistants,
   type Assistant,
 } from "../lib/assistants";
+import { waitingTotal, type WaitingRuns } from "../routines/waiting";
 import { api } from "../lib/api";
 import {
   buildSidebar,
@@ -961,6 +962,7 @@ function AssistantRow({
   drag,
   open: isOpen,
   installed,
+  runs = 0,
 }: {
   assistant: Assistant;
   nodes: Node[];
@@ -972,6 +974,9 @@ function AssistantRow({
   // It is the assistant open now: highlighted.
   open: boolean;
   installed?: { claude?: boolean; codex?: boolean };
+  // Its routine runs waiting for approval: shown first, like a session
+  // that needs the user.
+  runs?: number;
 }) {
   const [open, setOpen] = useState(false);
   const [anchor, setAnchor] = useState<DOMRect | null>(null);
@@ -1052,7 +1057,15 @@ function AssistantRow({
           <span className="session-name">
             <Highlight text={a.name} query={actions.query} />
           </span>
-          {a.enabled === false ? (
+          {runs > 0 ? (
+            <span
+              className="assistant-waiting"
+              title={`${runs} run${runs === 1 ? "" : "s"} wait for your approval`}
+            >
+              <StatusIcon status="waiting" />
+              {runs}
+            </span>
+          ) : a.enabled === false ? (
             <span className="session-time">off</span>
           ) : !a.ready && !a.error ? (
             <span className="session-time assistant-setup-hint">set up</span>
@@ -1197,8 +1210,8 @@ function AssistantRow({
   );
 }
 
-function needsYouBadge(nodes: Node[]) {
-  const n = nodes.filter(needsYou).length;
+function needsYouBadge(nodes: Node[], more = 0) {
+  const n = nodes.filter(needsYou).length + more;
   return n ? `${n} need${n === 1 ? "s" : ""} you` : undefined;
 }
 
@@ -1260,6 +1273,7 @@ export function Sidebar({
   onFolder,
   onSchedule,
   assistants,
+  waitingRuns = {},
   assistantRoot,
   assistantsReady,
   installedAgents,
@@ -1282,6 +1296,8 @@ export function Sidebar({
   onSchedule: (session: Session) => void;
   // The assistants and their folder (lib/assistants.ts).
   assistants: Assistant[];
+  // Routine runs waiting for approval, by assistant (routines/waiting.ts).
+  waitingRuns?: WaitingRuns;
   assistantRoot: string;
   // Known whether they are set up; until then nothing is offered.
   assistantsReady: boolean;
@@ -1479,7 +1495,7 @@ export function Sidebar({
             id="assistants"
             title="Assistants"
             count={assistants.length - offCount}
-            badge={needsYouBadge(model.assistants)}
+            badge={needsYouBadge(model.assistants, waitingTotal(waitingRuns))}
             forceOpen={false}
           >
             {assistants
@@ -1497,6 +1513,7 @@ export function Sidebar({
                   drag={assistantDrag}
                   open={a.dir === openAssistantDir}
                   installed={installedAgents}
+                  runs={waitingRuns[a.dir]?.count ?? 0}
                 />
               ))}
             {offCount > 0 && (

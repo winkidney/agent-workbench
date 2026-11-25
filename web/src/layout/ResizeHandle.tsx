@@ -8,11 +8,17 @@ export function ResizeHandle({
   width,
   onResize,
   onCommit,
+  label,
+  reset,
 }: {
   side: Side;
   width: number;
   onResize: (width: number) => void;
   onCommit: (width: number) => void;
+  // What it resizes, and the width a double-click goes back to, when not
+  // the panel's own.
+  label?: string;
+  reset?: number;
 }) {
   const drag = useRef<{
     x: number;
@@ -35,7 +41,9 @@ export function ResizeHandle({
     <div
       role="separator"
       aria-orientation="vertical"
-      aria-label={side === "left" ? "Resize sessions" : "Resize preview"}
+      aria-label={
+        label ?? (side === "left" ? "Resize sessions" : "Resize preview")
+      }
       aria-valuenow={width}
       aria-valuemin={min}
       aria-valuemax={max}
@@ -63,7 +71,7 @@ export function ResizeHandle({
       onPointerUp={finish}
       onPointerCancel={finish}
       onLostPointerCapture={finish}
-      onDoubleClick={() => onCommit(DEFAULT_WIDTHS[side])}
+      onDoubleClick={() => onCommit(reset ?? DEFAULT_WIDTHS[side])}
       onKeyDown={(e) => {
         const step = e.shiftKey ? 64 : 16;
         const keys: Record<string, number> = {

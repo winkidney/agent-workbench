@@ -110,6 +110,8 @@ export function useAttention<S extends Waiting>(
   sessions: S[],
   ready: boolean,
   onOpen: (id: string) => void,
+  // Other things waiting for the user (runs to approve), counted in the title.
+  extra = 0,
 ): S[] {
   const waiting = sessions.filter(needsYou);
   const base = useRef(document.title.replace(/^\(\d+\) /, ""));
@@ -117,8 +119,8 @@ export function useAttention<S extends Waiting>(
   const open = useRef(onOpen);
   open.current = onOpen;
   useEffect(() => {
-    document.title = titleWith(base.current, waiting.length);
-  }, [waiting.length]);
+    document.title = titleWith(base.current, waiting.length + extra);
+  }, [waiting.length, extra]);
   useEffect(() => {
     if (!ready) return;
     const fresh = newlyWaiting(known.current, sessions);

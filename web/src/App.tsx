@@ -4,8 +4,11 @@ import { AgentIcon } from "./components/AgentIcon";
 import { MossIcon } from "./components/MossIcon";
 import { ResizeHandle } from "./layout/ResizeHandle";
 import {
+  DEFAULT_SIDE,
   clampWidths,
+  loadSideOpen,
   loadWidths,
+  saveSideOpen,
   saveWidths,
   type Side,
   type Widths,
@@ -72,6 +75,7 @@ import { LogoMark } from "./components/Logo";
 import { PreviewPanel } from "./preview/PreviewPanel";
 import { FileList, type Entry } from "./preview/FileList";
 import { mayLeave } from "./preview/unsaved";
+import { useWaitingRuns, waitingTotal } from "./routines/waiting";
 import { inTerminal } from "./preview/terminal";
 import {
   drifted,
@@ -116,7 +120,8 @@ import {
   Play,
   X,
   Globe,
-  PanelRightClose,
+  PanelRight,
+  ChevronsRight,
   PanelLeft,
   MoreHorizontal,
   ChevronRight,
@@ -261,9 +266,27 @@ export default function App() {
   const [sleepAsk, setSleepAsk] = useState(false);
   // Per session: whether its side chat panel is shown (hidden keeps it
   // going), the side chat a command asked to show, and the live one's status.
-  const [sideOpen, setSideOpen] = useState<Record<string, boolean>>({});
+  // Which sessions show it is remembered per browser.
+  const [sideOpen, setSideOpen] =
+    useState<Record<string, boolean>>(loadSideOpen);
   const [sideFocus, setSideFocus] = useState<Record<string, string>>({});
   const [sideLive, setSideLive] = useState<Record<string, string | null>>({});
+  useEffect(() => saveSideOpen(sideOpen), [sideOpen]);
+  // The right panel shows a session's side chat or the Outputs, one at a
+  // time (ADR 0024). Hiding the side chat keeps it going, and the Outputs
+  // come back if they were open. On a narrow screen every panel is a
+  // drawer, and one shows at a time.
+  const narrow = () => innerWidth <= 850;
+  const setSide = (id: string, shown: boolean) => {
+    setSideOpen((xs) => (!!xs[id] === shown ? xs : { ...xs, [id]: shown }));
+    if (shown && narrow()) setLeft(false);
+  };
+  const hideOutputs = () => mayLeave() && setPanel(false);
+  const showOutputs = () => {
+    setPanel(true);
+    if (selected.current) setSide(selected.current, false);
+    if (narrow()) setLeft(false);
+  };
   const transcript = useTranscript(
     current
       ? { id: current.id, agent: current.agent, status: current.status }
@@ -641,7 +664,15 @@ export default function App() {
       })),
     [sessions, sidebarPrefs.prefs],
   );
-  const waiting = useAttention(titled, paired, (id) => selectSession(id));
+  // Routine runs waiting for approval, by assistant (ADR 0021).
+  const waitingRuns = useWaitingRuns(paired);
+  const runsWaiting = waitingTotal(waitingRuns);
+  const waiting = useAttention(
+    titled,
+    paired,
+    (id) => selectSession(id),
+    runsWaiting,
+  );
   openSession.current = selectSession;
   const recent = useMemo(
     () => recentProjects(sessions, sidebarPrefs.prefs, workspaces),
@@ -863,7 +894,7 @@ export default function App() {
     )
       .then((r) => {
         if (previewTabs.state.active !== -1 && !mayLeave()) return;
-        setPanel(true);
+        showOutputs();
         previewTabs.show(-1);
         setPath(r.path.split("/").slice(0, -1).join("/"));
         setLocated(r.path);
@@ -876,7 +907,7 @@ export default function App() {
   // at: the lines a file link pointed to.
   const openPreview = (body: unknown, key = "open", at?: LineAt) =>
     busyWhile(key, async () => {
-      if (key === "open") setPanel(true);
+      if (key === "open") showOutputs();
       try {
         const result = await api<{ preview: Preview; grant: string }>(
           "previews",
@@ -889,7 +920,7 @@ export default function App() {
             ? { ...tab, line: at.line, lineEnd: at.end }
             : tab,
         );
-        setPanel(true);
+        showOutputs();
         setServiceOpen(false);
         await refresh();
       } catch (e) {
@@ -974,7 +1005,7 @@ export default function App() {
       else await refresh();
       if (res.sideChat) {
         setSideFocus((xs) => ({ ...xs, [current.id]: res.sideChat! }));
-        setSideOpen((xs) => ({ ...xs, [current.id]: true }));
+        setSide(current.id, true);
       }
       // /fork opens the new session.
       if (res.session) selectSession(res.session);
@@ -1161,13 +1192,17 @@ export default function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
-  const openPanels = { left, right: panel };
+  const rightView: "side" | "outputs" | null =
+    current && sideOpen[current.id] ? "side" : panel ? "outputs" : null;
+  const openPanels = { left, right: !!rightView };
   // A preview gets the right panel's other width: half the window until
-  // dragged.
-  const previewing = panel && previewTabs.state.active >= 0;
+  // dragged; the side chat has its own too.
+  const previewing = rightView === "outputs" && previewTabs.state.active >= 0;
   const sized = previewing
     ? { ...widths, right: widths.preview || Math.round(viewport / 2) }
-    : widths;
+    : rightView === "side"
+      ? { ...widths, right: widths.side || DEFAULT_SIDE }
+      : widths;
   const shownWidths = clampWidths(sized, viewport, openPanels);
   const resizePanel = (side: Side, width: number, commit: boolean) => {
     const next = clampWidths(
@@ -1178,7 +1213,9 @@ export default function App() {
     );
     const kept = previewing
       ? { ...widths, left: next.left, preview: next.right }
-      : { ...widths, ...next };
+      : rightView === "side"
+        ? { ...widths, left: next.left, side: next.right }
+        : { ...widths, ...next };
     setWidths(kept);
     if (commit) saveWidths(kept);
   };
@@ -1268,7 +1305,7 @@ export default function App() {
         }
         className={
           "workbench " +
-          (!panel ? "no-panel " : "") +
+          (!rightView ? "no-panel " : "") +
           (!left ? "no-left " : "") +
           (expandedView ? "preview-expanded" : "")
         }
@@ -1281,12 +1318,15 @@ export default function App() {
             onCommit={(w) => resizePanel("left", w, true)}
           />
         )}
-        {panel && resizable && !expandedView && (
+        {rightView && resizable && !expandedView && (
           <ResizeHandle
             side="right"
             width={shownWidths.right}
             onResize={(w) => resizePanel("right", w, false)}
             onCommit={(w) => resizePanel("right", w, true)}
+            {...(rightView === "side"
+              ? { label: "Resize side chat", reset: DEFAULT_SIDE }
+              : {})}
           />
         )}
         {left && (
@@ -1304,6 +1344,7 @@ export default function App() {
             onFolder={onFolder}
             onSchedule={scheduleFor}
             assistants={assistantList.assistants}
+            waitingRuns={waitingRuns}
             installedAgents={assistantList.installed}
             openAssistantDir={composing?.assistant?.dir ?? topicOf?.dir ?? ""}
             assistantRoot={assistantList.root}
@@ -1327,11 +1368,26 @@ export default function App() {
               size="icon"
               aria-label="Toggle sessions"
               title={left ? "Hide sessions" : "Show sessions"}
-              onClick={() => setLeft(!left)}
+              onClick={() => {
+                // A drawer on a narrow screen: the right one makes way.
+                if (!left && narrow()) {
+                  if (panel && !mayLeave()) return;
+                  setPanel(false);
+                  if (current) setSide(current.id, false);
+                }
+                setLeft(!left);
+              }}
             >
               <PanelLeft size={17} />
-              {!left && waitingElsewhere && (
-                <span className="toggle-dot" aria-label="A session needs you" />
+              {!left && (waitingElsewhere || runsWaiting > 0) && (
+                <span
+                  className="toggle-dot"
+                  aria-label={
+                    waitingElsewhere
+                      ? "A session needs you"
+                      : "Runs wait for your approval"
+                  }
+                />
               )}
             </Button>
             <div className="conversation-title" title={current?.cwd}>
@@ -1559,7 +1615,7 @@ export default function App() {
             </details>
             {current &&
               (() => {
-                const shown = !!sideOpen[current.id];
+                const shown = rightView === "side";
                 const live = sideLive[current.id];
                 const label = live
                   ? `Side chat (${live === "running" ? "working" : "open"})`
@@ -1568,12 +1624,11 @@ export default function App() {
                   <Button
                     variant="ghost"
                     size="icon"
-                    aria-label={(shown ? "Hide " : "Show ") + label}
+                    className="panel-toggle"
+                    aria-label={label}
                     aria-pressed={shown}
                     title={(shown ? "Hide " : "Show ") + label}
-                    onClick={() =>
-                      setSideOpen((xs) => ({ ...xs, [current.id]: !shown }))
-                    }
+                    onClick={() => setSide(current.id, !shown)}
                   >
                     <MessagesSquare size={17} />
                     {!shown && live && (
@@ -1591,13 +1646,35 @@ export default function App() {
             <Button
               variant="ghost"
               size="icon"
-              aria-label="Toggle preview"
-              title={panel ? "Hide preview" : "Show preview"}
-              onClick={() => (!panel || mayLeave()) && setPanel(!panel)}
+              className="panel-toggle"
+              aria-label="Outputs"
+              aria-pressed={rightView === "outputs"}
+              title={rightView === "outputs" ? "Hide Outputs" : "Show Outputs"}
+              onClick={() =>
+                rightView === "outputs" ? hideOutputs() : showOutputs()
+              }
             >
-              <PanelRightClose size={17} />
+              <PanelRight size={17} />
             </Button>
           </header>
+          {/* In an assistant's conversation, its runs that wait for
+              approval; its card (About) shows them (ADR 0021). */}
+          {topicOf &&
+            current &&
+            !composing &&
+            (() => {
+              const w = waitingRuns[topicOf.dir];
+              if (!w) return null;
+              return (
+                <div className="update-banner" role="status">
+                  {w.routines.join(", ")}: {w.count} run
+                  {w.count === 1 ? " waits" : "s wait"} for your approval.
+                  <Button size="sm" onClick={() => setAboutOpen(true)}>
+                    Review
+                  </Button>
+                </div>
+              );
+            })()}
           {paired && liveDown && (
             <div className="update-banner" role="status">
               Live updates interrupted — reconnecting…
@@ -1858,21 +1935,34 @@ export default function App() {
             />
           )}
         </main>
+        {/* Kept while the side chat shows in its place: tabs and an unsaved
+            edit stay. */}
         {panel && (
-          <aside className="artifacts">
-            <header className="artifact-header">
-              <div>
-                <span className="eyebrow">ARTIFACTS</span>
-                <h3>Outputs</h3>
-              </div>
+          <aside
+            className={"artifacts" + (rightView === "outputs" ? "" : " hidden")}
+            aria-label="Outputs"
+          >
+            <header className="panel-header">
+              <PanelRight size={15} aria-hidden />
+              <h3>Outputs</h3>
               <Button
                 variant="ghost"
                 size="icon"
                 aria-label="New web preview"
+                title="New web preview"
                 disabled={!current}
                 onClick={() => setServiceOpen(true)}
               >
-                <Globe size={18} />
+                <Globe size={16} />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Hide Outputs"
+                title="Hide Outputs"
+                onClick={hideOutputs}
+              >
+                <ChevronsRight size={17} />
               </Button>
             </header>
             {/* Markdown and text files shown here open links as the
@@ -1990,7 +2080,7 @@ export default function App() {
                 onOpenFile={
                   current
                     ? (p) => {
-                        setPanel(true);
+                        showOutputs();
                         env.openPath(p);
                       }
                     : undefined
@@ -2021,7 +2111,7 @@ export default function App() {
                 }}
                 onOpenFile={(p) => {
                   setAboutOpen(false);
-                  setPanel(true);
+                  showOutputs();
                   env.openPath(p);
                 }}
               />
@@ -2065,7 +2155,7 @@ export default function App() {
             onPanel={(item) => {
               if (!item.path) return;
               setViewer(null);
-              setPanel(true);
+              showOutputs();
               env.openPath(item.path, item.base);
             }}
           />
@@ -2085,9 +2175,7 @@ export default function App() {
               parent={current.id}
               open={!!sideOpen[current.id]}
               focus={sideFocus[current.id]}
-              onHide={() =>
-                setSideOpen((xs) => ({ ...xs, [current.id]: false }))
-              }
+              onHide={() => setSide(current.id, false)}
               onLive={(status) => {
                 const id = current.id;
                 setSideLive((xs) =>
