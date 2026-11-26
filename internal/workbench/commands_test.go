@@ -316,4 +316,16 @@ func TestClaudeHistoryShowsPeerMessages(t *testing.T) {
 	if !strings.Contains(string(page.Events[1].Data), "agent-message") {
 		t.Fatalf("peer record: %s", page.Events[1].Data)
 	}
+	// A report taken in mid-turn: a queued_command whose origin says it is one.
+	queued := `{"type":"attachment","uuid":"q1","parentUuid":"p1","attachment":{"type":"queued_command","commandMode":"prompt","prompt":"<agent-message from=\"ac78\">\n  ## Late\n</agent-message>","origin":{"kind":"peer","from":"ac78","handback":true,"handbackReportText":"## Late"}}}`
+	os.WriteFile(path, []byte(strings.Join(append(lines, queued), "\n")+"\n"), 0o600)
+	page, err = readClaudeHistory(path, Session{ID: "claude:x"}, "", 10)
+	if err != nil || len(page.Events) != 3 {
+		t.Fatalf("%d events: %v", len(page.Events), err)
+	}
+	var v map[string]any
+	json.Unmarshal(page.Events[2].Data, &v)
+	if origin := obj(v["origin"]); origin["kind"] != "peer" || origin["handbackReportText"] != "## Late" || v["steered"] != true {
+		t.Fatalf("queued peer record: %s", page.Events[2].Data)
+	}
 }

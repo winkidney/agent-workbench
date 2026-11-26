@@ -116,7 +116,10 @@ export function injectedKind(
   return undefined;
 }
 
-const PEER_RE = /^\s*Another [^\n]* sent a message:\s*<agent-message[\s>]/;
+// A message taken in mid-turn (a queued_command record) is the bare
+// <agent-message>, without the "Another … sent a message:" line.
+const PEER_RE =
+  /^\s*(?:Another [^\n]* sent a message[^\n:]*:\s*)?<agent-message[\s>]/;
 
 // A message another session or a subagent sent this one (origin.kind
 // "peer"). Its text is Markdown: a subagent's report keeps its own copy in

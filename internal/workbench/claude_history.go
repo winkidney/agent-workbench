@@ -262,6 +262,11 @@ func (x *claudeIndex) page(f *os.File, s Session, before string, limit int) (His
 		if n.Kind == "steer" {
 			attachment := obj(v["attachment"])
 			data := map[string]any{"type": "user", "uuid": n.UUID, "timestamp": n.Time, "history": true, "steered": true, "message": map[string]any{"role": "user", "content": boundJSON(attachment["prompt"])}}
+			// A message from another session or a subagent's report, taken in
+			// mid-turn, says so in its origin (transcript/claude.ts peerMessage).
+			if origin, ok := attachment["origin"].(map[string]any); ok {
+				data["origin"] = origin
+			}
 			b, _ := json.Marshal(data)
 			page.Events = append(page.Events, Event{Session: s.ID, Kind: "native", Data: b, Time: n.Time})
 			continue

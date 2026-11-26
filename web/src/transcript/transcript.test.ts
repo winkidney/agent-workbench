@@ -776,11 +776,16 @@ describe("harness events", () => {
         ),
         // Without origin metadata: taken out of the message itself.
         record({}, handback(report)),
+        // Taken in mid-turn (a queued_command): the bare <agent-message>.
+        record(
+          { steered: true },
+          handback(report).replace(/^Another[^\n]*\n/, ""),
+        ),
       ],
       { agent: "claude", history: true },
     );
     const b = blocks(s);
-    expect(b).toHaveLength(2);
+    expect(b).toHaveLength(3);
     for (const x of b)
       expect(x).toMatchObject({
         kind: "notice",
@@ -790,6 +795,7 @@ describe("harness events", () => {
       });
     expect(b[0].from).toBe("From subagent general-purpose");
     expect(b[1].from).toBe("From subagent ac77");
+    expect(b[2].from).toBe("From subagent ac77");
   });
 });
 
