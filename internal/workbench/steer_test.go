@@ -247,13 +247,18 @@ func TestClaudeHistoryShowsSteeredMessages(t *testing.T) {
 	}
 	os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o600)
 	page, err := readClaudeHistory(path, Session{ID: "claude:x"}, "", 10)
-	if err != nil || len(page.Events) != 4 {
+	// The task notification taken in mid-turn shows too (ADR 0025).
+	if err != nil || len(page.Events) != 5 {
 		t.Fatalf("%d events: %v", len(page.Events), err)
 	}
 	var v map[string]any
 	json.Unmarshal(page.Events[2].Data, &v)
 	if v["type"] != "user" || v["steered"] != true || obj(v["message"])["content"] != "end with BANANA" {
 		t.Fatalf("steered record: %v", v)
+	}
+	json.Unmarshal(page.Events[3].Data, &v)
+	if v["type"] != "workbench_task" {
+		t.Fatalf("task notification: %v", v)
 	}
 }
 

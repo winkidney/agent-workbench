@@ -466,7 +466,8 @@ func TestClaudeHistoryKeepsPromptOrigin(t *testing.T) {
 	}
 	var v map[string]any
 	json.Unmarshal(page.Events[0].Data, &v)
-	if v["promptSource"] != "system" || obj(v["origin"])["kind"] != "task-notification" {
-		t.Fatalf("origin dropped: %s", page.Events[0].Data)
+	// Read by its origin, as live would be (claudeView).
+	if v["type"] != "workbench_task" || v["key"] != "task:n" {
+		t.Fatalf("task notification: %s", page.Events[0].Data)
 	}
 }

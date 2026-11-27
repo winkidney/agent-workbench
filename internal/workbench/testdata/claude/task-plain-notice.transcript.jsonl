@@ -1,0 +1,2 @@
+{"type": "user", "uuid": "u1", "parentUuid": null, "timestamp": "2026-11-26T11:50:00Z", "message": {"role": "user", "content": "start"}}
+{"type": "attachment", "uuid": "q2", "parentUuid": "u1", "timestamp": "2026-11-26T11:50:01Z", "attachment": {"type": "queued_command", "prompt": "<task-notification>\nexample-plugin: its SessionStart hook was skipped.\n</task-notification>", "commandMode": "task-notification"}}

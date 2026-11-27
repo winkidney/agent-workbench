@@ -658,7 +658,15 @@ func (m *Manager) receive(id string, generation int, v map[string]any) {
 		m.bufferDelta(r, d)
 	case liveKeep:
 		m.flushDelta(r)
-		m.emit(r.session.ID, "native", boundJSON(v))
+		shown := v
+		// The same records as history shows (claude_records.go, ADR 0025).
+		if r.session.Agent == "claude" {
+			noteClaudeLive(v)
+			shown = claudeView(v)
+		}
+		if shown != nil {
+			m.emit(r.session.ID, "native", boundJSON(shown))
+		}
 	}
 	if v["type"] == "stderr" {
 		m.emit(r.session.ID, "diagnostic", v)

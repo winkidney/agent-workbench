@@ -1,0 +1,1 @@
+{"type": "system", "subtype": "task_notification", "uuid": "b6c7-live", "session_id": "s-1", "task_id": "bcgut4u57", "tool_use_id": "toolu_bash", "status": "completed", "summary": "Background command \"Run the full build\" completed", "output_file": "/tmp/x/tasks/bcgut4u57.output"}

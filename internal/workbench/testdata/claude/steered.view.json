@@ -1,0 +1,24 @@
+[
+  {
+    "history": true,
+    "message": {
+      "content": "read the files",
+      "id": null,
+      "role": "user"
+    },
+    "timestamp": "2026-11-26T11:50:00Z",
+    "type": "user",
+    "uuid": "u1"
+  },
+  {
+    "history": true,
+    "message": {
+      "content": "end with BANANA",
+      "role": "user"
+    },
+    "steered": true,
+    "timestamp": "2026-11-26T11:51:00Z",
+    "type": "user",
+    "uuid": "s1"
+  }
+]

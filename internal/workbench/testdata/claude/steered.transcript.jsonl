@@ -1,0 +1,2 @@
+{"type": "user", "uuid": "u1", "parentUuid": null, "timestamp": "2026-11-26T11:50:00Z", "message": {"role": "user", "content": "read the files"}}
+{"type": "attachment", "uuid": "s1", "parentUuid": "u1", "timestamp": "2026-11-26T11:51:00Z", "attachment": {"type": "queued_command", "prompt": "end with BANANA", "commandMode": "prompt"}}

@@ -1,0 +1,24 @@
+[
+  {
+    "history": true,
+    "message": {
+      "content": "start",
+      "id": null,
+      "role": "user"
+    },
+    "timestamp": "2026-11-26T11:50:00Z",
+    "type": "user",
+    "uuid": "u1"
+  },
+  {
+    "detail": "\u003ctask-notification\u003e\nexample-plugin: its SessionStart hook was skipped.\n\u003c/task-notification\u003e",
+    "history": true,
+    "key": "task:q2",
+    "status": "",
+    "summary": "example-plugin: its SessionStart hook was skipped.",
+    "taskId": "",
+    "timestamp": "2026-11-26T11:50:01Z",
+    "type": "workbench_task",
+    "uuid": "q2"
+  }
+]

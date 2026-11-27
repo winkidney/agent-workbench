@@ -1,0 +1,23 @@
+[
+  {
+    "history": true,
+    "message": {
+      "content": "wait for the build",
+      "id": null,
+      "role": "user"
+    },
+    "timestamp": "2026-11-26T11:50:00Z",
+    "type": "user",
+    "uuid": "u1"
+  },
+  {
+    "body": "Build is **green**.",
+    "from": "other-session",
+    "handback": false,
+    "history": true,
+    "key": "peer:p2",
+    "timestamp": "2026-11-26T11:56:00Z",
+    "type": "workbench_peer",
+    "uuid": "p2"
+  }
+]

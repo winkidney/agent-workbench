@@ -1,0 +1,24 @@
+[
+  {
+    "history": true,
+    "message": {
+      "content": "review it",
+      "id": null,
+      "role": "user"
+    },
+    "timestamp": "2026-11-26T11:50:00Z",
+    "type": "user",
+    "uuid": "u1"
+  },
+  {
+    "body": "## Review of example/app#12\n\n- **Verdict**: approve, 0 High / 0 Medium.\n- Head: `0123abc`; CI passed.\n  - nested point with `code`\n\nNothing was posted.",
+    "from": "a1b2c3d4e5f60718",
+    "handback": true,
+    "history": true,
+    "key": "peer:a1b2c3d4e5f60718:3a367469",
+    "name": "general-purpose",
+    "timestamp": "2026-11-26T11:54:00Z",
+    "type": "workbench_peer",
+    "uuid": "p1"
+  }
+]

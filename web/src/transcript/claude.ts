@@ -101,61 +101,56 @@ export function shapeUserText(raw: string): {
   return { kind: "user", text: s };
 }
 
-// User records the harness produced (task notifications, peer messages) are
-// events, not prompts. Claude Code marks them with origin / promptSource.
+// User records the harness produced are events, not prompts. Claude Code
+// marks them with origin / promptSource. A message from another session, a
+// subagent's report and a task notification come already read, as
+// workbench_peer and workbench_task (internal/workbench/claude_records.go).
 export function injectedKind(
   data: Record<string, unknown>,
-  raw: string,
 ): string | undefined {
   const kind = text(record(data.origin).kind);
   if (kind && kind !== "human") return kind;
   if (data.promptSource === "system") return kind || "system";
-  if (/^\s*<task-notification>/.test(raw)) return "task-notification";
-  // Older records without origin metadata.
-  if (PEER_RE.test(raw)) return "peer";
   return undefined;
 }
 
-// A message taken in mid-turn (a queued_command record) is the bare
-// <agent-message>, without the "Another … sent a message:" line.
-const PEER_RE =
-  /^\s*(?:Another [^\n]* sent a message[^\n:]*:\s*)?<agent-message[\s>]/;
-
-// A message another session or a subagent sent this one (origin.kind
-// "peer"). Its text is Markdown: a subagent's report keeps its own copy in
-// handbackReportText; otherwise it is taken out of the <agent-message>,
-// without the harness's hand-back preamble and the indent it adds.
-export function peerMessage(
-  data: Record<string, unknown>,
-  raw: string,
-): { from: string; label: string; body: string } {
-  const origin = record(data.origin);
-  const id =
-    text(origin.from) || /<agent-message from="([^"]+)"/.exec(raw)?.[1];
-  let body = text(origin.handbackReportText);
-  let handback = origin.handback === true || !!body;
-  if (!body && !handback) body = text(origin.body);
-  if (!body) {
-    const inner =
-      /<agent-message[^>]*>([\s\S]*?)<\/agent-message>/.exec(raw)?.[1] ?? "";
-    const report =
-      /^\s*\[Subagent hand-back\][\s\S]*?The report follows:\n/.exec(inner);
-    handback ||= !!report;
-    body = report
-      ? inner
-          .slice(report[0].length)
-          .split("\n")
-          .map((l) => l.replace(/^ {2}/, ""))
-          .join("\n")
-      : inner;
-  }
-  const name = text(origin.name);
+// A message from another session, or a subagent's report, as Markdown.
+// Live and history give the same record under the same key, so the turn's
+// record replaces the live one (reducer.ts reconcile).
+export function peerNotice(data: Record<string, unknown>): Block {
+  const from = text(data.from);
+  const handback = data.handback === true;
   return {
+    key: text(data.key),
+    kind: "notice",
+    markdown: true,
     label: handback ? "subagent" : "session",
     from: handback
-      ? `From subagent ${name || id || ""}`.trim()
-      : `From another session${id ? ` ${id}` : ""}`,
-    body: body.trim(),
+      ? `From subagent ${text(data.name) || from}`.trim()
+      : `From another session${from ? ` ${from}` : ""}`,
+    text: text(data.body),
+  };
+}
+
+// The harness telling the model a background task ended.
+export function taskNotice(data: Record<string, unknown>): Block {
+  const status = text(data.status);
+  const tools = Number(data.toolUses) || 0;
+  const tokens = Number(data.tokens) || 0;
+  const ms = Number(data.durationMs) || 0;
+  const parts = [
+    text(data.summary) || `Background task ${status || "updated"}`,
+  ];
+  if (tools) parts.push(`${tools} tool use${tools === 1 ? "" : "s"}`);
+  if (tokens) parts.push(`${compact(tokens)} tokens`);
+  if (ms) parts.push(formatDuration(ms));
+  return {
+    key: text(data.key),
+    kind: "notice",
+    label: "task",
+    text: parts.join(" · "),
+    tone: /fail|error|kill/i.test(status) ? "warn" : undefined,
+    detail: text(data.detail) || undefined,
   };
 }
 
@@ -173,25 +168,7 @@ const compact = (n: number) =>
 export function systemNotice(
   kind: string,
   raw: string,
-): { label: string; text: string; tone?: "warn" } {
-  if (kind === "task-notification") {
-    const summary = tag(raw, "summary")?.trim();
-    const status = tag(raw, "status")?.trim() ?? "";
-    const tools = Number(tag(raw, "tool_uses"));
-    const tokens = Number(
-      tag(raw, "subagent_tokens") ?? tag(raw, "total_tokens"),
-    );
-    const ms = Number(tag(raw, "duration_ms"));
-    const parts = [summary || `Background task ${status || "updated"}`];
-    if (tools) parts.push(`${tools} tool use${tools === 1 ? "" : "s"}`);
-    if (tokens) parts.push(`${compact(tokens)} tokens`);
-    if (ms) parts.push(formatDuration(ms));
-    return {
-      label: "task",
-      text: parts.join(" · "),
-      tone: /fail|error|kill/i.test(status) ? "warn" : undefined,
-    };
-  }
+): { label: string; text: string } {
   return { label: kind, text: stripTags(raw).slice(0, 200) || kind };
 }
 
@@ -320,19 +297,7 @@ function user(d: Draft, data: Record<string, unknown>, ctx: Context) {
   }
   if (parent || (!texts.length && !media.length)) return;
   const joined = texts.join("\n");
-  const injected = injectedKind(data, joined);
-  if (injected === "peer") {
-    const m = peerMessage(data, joined);
-    d.upsert({
-      key,
-      kind: "notice",
-      markdown: true,
-      label: m.label,
-      from: m.from,
-      text: m.body,
-    });
-    return;
-  }
+  const injected = injectedKind(data);
   if (injected) {
     d.upsert({
       key,
@@ -382,6 +347,10 @@ export function applyClaude(
       return assistant(d, data, ctx);
     case "user":
       return user(d, data, ctx);
+    case "workbench_peer":
+      return d.upsert(peerNotice(data));
+    case "workbench_task":
+      return d.upsert(taskNotice(data));
     // History: the subagent an Agent call started, and how many of its
     // tool calls were left out (subagents.go).
     case "workbench_subagent": {

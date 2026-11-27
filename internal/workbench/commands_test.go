@@ -313,7 +313,9 @@ func TestClaudeHistoryShowsPeerMessages(t *testing.T) {
 	if err != nil || len(page.Events) != 2 {
 		t.Fatalf("%d events: %v", len(page.Events), err)
 	}
-	if !strings.Contains(string(page.Events[1].Data), "agent-message") {
+	var p map[string]any
+	json.Unmarshal(page.Events[1].Data, &p)
+	if p["type"] != "workbench_peer" || !strings.HasPrefix(str(p["key"]), "peer:ac77:") || p["body"] != "## Report" || p["handback"] != true {
 		t.Fatalf("peer record: %s", page.Events[1].Data)
 	}
 	// A report taken in mid-turn: a queued_command whose origin says it is one.
@@ -325,7 +327,7 @@ func TestClaudeHistoryShowsPeerMessages(t *testing.T) {
 	}
 	var v map[string]any
 	json.Unmarshal(page.Events[2].Data, &v)
-	if origin := obj(v["origin"]); origin["kind"] != "peer" || origin["handbackReportText"] != "## Late" || v["steered"] != true {
+	if v["type"] != "workbench_peer" || !strings.HasPrefix(str(v["key"]), "peer:ac78:") || v["body"] != "## Late" {
 		t.Fatalf("queued peer record: %s", page.Events[2].Data)
 	}
 }

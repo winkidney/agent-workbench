@@ -28,3 +28,4 @@ Decisions that shape how the workbench behaves, why, and what they cost. Each re
 | [0022](0022-moss-keeps-the-repository-committed.md) | Moss has the assistants commit their changes each evening | accepted; amends 0016 |
 | [0023](0023-the-preview-is-read-before-approve.md) | The preview shows on the assistant's page, and Approve waits for it | accepted; amends 0021 |
 | [0024](0024-side-chat-shares-the-right-panel.md) | The side chat shares the right panel with the Outputs | accepted; amends 0003 |
+| [0025](0025-claude-records-are-read-in-one-place.md) | Claude's records are read in one place, live and from the transcript | accepted |

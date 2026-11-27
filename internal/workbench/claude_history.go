@@ -125,7 +125,7 @@ func newClaudeIndex(s Session) *claudeIndex {
 }
 
 func (n transcriptNode) message() bool {
-	return !n.Hidden && (n.Kind == "user" || n.Kind == "assistant" || n.Kind == "local_command" || n.Kind == "steer")
+	return !n.Hidden && (n.Kind == "user" || n.Kind == "assistant" || n.Kind == "local_command" || n.Kind == "queued")
 }
 
 // scan indexes the records after the last scanned offset. Unless final, a
@@ -166,10 +166,10 @@ func (x *claudeIndex) scan(f *os.File, final bool) error {
 			if v.Type == "system" && v.Subtype == "local_command" {
 				v.Type = "local_command"
 			}
-			// A message sent while a turn ran, taken in mid-turn (steering).
-			// Task notifications use the same attachment with another mode.
-			if v.Type == "attachment" && v.Attachment.Type == "queued_command" && (v.Attachment.CommandMode == "" || v.Attachment.CommandMode == "prompt") {
-				v.Type = "steer"
+			// A message taken in mid-turn: the user's, another session's, a
+			// subagent's report or a task notification (claudeView).
+			if v.Type == "attachment" && v.Attachment.Type == "queued_command" {
+				v.Type = "queued"
 			}
 			parent := v.Parent
 			if parent == "" {
@@ -177,8 +177,8 @@ func (x *claudeIndex) scan(f *os.File, final bool) error {
 			}
 			// A subagent transcript is entirely sidechain records; main transcripts hide them.
 			// A message from another session or a subagent's report is a meta
-			// record too, but the page shows it (transcript/claude.ts peerMessage).
-			hidden := (v.Meta && v.Origin.Kind != "peer") || (v.Sidechain && !x.subagent)
+			// record too, but the page shows it (claudeView).
+			hidden := (v.Meta && v.Origin.Kind != "peer" && v.Origin.Kind != "task-notification") || (v.Sidechain && !x.subagent)
 			node := transcriptNode{v.UUID, parent, v.Type, v.Time, x.offset, len(line), hidden, v.Type == "user" && bytes.Contains(line, []byte(`"tool_result"`))}
 			x.nodes[v.UUID] = node
 			if node.message() {
@@ -259,16 +259,12 @@ func (x *claudeIndex) page(f *os.File, s Session, before string, limit int) (His
 		if json.Unmarshal(line, &v) != nil {
 			continue
 		}
-		if n.Kind == "steer" {
-			attachment := obj(v["attachment"])
-			data := map[string]any{"type": "user", "uuid": n.UUID, "timestamp": n.Time, "history": true, "steered": true, "message": map[string]any{"role": "user", "content": boundJSON(attachment["prompt"])}}
-			// A message from another session or a subagent's report, taken in
-			// mid-turn, says so in its origin (transcript/claude.ts peerMessage).
-			if origin, ok := attachment["origin"].(map[string]any); ok {
-				data["origin"] = origin
+		if n.Kind == "queued" {
+			v["history"] = true
+			if view := claudeView(v); view != nil {
+				b, _ := json.Marshal(boundJSON(view))
+				page.Events = append(page.Events, Event{Session: s.ID, Kind: "native", Data: b, Time: n.Time})
 			}
-			b, _ := json.Marshal(data)
-			page.Events = append(page.Events, Event{Session: s.ID, Kind: "native", Data: b, Time: n.Time})
 			continue
 		}
 		if n.Kind == "local_command" {
@@ -318,7 +314,13 @@ func (x *claudeIndex) page(f *os.File, s Session, before string, limit int) (His
 				data[k] = v[k]
 			}
 		}
-		b, _ := json.Marshal(data)
+		// A message from another session, a subagent's report or a task
+		// notification is read as it is live (claude_records.go).
+		view := claudeView(data)
+		if view == nil {
+			continue
+		}
+		b, _ := json.Marshal(view)
 		page.Events = append(page.Events, Event{Session: s.ID, Kind: "native", Data: b, Time: n.Time})
 	}
 	return page, nil

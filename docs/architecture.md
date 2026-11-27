@@ -48,7 +48,7 @@ Sign-in from the page (agents_login.go) runs the CLI's own login with the progra
 The CLIs' records are the source of truth; the workbench never writes them.
 
 - **Codex:** thread metadata is read from `$CODEX_HOME/state_5.sqlite` (read-only); history is read through a short-lived app-server (`thread/turns/list`). Writer locks (`thread-writer-locks/<id>.lock`) tell whether another client holds a thread.
-- **Claude Code:** history is read from `$CLAUDE_CONFIG_DIR/projects/<project>/<session>.jsonl`, following the parent-child chain of the newest branch. `sessions/<pid>.json` (never the credential files) tells whether another Claude process holds a session and whether it is busy.
+- **Claude Code:** history is read from `$CLAUDE_CONFIG_DIR/projects/<project>/<session>.jsonl`, following the parent-child chain of the newest branch. Live and history records both pass through `claudeView` (`claude_records.go`, [ADR 0025](adr/0025-claude-records-are-read-in-one-place.md)): messages from other sessions, subagents' reports and task notifications reach the page as `workbench_peer` and `workbench_task`, a report under the same key live and in the transcript. `sessions/<pid>.json` (never the credential files) tells whether another Claude process holds a session and whether it is busy.
 - A session's project is the directory it was **started** in: Codex's thread directory, Claude's first recorded `cwd`.
 - Sessions another client is writing are followed by reading only the bytes appended since the last read.
 - The list is read again at most every 5 s, and only what changed: Codex's index when its database or log changed, a Claude transcript when its size or time changed (the others as last read). Looking a session up by id copies nothing.

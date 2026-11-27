@@ -1,0 +1,24 @@
+[
+  {
+    "history": true,
+    "message": {
+      "content": "build it",
+      "id": null,
+      "role": "user"
+    },
+    "timestamp": "2026-11-26T11:50:00Z",
+    "type": "user",
+    "uuid": "u1"
+  },
+  {
+    "detail": "\u003ctask-notification\u003e\n\u003ctask-id\u003ebcgut4u57\u003c/task-id\u003e\n\u003ctool-use-id\u003etoolu_bash\u003c/tool-use-id\u003e\n\u003coutput-file\u003e/tmp/x/tasks/bcgut4u57.output\u003c/output-file\u003e\n\u003cstatus\u003ecompleted\u003c/status\u003e\n\u003csummary\u003eBackground command \"Run the full build\" completed (exit code 0)\u003c/summary\u003e\n\u003c/task-notification\u003e",
+    "history": true,
+    "key": "task:q1",
+    "status": "completed",
+    "summary": "Background command \"Run the full build\" completed (exit code 0)",
+    "taskId": "bcgut4u57",
+    "timestamp": "2026-11-26T11:52:00Z",
+    "type": "workbench_task",
+    "uuid": "q1"
+  }
+]
