@@ -979,6 +979,7 @@ function AssistantRow({
   runs?: number;
 }) {
   const [open, setOpen] = useState(false);
+  const [limit, setLimit] = useState(ASSISTANT_SHOWN);
   const [anchor, setAnchor] = useState<DOMRect | null>(null);
   const menuKey = "assistant:" + a.dir;
   const latest = nodes[0]?.session;
@@ -1194,10 +1195,9 @@ function AssistantRow({
           )}
         </PopMenu>
       )}
-      {open &&
-        nodes
-          .slice(0, 12)
-          .map((n) => (
+      {open && (
+        <>
+          {visibleNodes(nodes, limit, actions.activeId).map((n) => (
             <SessionRow
               key={n.session.id}
               node={n}
@@ -1206,8 +1206,50 @@ function AssistantRow({
               actions={actions}
             />
           ))}
+          {nodes.length > limit && (
+            <button
+              type="button"
+              className="show-more"
+              style={{ paddingLeft: 36 }}
+              onClick={() => setLimit(limit + 15)}
+            >
+              Show {Math.min(15, nodes.length - limit)} more
+            </button>
+          )}
+          {limit > ASSISTANT_SHOWN && (
+            <button
+              type="button"
+              className="show-more"
+              style={{ paddingLeft: 36 }}
+              onClick={() => setLimit(ASSISTANT_SHOWN)}
+            >
+              Show less
+            </button>
+          )}
+        </>
+      )}
     </>
   );
+}
+
+// An assistant's sessions shown at first when its row is open, newest
+// first; Show more adds 15 at a time, as a project's do.
+export const ASSISTANT_SHOWN = 5;
+
+// The sessions an open assistant row lists: the first limit, and the
+// selected one (or the one holding it) even past the limit.
+export function visibleNodes(
+  nodes: Node[],
+  limit: number,
+  activeId?: string | null,
+): Node[] {
+  const shown = nodes.slice(0, limit);
+  const selected = nodes.find(
+    (n) =>
+      n.session.id === activeId ||
+      n.children.some((c) => c.session.id === activeId),
+  );
+  return selected && !shown.includes(selected) ? [...shown, selected] : shown;
 }
 
 function needsYouBadge(nodes: Node[], more = 0) {
