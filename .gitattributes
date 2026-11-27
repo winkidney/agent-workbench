@@ -1,1 +1,4 @@
 internal/workbench/assistant/** text eol=lf
+# Golden files compared byte for byte (claude_records_test.go) and read by
+# the page tests: a Windows checkout must not turn them into CRLF.
+internal/workbench/testdata/claude/** text eol=lf
