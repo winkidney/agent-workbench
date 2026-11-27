@@ -5,6 +5,7 @@ import {
   newDraft,
   routineLabel,
   routineOf,
+  routineState,
   shortTime,
   type Routine,
 } from "./when";
@@ -167,5 +168,26 @@ describe("cron routines", () => {
         created: "",
       } as Routine).cron,
     ).toBe("@weekly");
+  });
+});
+
+describe("routineState", () => {
+  const now = new Date(2026, 10, 27, 9, 0);
+  const r = (over: Partial<Routine>) =>
+    ({ id: "r", name: "n", enabled: true, ...over }) as Routine;
+  it("says when an on routine runs next", () => {
+    expect(
+      routineState(
+        r({ next: new Date(2026, 10, 27, 10, 0).toISOString() }),
+        now,
+      ),
+    ).toBe("Next today 10:00");
+    expect(routineState(r({}), now)).toBe("");
+  });
+  it("says off, and waiting for a turned-off assistant before anything", () => {
+    expect(routineState(r({ enabled: false }), now)).toBe("Off");
+    expect(routineState(r({ assistantOff: true, enabled: false }), now)).toBe(
+      "Waiting: its assistant is turned off",
+    );
   });
 });

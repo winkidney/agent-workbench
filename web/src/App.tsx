@@ -71,6 +71,7 @@ import {
   DialogTitle as AboutTitle,
 } from "./components/ui/dialog";
 import { SettingsDialog } from "./components/settings/SettingsDialog";
+import { OPEN_ROUTINE_EVENT } from "./routines/open";
 import { LogoMark } from "./components/Logo";
 import { PreviewPanel } from "./preview/PreviewPanel";
 import { FileList, type Entry } from "./preview/FileList";
@@ -399,10 +400,23 @@ export default function App() {
   }, []);
   // Settings, on a given tab when one is asked for.
   const [settingsTab, setSettingsTab] = useState<"routines" | undefined>();
+  // A routine Settings opens on (routines/open.ts), until it closes.
+  const [settingsRoutine, setSettingsRoutine] = useState<string>();
   const openSettings = (tab?: "routines") => {
     setSettingsTab(tab);
     setSettingsOpen(true);
   };
+  useEffect(() => {
+    const show = ((e: CustomEvent<string>) => {
+      setSettingsRoutine(e.detail);
+      openSettings("routines");
+    }) as EventListener;
+    window.addEventListener(OPEN_ROUTINE_EVENT, show);
+    return () => window.removeEventListener(OPEN_ROUTINE_EVENT, show);
+  }, []);
+  useEffect(() => {
+    if (!settingsOpen) setSettingsRoutine(undefined);
+  }, [settingsOpen]);
   useEffect(() => {
     if (!paired) return;
     const source = new EventSource(
@@ -2065,6 +2079,7 @@ export default function App() {
           assistants={assistantList}
           onOpenAssistant={openAssistant}
           openTab={settingsTab}
+          openRoutine={settingsRoutine}
         />
         {settingsFor &&
           (() => {

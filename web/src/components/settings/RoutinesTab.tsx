@@ -1,14 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import {
-  ChevronDown,
-  ChevronRight,
-  Pencil,
-  Plus,
-  Trash2,
-} from "lucide-react";
+import { ChevronDown, ChevronRight, Pencil, Plus, Trash2 } from "lucide-react";
 import { api } from "../../lib/api";
 import {
-  describeWhen,
   draftOf,
   heartbeatSummary,
   newDraft,
@@ -21,7 +14,7 @@ import {
   type RoutineRun,
 } from "../../routines/when";
 import { Heartbeat } from "../../routines/Heartbeat";
-import { RunNowButton } from "../../routines/RunNowButton";
+import { RoutineLine } from "../../routines/RoutineLine";
 import { Button } from "../ui/button";
 import { groupRoutines, type Assistant } from "../../lib/assistants";
 
@@ -35,6 +28,7 @@ export function RoutinesTab({
   onEdit,
   onOpenSession,
   assistants = [],
+  focus,
 }: {
   open: boolean;
   sessionTitle: (id: string) => string;
@@ -43,6 +37,8 @@ export function RoutinesTab({
   onOpenSession?: (id: string) => void;
   // For grouping by assistant (lib/assistants.ts groupRoutines).
   assistants?: Assistant[];
+  // A routine to open on its runs (routines/open.ts).
+  focus?: string;
 }) {
   const [list, setList] = useState<Routine[] | null>(null);
   const [error, setError] = useState("");
@@ -94,6 +90,31 @@ export function RoutinesTab({
         : "To the assistant " + t.assistant;
     return `New ${t.agent === "claude" ? "Claude" : "Codex"} session in ${t.cwd}`;
   };
+  // Who made it, when not the user in this page.
+  const made = (r: Routine) => {
+    const by = r.createdBy;
+    if (by === "agent:cli") return "made from a terminal";
+    if (by.startsWith("agent:"))
+      return `made by the agent in ${sessionTitle(by.slice(6))}`;
+    if (by.startsWith("file:")) return `from ${by.slice(5)}/assistant.toml`;
+    return "";
+  };
+  const expand = (id: string) => {
+    setShown(id);
+    setPicked(null);
+    void loadRuns(id);
+  };
+  const collapse = () => {
+    setShown(null);
+    setPicked(null);
+  };
+  // Opened on one routine (routines/open.ts): it opens on its runs, in view.
+  const focused = useCallback((el: HTMLLIElement | null) => {
+    el?.scrollIntoView({ block: "nearest" });
+  }, []);
+  useEffect(() => {
+    if (open && focus) expand(focus);
+  }, [open, focus]);
   return (
     <>
       <section className="settings-section">
@@ -131,117 +152,70 @@ export function RoutinesTab({
             {g.items.map((r) => {
               const open = shown === r.id;
               return (
-                <li key={r.id} className="routine-item">
-                  <div className="routine-head">
-                    <button
-                      type="button"
-                      className="routine-toggle"
-                      aria-expanded={open}
-                      onClick={() => {
-                        setShown(open ? null : r.id);
-                        setPicked(null);
-                        if (!open) void loadRuns(r.id);
-                      }}
-                    >
-                      {open ? (
-                        <ChevronDown size={14} />
-                      ) : (
-                        <ChevronRight size={14} />
-                      )}
-                      <span className="routine-name">{r.name}</span>
-                    </button>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={r.enabled}
-                      aria-label={r.enabled ? "Turn off" : "Turn on"}
-                      className="routine-switch"
-                      onClick={() =>
-                        void act(`routines/${r.id}`, "PATCH", {
-                          enabled: !r.enabled,
-                        })
-                      }
-                    >
-                      {r.enabled ? "On" : "Off"}
-                    </button>
-                  </div>
+                <li
+                  key={r.id}
+                  className="routine-item"
+                  ref={r.id === focus ? focused : undefined}
+                >
+                  <RoutineLine
+                    routine={r}
+                    head={
+                      <button
+                        type="button"
+                        className="routine-toggle"
+                        aria-expanded={open}
+                        onClick={() => (open ? collapse() : expand(r.id))}
+                      >
+                        {open ? (
+                          <ChevronDown size={14} />
+                        ) : (
+                          <ChevronRight size={14} />
+                        )}
+                        <span className="routine-name">{r.name}</span>
+                      </button>
+                    }
+                    heartbeat={!open}
+                    onChanged={() => {
+                      void load();
+                      if (open) void loadRuns(r.id);
+                    }}
+                    onOpenRuns={() => expand(r.id)}
+                  />
                   <p className="routine-meta">
-                    {describeWhen(r.when)}
-                    {r.command && (
-                      <>
-                        {" · "}
-                        <code>{r.command.run}</code>
-                      </>
-                    )}
-                    {" · "}
-                    {target(r)}
-                    {r.createdBy === "agent:cli" && " · made from a terminal"}
-                    {r.createdBy.startsWith("agent:") &&
-                      r.createdBy !== "agent:cli" &&
-                      ` · made by the agent in ${sessionTitle(r.createdBy.slice(6))}`}
-                    {r.createdBy.startsWith("file:") &&
-                      ` · from ${r.createdBy.slice(5)}/assistant.toml`}
+                    {[
+                      r.command && <code key="c">{r.command.run}</code>,
+                      target(r),
+                      made(r),
+                    ]
+                      .filter(Boolean)
+                      .flatMap((part, i) => (i ? [" · ", part] : [part]))}
                   </p>
-                  <div className="routine-meta routine-pulse">
-                    {!open && (
-                      <Heartbeat
-                        compact
-                        runs={r.recent ?? []}
-                        onOpen={() => {
-                          setShown(r.id);
-                          setPicked(null);
-                          void loadRuns(r.id);
-                        }}
-                      />
-                    )}
-                    <span>
-                      {r.assistantOff
-                        ? "Waiting: its assistant is turned off"
-                        : r.enabled && r.next
-                          ? `Next ${shortTime(r.next)}`
-                          : "Off"}
-                    </span>
-                    {r.last?.status === "failed" && (
-                      <span className="routine-last-failed">
-                        Last run failed
-                      </span>
-                    )}
-                  </div>
                   {open && (
                     <div className="routine-details">
-                      <div className="routine-actions">
-                        <RunNowButton
-                          id={r.id}
-                          onStarted={() => {
-                            void load();
-                            void loadRuns(r.id);
-                          }}
-                        />
-                        {/* An assistant's routines change in its file. */}
-                        {!r.createdBy.startsWith("file:") && (
-                          <>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => onEdit(draftOf(r))}
-                            >
-                              <Pencil size={14} />
-                              Edit
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                if (confirm(`Delete the routine “${r.name}”?`))
-                                  void act(`routines/${r.id}`, "DELETE");
-                              }}
-                            >
-                              <Trash2 size={14} />
-                              Delete
-                            </Button>
-                          </>
-                        )}
-                      </div>
+                      {/* An assistant's routines change in its file. */}
+                      {!r.createdBy.startsWith("file:") && (
+                        <div className="routine-actions">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => onEdit(draftOf(r))}
+                          >
+                            <Pencil size={14} />
+                            Edit
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              if (confirm(`Delete the routine “${r.name}”?`))
+                                void act(`routines/${r.id}`, "DELETE");
+                            }}
+                          >
+                            <Trash2 size={14} />
+                            Delete
+                          </Button>
+                        </div>
+                      )}
                       <RunHistory
                         runs={runs}
                         picked={picked}

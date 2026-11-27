@@ -6331,11 +6331,50 @@ span.heartbeat.compact {
 .heartbeat-tip-time {
   color: var(--muted-foreground);
 }
-.routine-pulse {
+/* A routine as every list shows it (routines/RoutineLine.tsx): its name
+   with the switch and Run now, then when it runs and its heartbeat. On a
+   narrow screen the controls wrap under the name. */
+.routine-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.routine-line-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 8px;
+  min-width: 0;
+  font-size: 14px;
+}
+.routine-line-head > .routine-name,
+.routine-line-head > .routine-toggle {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.routine-line-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin-left: auto;
+}
+.routine-line-meta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 4px 10px;
+  margin-top: 2px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+/* Under the expand chevron in Settings → Routines. */
+.routine-item .routine-line-meta {
+  margin-left: 20px;
 }
 .routine-last-failed {
   color: var(--destructive);
@@ -6434,11 +6473,6 @@ span.heartbeat.compact {
 }
 .run-detail .routine-output {
   align-self: stretch;
-}
-.assistant-home-pulse {
-  display: inline-flex;
-  margin-left: 8px;
-  vertical-align: middle;
 }
 .routine-output {
   max-height: 220px;
@@ -6740,15 +6774,6 @@ span.heartbeat.compact {
 }
 .assistant-settings-hint {
   font-size: 11.5px;
-}
-.assistant-settings-routine {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.assistant-settings-routine > span {
-  flex: 1;
-  min-width: 0;
 }
 .assistant-setup-hint {
   color: var(--primary);

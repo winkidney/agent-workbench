@@ -12,8 +12,9 @@ import {
   routinesOf,
   type Assistant,
 } from "../lib/assistants";
-import { describeWhen, type Routine } from "../routines/when";
-import { RunNowButton } from "../routines/RunNowButton";
+import type { Routine } from "../routines/when";
+import { RoutineLine } from "../routines/RoutineLine";
+import { openRoutine } from "../routines/open";
 
 type Agent = "claude" | "codex";
 
@@ -120,10 +121,6 @@ export function AssistantSettings({
       setBusy(false);
     }
   };
-  const act = (path: string, method: string, body?: unknown) =>
-    api(path, method, body)
-      .then(loadRoutines)
-      .catch((e) => setError(e instanceof Error ? e.message : String(e)));
   const main = a.dir === "main";
   return (
     <Dialog open onOpenChange={(open) => !open && !busy && onClose()}>
@@ -265,31 +262,16 @@ export function AssistantSettings({
           {routines.length > 0 && (
             <div className="assistant-settings-block">
               <span className="routine-label">Routines</span>
-              <ul className="assistant-home-list">
+              <ul className="routine-lines">
                 {routines.map((r) => (
-                  <li key={r.id} className="assistant-settings-routine">
-                    <span>
-                      {r.name} · {describeWhen(r.when)}
-                    </span>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={r.enabled}
-                      aria-label={`${r.name}: ${r.enabled ? "turn off" : "turn on"}`}
-                      className="routine-switch"
-                      onClick={() =>
-                        void act(`routines/${r.id}`, "PATCH", {
-                          enabled: !r.enabled,
-                        })
-                      }
-                    >
-                      {r.enabled ? "On" : "Off"}
-                    </button>
-                    <RunNowButton
-                      id={r.id}
-                      iconSize={13}
-                      disabled={r.assistantOff}
-                      onStarted={() => void loadRoutines()}
+                  <li key={r.id}>
+                    <RoutineLine
+                      routine={r}
+                      onChanged={() => void loadRoutines()}
+                      onOpenRuns={() => {
+                        onClose();
+                        openRoutine(r.id);
+                      }}
                     />
                   </li>
                 ))}

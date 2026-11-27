@@ -102,6 +102,15 @@ export function shortTime(iso: string, now = new Date()): string {
   return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())} ${clock}`;
 }
 
+// Whether a routine runs, and when next, as every list says it
+// (routines/RoutineLine.tsx). An on routine with no next time (a once
+// routine that ran) says nothing.
+export function routineState(r: Routine, now = new Date()): string {
+  if (r.assistantOff) return "Waiting: its assistant is turned off";
+  if (!r.enabled) return "Off";
+  return r.next ? `Next ${shortTime(r.next, now)}` : "";
+}
+
 // The value of a datetime-local input for a time, and back.
 export function localInput(d: Date): string {
   return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}T${two(d.getHours())}:${two(d.getMinutes())}`;

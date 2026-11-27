@@ -15,8 +15,9 @@ import {
   setUpAssistant,
   type Assistant,
 } from "../lib/assistants";
-import { describeWhen, firstLine, type Routine } from "../routines/when";
-import { Heartbeat } from "../routines/Heartbeat";
+import { firstLine, type Routine } from "../routines/when";
+import { RoutineLine } from "../routines/RoutineLine";
+import { openRoutine } from "../routines/open";
 import { MossIcon } from "../components/MossIcon";
 import { Button } from "../components/ui/button";
 import { Markdown } from "../transcript/Markdown";
@@ -170,22 +171,14 @@ export function AssistantHome({
       {routines && routines.length > 0 && (
         <>
           <h3>Routines</h3>
-          <ul className="assistant-home-list">
+          <ul className="routine-lines" aria-label="Routines">
             {routines.map((r) => (
               <li key={r.id}>
-                {r.name} · {describeWhen(r.when)} ·{" "}
-                <span className="subtle">
-                  {r.assistantOff
-                    ? "waiting (turned off)"
-                    : r.enabled
-                      ? "on"
-                      : "off"}
-                </span>
-                {!!r.recent?.length && (
-                  <span className="assistant-home-pulse">
-                    <Heartbeat compact runs={r.recent} />
-                  </span>
-                )}
+                <RoutineLine
+                  routine={r}
+                  onChanged={() => setReload((n) => n + 1)}
+                  onOpenRuns={() => openRoutine(r.id)}
+                />
               </li>
             ))}
           </ul>

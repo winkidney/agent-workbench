@@ -23,11 +23,14 @@ export function runNowNote(run: RoutineRun): RunNowNote {
 export function RunNowButton({
   id,
   disabled,
+  title,
   iconSize = 14,
   onStarted,
 }: {
   id: string;
   disabled?: boolean;
+  // Why it is disabled.
+  title?: string;
   iconSize?: number;
   onStarted?: (run: RoutineRun) => void;
 }) {
@@ -59,6 +62,7 @@ export function RunNowButton({
         variant="ghost"
         size="sm"
         disabled={disabled || busy}
+        title={title}
         onClick={() => void run()}
       >
         {busy ? (

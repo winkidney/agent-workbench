@@ -104,6 +104,7 @@ export function SettingsDialog({
   assistants,
   onOpenAssistant,
   openTab,
+  openRoutine,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -113,6 +114,8 @@ export function SettingsDialog({
   onOpenAssistant: (dir: string) => void;
   // A tab to show when it opens (the ⋯ menu's Routines).
   openTab?: SettingsTab;
+  // A routine to show open on its runs, on the Routines tab.
+  openRoutine?: string;
 }) {
   const [tab, setTab] = useState<SettingsTab>(storedTab);
   useEffect(() => {
@@ -194,6 +197,7 @@ export function SettingsDialog({
               openSessionLater(id);
             }}
             assistants={assistants.assistants}
+            focus={openRoutine}
           />
         </div>
         <div {...panel("usage")}>
