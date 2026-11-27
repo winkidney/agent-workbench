@@ -75,3 +75,47 @@ func TestClaudeOptionsFollowNativeIdentity(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+// The context follows each reply of the main conversation, with the window
+// a result names, or the last one known before that.
+func TestClaudeContextFollowsReplies(t *testing.T) {
+	m, _ := fixture(t)
+	s, _ := m.Create("claude", t.TempDir(), "test")
+	m.store.setting("telemetry:"+s.ID, Telemetry{Context: map[string]any{"used": 10.0, "window": 500000.0}})
+	r := m.sessions[s.ID]
+	r.proc = &sideProcess{}
+	feed := func(line string) {
+		v := map[string]any{}
+		if err := json.Unmarshal([]byte(line), &v); err != nil {
+			t.Fatal(err)
+		}
+		m.track(r, v)
+	}
+	feed(`{"type":"assistant","parent_tool_use_id":null,"message":{"model":"opus","usage":{"input_tokens":2,"cache_read_input_tokens":900,"cache_creation_input_tokens":98,"output_tokens":7}}}`)
+	if c := m.Telemetry(s.ID).Context; c["used"] != 1000.0 || c["window"] != 500000.0 || c["estimated"] != false {
+		t.Fatalf("before a result: %v", c)
+	}
+	// A subagent's reply is not this conversation's context.
+	feed(`{"type":"assistant","parent_tool_use_id":"toolu_1","message":{"usage":{"input_tokens":5,"cache_read_input_tokens":50000}}}`)
+	feed(`{"type":"result","usage":{"input_tokens":2},"modelUsage":{"haiku":{"contextWindow":200000},"opus":{"contextWindow":1000000}}}`)
+	if c := m.Telemetry(s.ID).Context; c["used"] != 1000.0 || c["window"] != 1000000.0 {
+		t.Fatalf("after the result: %v", c)
+	}
+	var saved Telemetry
+	m.store.readSetting("telemetry:"+s.ID, &saved)
+	if saved.Context["used"] != 1000.0 || saved.Context["window"] != 1000000.0 {
+		t.Fatalf("saved: %v", saved.Context)
+	}
+}
+
+func TestClaudeResultKeepsSavedContext(t *testing.T) {
+	m, _ := fixture(t)
+	s, _ := m.Create("claude", t.TempDir(), "test")
+	m.store.setting("telemetry:"+s.ID, Telemetry{Context: map[string]any{"used": 10.0, "window": 500000.0}})
+	m.track(m.sessions[s.ID], map[string]any{"type": "result"})
+	var saved Telemetry
+	m.store.readSetting("telemetry:"+s.ID, &saved)
+	if saved.Context["window"] != 500000.0 {
+		t.Fatalf("saved: %v", saved.Context)
+	}
+}

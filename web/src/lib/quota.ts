@@ -63,8 +63,15 @@ export function quotaWindows(
       }));
     });
   }
-  const limits = usage?.rate_limits?.limits;
-  return (Array.isArray(limits) ? limits : []).filter(Boolean).map((q) => ({
+  const rates = usage?.rate_limits;
+  // Some get_usage replies carry only the older five_hour and seven_day.
+  const limits = Array.isArray(rates?.limits)
+    ? rates.limits
+    : [
+        rates?.five_hour && { kind: "session", ...rates.five_hour },
+        rates?.seven_day && { kind: "weekly_all", ...rates.seven_day },
+      ].map((w) => w && { ...w, percent: w.percent ?? w.utilization });
+  return limits.filter(Boolean).map((q: any) => ({
     kind: q.kind,
     label:
       q.kind === "session"

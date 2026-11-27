@@ -420,7 +420,12 @@ func (m *Manager) telemetry(id string) Telemetry {
 		if native.Reading {
 			t.Reading = true
 		} else if native.Total != nil && native.Updated > t.Updated {
+			saved := t.Context
 			t = native
+			// The record names the context used, not the model's window.
+			if t.Context != nil && t.Context["window"] == nil && saved != nil {
+				t.Context = withWindow(t.Context, saved["window"])
+			}
 		}
 	}
 	t.Options = o
@@ -442,7 +447,12 @@ func (m *Manager) telemetry(id string) Telemetry {
 			t.Last = r.usage
 		}
 		if r.context != nil {
+			saved := t.Context
 			t.Context = r.context
+			// The window is named by a turn's result; until then, the last known.
+			if r.context["window"] == nil && saved != nil {
+				t.Context = withWindow(r.context, saved["window"])
+			}
 		}
 		t.Updated = r.last.UTC().Format(time.RFC3339)
 		t.Average = r.average
@@ -506,14 +516,24 @@ func (m *Manager) track(r *runtime, v map[string]any) {
 		m.store.cacheSet(m.claudeInitKey(r.session.Cwd), claudeInitInfo{Skills: strs(v["skills"]), Terminal: strs(v["terminal_slash_commands"])})
 	}
 	if v["type"] == "assistant" {
-		model := str(obj(v["message"])["model"])
+		msg := obj(v["message"])
+		model := str(msg["model"])
 		if model != "" {
 			r.effective.Model = model
+		}
+		// Each reply of the main conversation says how much context it was
+		// given, so the figure follows the turn; a subagent's replies have
+		// their own context.
+		if used, ok := claudeContextUsed(msg); ok && v["parent_tool_use_id"] == nil {
+			r.context = map[string]any{"used": used, "window": r.context["window"], "estimated": false}
 		}
 	}
 	if v["type"] == "result" {
 		r.usage = obj(v["usage"])
 		models := obj(v["modelUsage"])
+		if w := claudeWindow(models, r.effective.Model); w > 0 && r.context != nil {
+			r.context = withWindow(r.context, w)
+		}
 		if len(models) > 0 {
 			total := map[string]any{}
 			for _, value := range models {
@@ -543,7 +563,14 @@ func (m *Manager) track(r *runtime, v map[string]any) {
 		if !r.began.IsZero() {
 			r.average = out / time.Since(r.began).Seconds()
 		}
-		m.store.setting("telemetry:"+r.session.ID, Telemetry{Total: r.total, Last: r.usage, Context: r.context, Effective: r.effective, Average: r.average, Updated: time.Now().UTC().Format(time.RFC3339), Scope: "Native CLI session totals"})
+		ctx := r.context
+		if ctx == nil {
+			// Not known in this run yet: keep the last figure saved.
+			var saved Telemetry
+			m.store.readSetting("telemetry:"+r.session.ID, &saved)
+			ctx = saved.Context
+		}
+		m.store.setting("telemetry:"+r.session.ID, Telemetry{Total: r.total, Last: r.usage, Context: ctx, Effective: r.effective, Average: r.average, Updated: time.Now().UTC().Format(time.RFC3339), Scope: "Native CLI session totals"})
 	}
 }
 func codexOptions(params map[string]any, o Options) {
@@ -603,6 +630,46 @@ func (m *Manager) ContextUsage(id string) {
 			m.mu.Unlock()
 		}
 	}
+}
+
+// claudeContextUsed is the context a Claude reply was given: its input,
+// cache read and cache write tokens.
+func claudeContextUsed(msg map[string]any) (float64, bool) {
+	u := obj(msg["usage"])
+	in, ok := u["input_tokens"].(float64)
+	if !ok {
+		return 0, false
+	}
+	read, _ := u["cache_read_input_tokens"].(float64)
+	write, _ := u["cache_creation_input_tokens"].(float64)
+	return in + read + write, true
+}
+
+// claudeWindow is the context window a result's modelUsage names for the
+// model in use, or the largest one named.
+func claudeWindow(models map[string]any, model string) float64 {
+	if w, ok := obj(models[model])["contextWindow"].(float64); ok && w > 0 {
+		return w
+	}
+	best := 0.0
+	for _, m := range models {
+		if w, ok := obj(m)["contextWindow"].(float64); ok && w > best {
+			best = w
+		}
+	}
+	return best
+}
+
+// withWindow is a copy of a context figure with its window.
+func withWindow(c map[string]any, window any) map[string]any {
+	out := make(map[string]any, len(c)+1)
+	for k, v := range c {
+		out[k] = v
+	}
+	if window != nil {
+		out["window"] = window
+	}
+	return out
 }
 
 // usageScan accumulates usage from a native record as it grows.
@@ -682,6 +749,9 @@ func (u *usageScan) add(line []byte, agent string) {
 			u.seen[key] = counts
 			t.Effective.Model = str(msg["model"])
 			t.Last = obj(msg["usage"])
+			if used, ok := claudeContextUsed(msg); ok {
+				t.Context = map[string]any{"used": used, "estimated": false}
+			}
 		}
 	}
 }

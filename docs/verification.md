@@ -1319,3 +1319,7 @@ These are maintainer notes on how each feature of Agent Workbench was verified, 
     - Searching "Proj task" listed all 8 with no fold buttons.
     - No sideways overflow and no page errors. Screenshots inspected.
   - Not exercised in the browser: subsessions and an assistant's rows (no synthetic subagents or assistants repository); unit tests cover them.
+- Claude's 5h, weekly and context figures show again (2026-11-28):
+  - Cause, from the installed service: `get_usage` alternated between `rate_limits.limits` and only `five_hour`/`seven_day`, and the page read only `limits`. Claude's context was read only with `get_context_usage` while the session was idle and its telemetry was asked for, and a turn's result saved an empty context over the last one. Many Claude sessions had none saved.
+  - Vitest (`quota.test.ts`): the reply with only `five_hour` and `seven_day` gives 5h and Weekly. Go (`TestClaudeContextFollowsReplies`, `TestClaudeResultKeepsSavedContext`): the context follows each main-conversation reply (input plus cache read and write), not a subagent's; the window comes from the result's `modelUsage`, or the last one saved; a result without a figure keeps the saved one.
+  - `go test -race ./...` (353) and Vitest (426) passed, and Prettier check. The broken state was seen in the browser on the installed service before the fix; after install, see the release report.

@@ -57,6 +57,24 @@ describe("quota summaries", () => {
       82, 16,
     ]);
   });
+  it("reads Claude's reply that has only five_hour and seven_day", () => {
+    const resets_at = new Date(reset * 1000).toISOString();
+    const usage = {
+      rate_limits: {
+        five_hour: { resets_at, utilization: 2 },
+        seven_day: { resets_at, utilization: 73 },
+      },
+    };
+    expect(
+      quotaSummary("claude", usage, now).map(({ label, left }) => ({
+        label,
+        left,
+      })),
+    ).toEqual([
+      { label: "5h", left: 98 },
+      { label: "Weekly", left: 27 },
+    ]);
+  });
   it("hides absent, invalid and expired windows", () => {
     expect(quotaSummary("codex", undefined, now)).toEqual([]);
     expect(quotaSummary("claude", {}, now)).toEqual([]);
