@@ -95,6 +95,11 @@ func TestClaudeContextFollowsReplies(t *testing.T) {
 	if c := m.Telemetry(s.ID).Context; c["used"] != 1000.0 || c["window"] != 500000.0 || c["estimated"] != false {
 		t.Fatalf("before a result: %v", c)
 	}
+	// A reply the CLI writes itself names no context.
+	feed(`{"type":"assistant","parent_tool_use_id":null,"message":{"model":"<synthetic>","usage":{"input_tokens":0,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}`)
+	if c := m.Telemetry(s.ID).Context; c["used"] != 1000.0 {
+		t.Fatalf("after a synthetic reply: %v", c)
+	}
 	// A subagent's reply is not this conversation's context.
 	feed(`{"type":"assistant","parent_tool_use_id":"toolu_1","message":{"usage":{"input_tokens":5,"cache_read_input_tokens":50000}}}`)
 	feed(`{"type":"result","usage":{"input_tokens":2},"modelUsage":{"haiku":{"contextWindow":200000},"opus":{"contextWindow":1000000}}}`)
@@ -117,5 +122,41 @@ func TestClaudeResultKeepsSavedContext(t *testing.T) {
 	m.store.readSetting("telemetry:"+s.ID, &saved)
 	if saved.Context["window"] != 500000.0 {
 		t.Fatalf("saved: %v", saved.Context)
+	}
+}
+
+// A session whose window is not known (another client runs it) takes the
+// last window a result named for its model.
+func TestClaudeContextTakesTheModelsLastWindow(t *testing.T) {
+	m, _ := fixture(t)
+	a, _ := m.Create("claude", t.TempDir(), "a")
+	r := m.sessions[a.ID]
+	r.effective.Model = "claude-opus-5-5"
+	m.track(r, map[string]any{"type": "result", "modelUsage": map[string]any{"claude-opus-5-5": map[string]any{"contextWindow": 1000000.0}}})
+	b, _ := m.Create("claude", t.TempDir(), "b")
+	m.store.setting("telemetry:"+b.ID, Telemetry{Effective: Options{Model: "claude-opus-5-5"}, Context: map[string]any{"used": 1000.0}})
+	if c := m.Telemetry(b.ID).Context; c["window"] != 1000000.0 {
+		t.Fatalf("context: %v", c)
+	}
+	m.store.setting("telemetry:"+b.ID, Telemetry{Effective: Options{Model: "other"}, Context: map[string]any{"used": 1000.0}})
+	if c := m.Telemetry(b.ID).Context; c["window"] != nil {
+		t.Fatalf("another model's window: %v", c)
+	}
+}
+
+// A window saved for another model is not this one's.
+func TestClaudeContextKeepsOnlyTheSameModelsWindow(t *testing.T) {
+	m, _ := fixture(t)
+	s, _ := m.Create("claude", t.TempDir(), "test")
+	m.store.setting("telemetry:"+s.ID, Telemetry{Effective: Options{Model: "big"}, Context: map[string]any{"used": 10.0, "window": 1000000.0}})
+	r := m.sessions[s.ID]
+	r.proc = &sideProcess{}
+	m.track(r, map[string]any{"type": "assistant", "message": map[string]any{"model": "small", "usage": map[string]any{"input_tokens": 50.0}}})
+	if c := m.Telemetry(s.ID).Context; c["used"] != 50.0 || c["window"] != nil {
+		t.Fatalf("another model's window kept: %v", c)
+	}
+	m.track(r, map[string]any{"type": "assistant", "message": map[string]any{"model": "big", "usage": map[string]any{"input_tokens": 60.0}}})
+	if c := m.Telemetry(s.ID).Context; c["window"] != 1000000.0 {
+		t.Fatalf("the same model's window lost: %v", c)
 	}
 }

@@ -397,6 +397,13 @@ func (m *Manager) applyOptions(id string) error {
 }
 func (m *Manager) Telemetry(id string) Telemetry {
 	t := m.telemetry(id)
+	if t.Context != nil && t.Context["window"] == nil && t.Effective.Model != "" {
+		var w float64
+		m.store.readSetting("context-window:"+t.Effective.Model, &w)
+		if w > 0 {
+			t.Context = withWindow(t.Context, w)
+		}
+	}
 	t.Goal = nil
 	m.store.readSetting("goal:"+id, &t.Goal)
 	m.mu.Lock()
@@ -420,15 +427,14 @@ func (m *Manager) telemetry(id string) Telemetry {
 		if native.Reading {
 			t.Reading = true
 		} else if native.Total != nil && native.Updated > t.Updated {
-			saved := t.Context
+			saved := t
 			t = native
 			// The record names the context used, not the model's window.
-			if t.Context != nil && t.Context["window"] == nil && saved != nil {
-				t.Context = withWindow(t.Context, saved["window"])
-			}
+			t.Context = keepWindow(t.Context, saved, t.Effective.Model)
 		}
 	}
 	t.Options = o
+	saved := t
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if r := m.find(id); r != nil {
@@ -447,12 +453,8 @@ func (m *Manager) telemetry(id string) Telemetry {
 			t.Last = r.usage
 		}
 		if r.context != nil {
-			saved := t.Context
-			t.Context = r.context
 			// The window is named by a turn's result; until then, the last known.
-			if r.context["window"] == nil && saved != nil {
-				t.Context = withWindow(r.context, saved["window"])
-			}
+			t.Context = keepWindow(r.context, saved, r.effective.Model)
 		}
 		t.Updated = r.last.UTC().Format(time.RFC3339)
 		t.Average = r.average
@@ -531,8 +533,15 @@ func (m *Manager) track(r *runtime, v map[string]any) {
 	if v["type"] == "result" {
 		r.usage = obj(v["usage"])
 		models := obj(v["modelUsage"])
-		if w := claudeWindow(models, r.effective.Model); w > 0 && r.context != nil {
-			r.context = withWindow(r.context, w)
+		if w := claudeWindow(models, r.effective.Model); w > 0 {
+			if r.context != nil {
+				r.context = withWindow(r.context, w)
+			}
+			// For sessions of this model whose window is not known yet: one
+			// another client runs, or one that has not finished a turn here.
+			if r.effective.Model != "" {
+				m.store.setting("context-window:"+r.effective.Model, w)
+			}
 		}
 		if len(models) > 0 {
 			total := map[string]any{}
@@ -627,14 +636,22 @@ func (m *Manager) ContextUsage(id string) {
 		if v, e := m.rpc(id, "get_context_usage", map[string]any{"detail": "summary"}); e == nil {
 			m.mu.Lock()
 			r.context = map[string]any{"used": v["totalTokens"], "window": v["maxTokens"], "estimated": true, "categories": v["categories"], "autoCompactThreshold": v["autoCompactThreshold"]}
+			model := r.effective.Model
 			m.mu.Unlock()
+			if w, ok := v["maxTokens"].(float64); ok && w > 0 && model != "" {
+				m.store.setting("context-window:"+model, w)
+			}
 		}
 	}
 }
 
 // claudeContextUsed is the context a Claude reply was given: its input,
-// cache read and cache write tokens.
+// cache read and cache write tokens. A reply the CLI writes itself (a local
+// command's output, an interruption) names none.
 func claudeContextUsed(msg map[string]any) (float64, bool) {
+	if str(msg["model"]) == "<synthetic>" {
+		return 0, false
+	}
 	u := obj(msg["usage"])
 	in, ok := u["input_tokens"].(float64)
 	if !ok {
@@ -642,7 +659,7 @@ func claudeContextUsed(msg map[string]any) (float64, bool) {
 	}
 	read, _ := u["cache_read_input_tokens"].(float64)
 	write, _ := u["cache_creation_input_tokens"].(float64)
-	return in + read + write, true
+	return in + read + write, in+read+write > 0
 }
 
 // claudeWindow is the context window a result's modelUsage names for the
@@ -658,6 +675,18 @@ func claudeWindow(models map[string]any, model string) float64 {
 		}
 	}
 	return best
+}
+
+// keepWindow gives a context figure without a window the one saved before,
+// if that was for the same model.
+func keepWindow(c map[string]any, saved Telemetry, model string) map[string]any {
+	if c == nil || c["window"] != nil || saved.Context == nil {
+		return c
+	}
+	if model != "" && saved.Effective.Model != "" && model != saved.Effective.Model {
+		return c
+	}
+	return withWindow(c, saved.Context["window"])
 }
 
 // withWindow is a copy of a context figure with its window.
