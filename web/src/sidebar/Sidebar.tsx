@@ -60,6 +60,7 @@ import {
 } from "../lib/assistants";
 import { waitingTotal, type WaitingRuns } from "../routines/waiting";
 import { api } from "../lib/api";
+import { LIST_SHOWN, ShowMoreLess, limited } from "./limit";
 import {
   buildSidebar,
   relativeTime,
@@ -299,6 +300,7 @@ const SessionRow = memo(function SessionRow({
     (c) => c.session.id === actions.activeId,
   );
   const [open, setOpen] = useState(childSelected);
+  const [limit, setLimit] = useState(LIST_SHOWN);
   const ref = useRef<HTMLDivElement>(null);
   const menuKey = scope + ":" + s.id;
   const [anchor, setAnchor] = useState<DOMRect | null>(null);
@@ -466,16 +468,31 @@ const SessionRow = memo(function SessionRow({
           onClose={() => actions.setMenu(null)}
         />
       )}
-      {open &&
-        node.children.map((c) => (
-          <SessionRow
-            key={c.session.id}
-            node={c}
+      {open && (
+        <>
+          {limited(
+            node.children,
+            limit,
+            (c) => c.session.id === actions.activeId,
+            !!actions.query,
+          ).map((c) => (
+            <SessionRow
+              key={c.session.id}
+              node={c}
+              depth={depth + 1}
+              scope={scope}
+              actions={actions}
+            />
+          ))}
+          <ShowMoreLess
+            total={node.children.length}
+            limit={limit}
+            setLimit={setLimit}
             depth={depth + 1}
-            scope={scope}
-            actions={actions}
+            all={!!actions.query}
           />
-        ))}
+        </>
+      )}
     </>
   );
 });
@@ -502,7 +519,8 @@ function ProjectNode({
       readStored("workbench-workspaces")[project.path] ??
       (project.pinned || holdsActive),
   );
-  const [limit, setLimit] = useState(6);
+  const [limit, setLimit] = useState(LIST_SHOWN);
+  const [relatedLimit, setRelatedLimit] = useState(LIST_SHOWN);
   const [relatedOpen, setRelatedOpen] = useState(false);
   const [anchor, setAnchor] = useState<DOMRect | null>(null);
   const menuKey = "folder:" + project.path;
@@ -516,14 +534,15 @@ function ProjectNode({
   const expanded = forceOpen || open;
   // Folders and sessions share one list ordered by activity; the entry holding
   // the selected session stays visible beyond the limit.
-  let shown = forceOpen ? project.entries : project.entries.slice(0, limit);
-  const selected = project.entries.find((e) =>
-    e.kind === "project"
-      ? holds(e.project, actions.activeId)
-      : e.node.session.id === actions.activeId ||
-        e.node.children.some((c) => c.session.id === actions.activeId),
+  const shown = limited(
+    project.entries,
+    limit,
+    (e) =>
+      e.kind === "project"
+        ? holds(e.project, actions.activeId)
+        : holdsNode(e.node, actions.activeId),
+    forceOpen,
   );
-  if (selected && !shown.includes(selected)) shown = [...shown, selected];
   const pinOp: PrefsOp = project.pinned ? "unpinWorkspace" : "pinWorkspace";
   const showRelated = forceOpen || relatedOpen;
   return (
@@ -649,26 +668,13 @@ function ProjectNode({
               />
             ),
           )}
-          {!forceOpen && project.entries.length > limit && (
-            <button
-              type="button"
-              className="show-more"
-              style={{ paddingLeft: 36 + depth * 12 }}
-              onClick={() => setLimit(limit + 15)}
-            >
-              Show {Math.min(15, project.entries.length - limit)} more
-            </button>
-          )}
-          {!forceOpen && limit > 6 && (
-            <button
-              type="button"
-              className="show-more"
-              style={{ paddingLeft: 36 + depth * 12 }}
-              onClick={() => setLimit(6)}
-            >
-              Show less
-            </button>
-          )}
+          <ShowMoreLess
+            total={project.entries.length}
+            limit={limit}
+            setLimit={setLimit}
+            depth={depth + 1}
+            all={forceOpen}
+          />
           {project.related.length > 0 && (
             <>
               <button
@@ -686,7 +692,12 @@ function ProjectNode({
                 Related · {project.related.length}
               </button>
               {showRelated &&
-                project.related.map((n) => (
+                limited(
+                  project.related,
+                  relatedLimit,
+                  (n) => holdsNode(n, actions.activeId),
+                  forceOpen,
+                ).map((n) => (
                   <SessionRow
                     key={"related:" + n.session.id}
                     node={n}
@@ -702,6 +713,15 @@ function ProjectNode({
                     actions={actions}
                   />
                 ))}
+              {showRelated && (
+                <ShowMoreLess
+                  total={project.related.length}
+                  limit={relatedLimit}
+                  setLimit={setRelatedLimit}
+                  depth={depth + 1}
+                  all={forceOpen}
+                />
+              )}
             </>
           )}
           {!project.nodes.length &&
@@ -733,20 +753,21 @@ function OtherGroup({
   actions: Actions;
   forceOpen: boolean;
 }) {
-  const holdsActive = nodes.some(
-    (n) =>
-      n.session.id === actions.activeId ||
-      n.children.some((c) => c.session.id === actions.activeId),
-  );
+  const holdsActive = nodes.some((n) => holdsNode(n, actions.activeId));
   const [open, setOpen] = useState(
     () => readStored("workbench-workspaces")[id] ?? holdsActive,
   );
-  const [limit, setLimit] = useState(8);
+  const [limit, setLimit] = useState(LIST_SHOWN);
   useEffect(() => {
     if (holdsActive) setOpen(true);
   }, [holdsActive]);
   const expanded = forceOpen || open;
-  const shown = forceOpen ? nodes : nodes.slice(0, limit);
+  const shown = limited(
+    nodes,
+    limit,
+    (n) => holdsNode(n, actions.activeId),
+    forceOpen,
+  );
   return (
     <section
       className="project other-group"
@@ -780,15 +801,12 @@ function OtherGroup({
               actions={actions}
             />
           ))}
-          {!forceOpen && nodes.length > limit && (
-            <button
-              type="button"
-              className="show-more"
-              onClick={() => setLimit(limit + 20)}
-            >
-              Show {Math.min(20, nodes.length - limit)} more
-            </button>
-          )}
+          <ShowMoreLess
+            total={nodes.length}
+            limit={limit}
+            setLimit={setLimit}
+            all={forceOpen}
+          />
         </div>
       )}
     </section>
@@ -979,7 +997,11 @@ function AssistantRow({
   runs?: number;
 }) {
   const [open, setOpen] = useState(false);
-  const [limit, setLimit] = useState(ASSISTANT_SHOWN);
+  const [limit, setLimit] = useState(LIST_SHOWN);
+  // Searching: its matching sessions are listed, all of them, as a
+  // project's are.
+  const searching = !!actions.query && nodes.length > 0;
+  const listed = open || searching;
   const [anchor, setAnchor] = useState<DOMRect | null>(null);
   const menuKey = "assistant:" + a.dir;
   const latest = nodes[0]?.session;
@@ -1028,12 +1050,12 @@ function AssistantRow({
             type="button"
             className="tree-toggle"
             aria-label={
-              open ? "Hide its sessions" : `Show its ${nodes.length} sessions`
+              listed ? "Hide its sessions" : `Show its ${nodes.length} sessions`
             }
-            aria-expanded={open}
-            onClick={() => setOpen(!open)}
+            aria-expanded={listed}
+            onClick={() => setOpen(!listed)}
           >
-            <ChevronRight size={12} className={open ? "chev open" : "chev"} />
+            <ChevronRight size={12} className={listed ? "chev open" : "chev"} />
           </button>
         ) : (
           <span className="tree-spacer" />
@@ -1195,9 +1217,14 @@ function AssistantRow({
           )}
         </PopMenu>
       )}
-      {open && (
+      {listed && (
         <>
-          {visibleNodes(nodes, limit, actions.activeId).map((n) => (
+          {limited(
+            nodes,
+            limit,
+            (n) => holdsNode(n, actions.activeId),
+            searching,
+          ).map((n) => (
             <SessionRow
               key={n.session.id}
               node={n}
@@ -1206,50 +1233,21 @@ function AssistantRow({
               actions={actions}
             />
           ))}
-          {nodes.length > limit && (
-            <button
-              type="button"
-              className="show-more"
-              style={{ paddingLeft: 36 }}
-              onClick={() => setLimit(limit + 15)}
-            >
-              Show {Math.min(15, nodes.length - limit)} more
-            </button>
-          )}
-          {limit > ASSISTANT_SHOWN && (
-            <button
-              type="button"
-              className="show-more"
-              style={{ paddingLeft: 36 }}
-              onClick={() => setLimit(ASSISTANT_SHOWN)}
-            >
-              Show less
-            </button>
-          )}
+          <ShowMoreLess
+            total={nodes.length}
+            limit={limit}
+            setLimit={setLimit}
+            all={searching}
+          />
         </>
       )}
     </>
   );
 }
 
-// An assistant's sessions shown at first when its row is open, newest
-// first; Show more adds 15 at a time, as a project's do.
-export const ASSISTANT_SHOWN = 5;
-
-// The sessions an open assistant row lists: the first limit, and the
-// selected one (or the one holding it) even past the limit.
-export function visibleNodes(
-  nodes: Node[],
-  limit: number,
-  activeId?: string | null,
-): Node[] {
-  const shown = nodes.slice(0, limit);
-  const selected = nodes.find(
-    (n) =>
-      n.session.id === activeId ||
-      n.children.some((c) => c.session.id === activeId),
-  );
-  return selected && !shown.includes(selected) ? [...shown, selected] : shown;
+// Whether the session is n's, or one of its subsessions.
+export function holdsNode(n: Node, id?: string | null): boolean {
+  return n.session.id === id || n.children.some((c) => c.session.id === id);
 }
 
 function needsYouBadge(nodes: Node[], more = 0) {

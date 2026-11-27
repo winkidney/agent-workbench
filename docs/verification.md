@@ -1310,3 +1310,12 @@ These are maintainer notes on how each feature of Agent Workbench was verified, 
     - Dismiss took one held run off the card; Start now sent the other at once.
     - No sideways overflow and no page errors. Screenshots inspected.
   - Not exercised: a real Claude conversation holding the lane while it asks questions; Codex.
+- Every long session list in the sidebar folds the same way (2026-11-28): `limit.tsx` holds the rule. Lists show their newest five, Show more adds 15, Show less folds back, the open session stays listed, and a search shows every match. It covers a project's entries, an assistant's sessions (which a search now also opens in full), a session's subsessions, a project's related sessions and the Other groups. Before, these were 6/+15, 12 with no more, all, all and 8/+20 with no Show less. Pinned and Active are not folded.
+  - Vitest (`limit.test.tsx`): the count, the open session and a subsession's parent kept past the limit, everything while searching, and the Show more / Show less wording and indent. Vitest (425), typecheck and Prettier check passed.
+  - Isolated instance: loopback port, its own data directory and home, synthetic Claude transcripts for 8 sessions of a project under `/dev/shm` and 7 in a temporary folder, no agent on PATH. Playwright, light 1280×900 and dark 390×844.
+    - The project listed 5 with "Show 3 more", then 8 with "Show less".
+    - With the oldest session open, Show less left 6: the open one stayed listed.
+    - The Temporary group listed 5 with "Show 2 more".
+    - Searching "Proj task" listed all 8 with no fold buttons.
+    - No sideways overflow and no page errors. Screenshots inspected.
+  - Not exercised in the browser: subsessions and an assistant's rows (no synthetic subagents or assistants repository); unit tests cover them.
