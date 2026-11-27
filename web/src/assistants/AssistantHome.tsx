@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
+  ArrowLeft,
   Eye,
   FileText,
   Settings,
@@ -214,8 +215,10 @@ export function AssistantHome({
   );
 }
 
-// Links in a preview do nothing: it shows outside content (a mail's sender
-// and subject), and the user only reads it before deciding (ADR 0023).
+// A preview shows outside content (a mail's sender and subject), and the
+// user only reads it before deciding (ADR 0023): its links do nothing, but a
+// link to a Markdown file beside the preview (a mail's file) shows that file
+// in place (ADR 0026), and the links in that file do nothing at all.
 const PREVIEW_ENV: Env = {
   cwd: "",
   openUrl: () => {},
@@ -225,6 +228,15 @@ const PREVIEW_ENV: Env = {
   locate: () => {},
   view: () => {},
 };
+
+// The API path that reads a file a preview links to: a relative .md path
+// only; the server checks it stays in the preview's folder (ADR 0026).
+export function previewFilePath(routine: string, path: string): string | null {
+  const p = path.trim().replace(/^\.\//, "");
+  if (!p || p.startsWith("/") || /^[a-z]+:/i.test(p) || !/\.md$/i.test(p))
+    return null;
+  return `routines/${encodeURIComponent(routine)}/preview?file=${encodeURIComponent(p)}`;
+}
 
 // A routine whose runs wait for approval (ADR 0021). With a preview, the
 // workbench reads the file itself and shows it here, on any page, and
@@ -248,6 +260,35 @@ export function WaitingCard({
   const [text, setText] = useState<string | null>(null);
   const [failed, setFailed] = useState("");
   const [seen, setSeen] = useState("");
+  // The file a preview link opened, shown in place of the list.
+  const [file, setFile] = useState<{
+    path: string;
+    text: string | null;
+    failed: string;
+  } | null>(null);
+  const box = useRef<HTMLDivElement>(null);
+  const listTop = useRef(0);
+  const openFile = async (path: string) => {
+    const url = previewFilePath(r.id, path);
+    if (!url) return;
+    listTop.current = box.current?.scrollTop ?? 0;
+    setFile({ path, text: null, failed: "" });
+    // A later click wins over a slower answer.
+    const settle = (text: string | null, failed: string) =>
+      setFile((cur) => (cur?.path === path ? { path, text, failed } : cur));
+    try {
+      settle((await api<{ text: string }>(url)).text, "");
+    } catch (e) {
+      settle(null, e instanceof Error ? e.message : String(e));
+    }
+  };
+  const back = () => {
+    setFile(null);
+    requestAnimationFrame(() => {
+      if (box.current) box.current.scrollTop = listTop.current;
+    });
+  };
+  const env: Env = { ...PREVIEW_ENV, openPath: (path) => void openFile(path) };
   const show = async () => {
     if (open) return setOpen(false);
     setOpen(true);
@@ -302,18 +343,41 @@ export function WaitingCard({
         Dismiss
       </Button>
       {open && (
-        <div className="assistant-home-preview">
-          <p className="subtle" title={r.preview}>
-            {r.preview}
-          </p>
-          {failed ? (
-            <p className="error-text">{failed}</p>
-          ) : text === null ? (
-            <p className="subtle">Loading…</p>
+        <div className="assistant-home-preview" ref={box}>
+          {file ? (
+            <>
+              <p className="subtle assistant-home-preview-file">
+                <Button size="sm" variant="ghost" onClick={back}>
+                  <ArrowLeft size={14} />
+                  Back to the list
+                </Button>
+                <span title={file.path}>{file.path}</span>
+              </p>
+              {file.failed ? (
+                <p className="error-text">{file.failed}</p>
+              ) : file.text === null ? (
+                <p className="subtle">Loading…</p>
+              ) : (
+                <EnvContext.Provider value={PREVIEW_ENV}>
+                  <Markdown text={file.text} />
+                </EnvContext.Provider>
+              )}
+            </>
           ) : (
-            <EnvContext.Provider value={PREVIEW_ENV}>
-              <Markdown text={text} />
-            </EnvContext.Provider>
+            <>
+              <p className="subtle" title={r.preview}>
+                {r.preview}
+              </p>
+              {failed ? (
+                <p className="error-text">{failed}</p>
+              ) : text === null ? (
+                <p className="subtle">Loading…</p>
+              ) : (
+                <EnvContext.Provider value={env}>
+                  <Markdown text={text} />
+                </EnvContext.Provider>
+              )}
+            </>
           )}
         </div>
       )}

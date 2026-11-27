@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { WaitingCard } from "./AssistantHome";
+import { WaitingCard, previewFilePath } from "./AssistantHome";
 import type { Routine } from "../routines/when";
 
 const routine = (preview?: string) =>
@@ -30,5 +30,23 @@ describe("a routine waiting for approval (ADR 0023)", () => {
     const html = card(routine());
     expect(html).not.toContain("Preview");
     expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Approve<\/button>/);
+  });
+
+  it("opens only relative Markdown files beside the preview (ADR 0026)", () => {
+    expect(previewFilePath("mail/Check mail", "2026-11-27/abc.md")).toBe(
+      "routines/mail%2FCheck%20mail/preview?file=2026-11-27%2Fabc.md",
+    );
+    expect(previewFilePath("r1", "./a.md")).toBe(
+      "routines/r1/preview?file=a.md",
+    );
+    for (const path of [
+      "",
+      "/etc/passwd.md",
+      "https://evil.example/a.md",
+      "file:///home/me/a.md",
+      "notes.txt",
+      "2026-11-27",
+    ])
+      expect(previewFilePath("r1", path)).toBeNull();
   });
 });

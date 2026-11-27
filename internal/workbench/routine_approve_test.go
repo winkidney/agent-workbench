@@ -254,6 +254,54 @@ preview = "raw/preview.md"
 	}
 }
 
+func TestRoutinePreviewOpensOnlyMarkdownBesideIt(t *testing.T) {
+	m, root := assistantsWithGit(t)
+	dir := mailAssistant(t, m, root, `approve = true
+preview = "raw/mail/preview.md"
+`)
+	id := fileRoutineID("mail", "Check mail")
+	mail := filepath.Join(dir, "raw", "mail")
+	writeToml(t, filepath.Join(mail, "preview.md"), "- Ana · [open](2026-11-27/abc.md)\n")
+	writeToml(t, filepath.Join(mail, "2026-11-27", "abc.md"), "```text\nfrom: Ana\n```\n")
+	writeToml(t, filepath.Join(mail, "notes.txt"), "not Markdown\n")
+	writeToml(t, filepath.Join(dir, "config.md"), "outside the preview's folder\n")
+
+	// A mail's file beside the preview, by the link's relative path.
+	if text, err := m.RoutinePreviewFile(id, "2026-11-27/abc.md"); err != nil || text != "```text\nfrom: Ana\n```\n" {
+		t.Fatalf("mail file: %q %v", text, err)
+	}
+	// Gone (pruned since the preview was written): the page says so.
+	if _, err := m.RoutinePreviewFile(id, "2026-11-27/gone.md"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("missing file: %v", err)
+	}
+
+	outside := filepath.Join(t.TempDir(), "secret.md")
+	writeToml(t, outside, "secret\n")
+	if err := os.Symlink(outside, filepath.Join(mail, "link.md")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(dir, "config.md"), filepath.Join(mail, "up.md")); err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range []string{
+		"../../config.md",          // up out of the preview's folder
+		outside,                    // an absolute path
+		"link.md",                  // a link out of the repository
+		"up.md",                    // a link to the assistant's own files
+		"notes.txt",                // not Markdown
+		"2026-11-27",               // a folder
+		"",                         // nothing
+		"2026-11-27/../../../x.md", // up, spelled another way
+	} {
+		if text, err := m.RoutinePreviewFile(id, file); err == nil {
+			t.Fatalf("opened %q: %q", file, text)
+		}
+	}
+	if _, err := m.RoutinePreviewFile(fileRoutineID("mail", "Other"), "2026-11-27/abc.md"); err == nil {
+		t.Fatal("opened a file for a routine without a preview")
+	}
+}
+
 func TestApproveIsCheckedInTheFile(t *testing.T) {
 	for _, extra := range []string{
 		// approve needs a command and a message

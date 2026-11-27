@@ -971,6 +971,42 @@ const routinePreviewMax = 1 << 20
 // with or without a session (ADR 0023). Only a file inside the assistant's
 // folder, after following links, and only up to routinePreviewMax.
 func (m *Manager) RoutinePreview(routine string) (string, error) {
+	full, err := m.routinePreviewPath(routine)
+	if err != nil {
+		return "", err
+	}
+	return readPreviewText(full)
+}
+
+// RoutinePreviewFile is the text of a Markdown file the preview links to,
+// by its path relative to the preview's folder: a mail's file next to the
+// mail preview (ADR 0026). Only a .md file inside that folder, after
+// following links, so a link cannot reach the assistant's scripts or
+// settings, and only up to routinePreviewMax.
+func (m *Manager) RoutinePreviewFile(routine, file string) (string, error) {
+	preview, err := m.routinePreviewPath(routine)
+	if err != nil {
+		return "", err
+	}
+	rel := filepath.FromSlash(file)
+	if !filepath.IsLocal(rel) || !strings.EqualFold(filepath.Ext(rel), ".md") {
+		return "", errors.New("a preview opens only .md files in its own folder")
+	}
+	base := filepath.Dir(preview)
+	full, err := filepath.EvalSymlinks(filepath.Join(base, rel))
+	if err != nil {
+		return "", err
+	}
+	if inside, err := filepath.Rel(base, full); err != nil || inside == "." || !filepath.IsLocal(inside) ||
+		!strings.EqualFold(filepath.Ext(full), ".md") {
+		return "", errors.New("a preview opens only .md files in its own folder")
+	}
+	return readPreviewText(full)
+}
+
+// routinePreviewPath is the file a routine's preview names, links followed,
+// once it is known to be inside the assistant's folder.
+func (m *Manager) routinePreviewPath(routine string) (string, error) {
 	v, err := m.store.routine(routine)
 	if err != nil {
 		return "", err
@@ -989,6 +1025,11 @@ func (m *Manager) RoutinePreview(routine string) (string, error) {
 	if rel, err := filepath.Rel(dir, full); err != nil || rel == "." || !filepath.IsLocal(rel) {
 		return "", errors.New("the preview is outside the assistant's folder")
 	}
+	return full, nil
+}
+
+// readPreviewText reads a regular file for the page, up to routinePreviewMax.
+func readPreviewText(full string) (string, error) {
 	f, err := os.Open(full)
 	if err != nil {
 		return "", err
@@ -1210,7 +1251,7 @@ func runRoutineCommand(c *RoutineCommand) (string, *int, error) {
 	return out.String(), &code, nil
 }
 
-// routinesAPI serves /api/routines[/{id}[/runs|/run|/preview|/runs/{run}/approve|dismiss]].
+// routinesAPI serves /api/routines[/{id}[/runs|/run|/preview[?file=]|/runs/{run}/approve|dismiss]].
 func (s *Server) routinesAPI(w http.ResponseWriter, r *http.Request, rest string) {
 	m := s.Manager
 	parts := strings.Split(rest, "/")
@@ -1282,9 +1323,15 @@ func (s *Server) routinesAPI(w http.ResponseWriter, r *http.Request, rest string
 		}
 		writeJSON(w, runs)
 	case len(parts) == 2 && parts[1] == "preview" && r.Method == "GET":
-		text, err := m.RoutinePreview(id)
+		var text string
+		var err error
+		if file := r.URL.Query().Get("file"); file != "" {
+			text, err = m.RoutinePreviewFile(id, file)
+		} else {
+			text, err = m.RoutinePreview(id)
+		}
 		if errors.Is(err, os.ErrNotExist) {
-			http.Error(w, "the preview file is not there yet", http.StatusNotFound)
+			http.Error(w, "the file is not there (any more)", http.StatusNotFound)
 			return
 		} else if err != nil {
 			bad(w, err)

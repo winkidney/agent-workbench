@@ -6723,6 +6723,11 @@ span.heartbeat.compact {
   font-size: 12px;
   overflow-wrap: anywhere;
 }
+.assistant-home-preview > p.assistant-home-preview-file {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
 .assistant-home-foot {
   display: flex;
   flex-wrap: wrap;

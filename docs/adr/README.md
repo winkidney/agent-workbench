@@ -26,6 +26,7 @@ Decisions that shape how the workbench behaves, why, and what they cost. Each re
 | [0020](0020-assistants-ask-through-the-client.md) | Assistants ask the user through the client's question tool, one step at a time | accepted; amends 0015 |
 | [0021](0021-outside-content-waits-and-background-runs-stay-in-their-folder.md) | Outside content waits for the user's approval, and background runs change only their own files | accepted; amends 0009 and 0011; decision 1 amended by 0023 |
 | [0022](0022-moss-keeps-the-repository-committed.md) | Moss has the assistants commit their changes each evening | accepted; amends 0016 |
-| [0023](0023-the-preview-is-read-before-approve.md) | The preview shows on the assistant's page, and Approve waits for it | accepted; amends 0021 |
+| [0023](0023-the-preview-is-read-before-approve.md) | The preview shows on the assistant's page, and Approve waits for it | accepted; amends 0021; decision 2 amended by 0026 |
 | [0024](0024-side-chat-shares-the-right-panel.md) | The side chat shares the right panel with the Outputs | accepted; amends 0003 |
 | [0025](0025-claude-records-are-read-in-one-place.md) | Claude's records are read in one place, live and from the transcript | accepted |
+| [0026](0026-preview-links-open-files-beside-it.md) | A preview's links to Markdown files beside it open in place | accepted; amends 0023 |

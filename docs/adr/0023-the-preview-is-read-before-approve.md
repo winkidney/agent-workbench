@@ -1,7 +1,7 @@
 # ADR 0023: The preview shows on the assistant's page, and Approve waits for it
 
 - Date: 2026-11-24
-- Status: accepted; amends 0021 (decision 1, the home card's Preview)
+- Status: accepted; amends 0021 (decision 1, the home card's Preview); decision 2 amended by [0026](0026-preview-links-open-files-beside-it.md) (links to Markdown files beside the preview open in place)
 
 ## Context
 
