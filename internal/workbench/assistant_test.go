@@ -177,7 +177,7 @@ func TestContinuousAssistantStartsNewTopics(t *testing.T) {
 	session := Session{ID: "claude:a", Status: "sleeping"}
 	set := func(f func(s *Session)) { mu.Lock(); f(&session); mu.Unlock() }
 	m.as.lookup = func(id string) (Session, bool) { mu.Lock(); defer mu.Unlock(); return session, id == session.ID }
-	m.as.background = func(Assistant, string) (string, error) { return "", nil }
+	m.as.background = func(Assistant, string) (backgroundOut, error) { return wrote(""), nil }
 	now := time.Date(2026, 11, 19, 10, 0, 0, 0, time.Local)
 	m.rt.now = func() time.Time { return now }
 	m.saveTopic("main", assistantState{Current: "claude:a"})
@@ -348,7 +348,7 @@ func TestOlderRepositoriesGetNewSharedFiles(t *testing.T) {
 	// As set up by v0.4.0: no skill; the user's rules are their own.
 	os.RemoveAll(filepath.Dir(skill))
 	writeToml(t, filepath.Join(root, "AGENTS.md"), "my rules\n")
-	commitAll(root, "older")
+	m.commitAll(root, "older")
 	m.ensureShared()
 	if _, err := os.Stat(skill); err != nil {
 		t.Fatal("the skill was not added")

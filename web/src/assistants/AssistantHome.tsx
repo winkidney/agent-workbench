@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
+  Clock,
   Eye,
   FileText,
   Settings,
@@ -11,6 +12,7 @@ import {
 import { api } from "../lib/api";
 import {
   openAssistantSettings,
+  openSessionLater,
   routinesOf,
   setUpAssistant,
   type Assistant,
@@ -56,14 +58,34 @@ export function AssistantHome({
       window.removeEventListener("workbench:routines", load);
     };
   }, [a.dir, reload]);
-  // Approves or dismisses every run of r that waits, oldest first: an
-  // approved run hands what its command printed to the agent (ADR 0021).
+  // Approves or dismisses every run of r that waits, at once: approved,
+  // what their commands printed goes to the agent as one message, one
+  // conversation (ADR 0021, 0027).
   const decide = async (r: Routine, action: "approve" | "dismiss") => {
     setDeciding(r.id);
     setError("");
     try {
-      for (const run of r.waiting ?? [])
-        await api(`routines/${r.id}/runs/${run.id}/${action}`, "POST");
+      await api(`routines/${encodeURIComponent(r.id)}/${action}`, "POST");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDeciding("");
+      setReload((n) => n + 1);
+    }
+  };
+  // A held run of r: start it now beside what holds the lane, or drop it.
+  const actOnHeld = async (
+    r: Routine,
+    run: string,
+    action: "start" | "dismiss",
+  ) => {
+    setDeciding(r.id);
+    setError("");
+    try {
+      await api(
+        `routines/${encodeURIComponent(r.id)}/runs/${encodeURIComponent(run)}/${action}`,
+        "POST",
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -72,6 +94,7 @@ export function AssistantHome({
     }
   };
   const waiting = (routines ?? []).filter((r) => r.waiting?.length);
+  const held = (routines ?? []).filter((r) => r.held?.length);
   const agent = a.agent === "codex" ? "Codex" : "Claude";
   return (
     <section className="assistant-home" aria-label={`${a.name}: about`}>
@@ -120,6 +143,14 @@ export function AssistantHome({
           routine={r}
           deciding={deciding === r.id}
           onDecide={(action) => void decide(r, action)}
+        />
+      ))}
+      {held.map((r) => (
+        <HeldCard
+          key={r.id}
+          routine={r}
+          deciding={deciding === r.id}
+          onAct={(run, action) => void actOnHeld(r, run, action)}
         />
       ))}
       {error && <p className="error-text">{error}</p>}
@@ -221,6 +252,67 @@ const PREVIEW_ENV: Env = {
   locate: () => {},
   view: () => {},
 };
+
+// A routine whose runs wait for the assistant's other routine work to
+// finish (ADR 0027): they start on their own when it does; Start now runs
+// the oldest beside it, Dismiss drops it.
+export function HeldCard({
+  routine: r,
+  deciding,
+  onAct,
+}: {
+  routine: Routine;
+  deciding: boolean;
+  onAct: (run: string, action: "start" | "dismiss") => void;
+}) {
+  const runs = r.held ?? [];
+  const first = runs[0];
+  if (!first) return null;
+  const n = runs.length;
+  return (
+    <div className="assistant-home-setup assistant-home-held" role="status">
+      <Clock size={14} />
+      <span>
+        {r.name}: {n === 1 ? "1 run waits" : `${n} runs wait`} for its turn
+        {first.behind ? (
+          <>
+            , after{" "}
+            {first.behindSession ? (
+              <button
+                type="button"
+                className="held-behind"
+                onClick={() => openSessionLater(first.behindSession!)}
+              >
+                {first.behind}
+              </button>
+            ) : (
+              first.behind
+            )}
+          </>
+        ) : null}
+        . It starts when that is done
+        {n > 1 ? `, as one message` : ""}.
+      </span>
+      <Button
+        size="sm"
+        variant="ghost"
+        disabled={deciding}
+        title="Run it now, beside what it waits for"
+        onClick={() => onAct(first.id, "start")}
+      >
+        Start now
+      </Button>
+      <Button
+        size="sm"
+        variant="ghost"
+        disabled={deciding}
+        onClick={() => onAct(first.id, "dismiss")}
+      >
+        Dismiss
+      </Button>
+    </div>
+  );
+}
 
 // The API path that reads a file a preview links to: a relative .md path
 // only; the server checks it stays in the preview's folder (ADR 0026).

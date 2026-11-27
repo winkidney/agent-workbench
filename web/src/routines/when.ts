@@ -29,8 +29,25 @@ export type RoutineRun = {
   started: string;
   finished?: string;
   status:
-    "running" | "waiting" | "sent" | "queued" | "done" | "failed" | "skipped";
+    | "running"
+    | "waiting"
+    | "held"
+    | "sent"
+    | "queued"
+    | "done"
+    | "failed"
+    | "skipped"
+    | "merged";
   session?: string;
+  // The assistant whose lane it went through (ADR 0027).
+  assistant?: string;
+  // merged: the run that carried its output; on that run, how many runs
+  // went with it.
+  mergedInto?: string;
+  merged?: number;
+  // held: the routine whose work holds the lane now, and its session.
+  behind?: string;
+  behindSession?: string;
   exit?: number;
   output?: string;
   error?: string;
@@ -58,6 +75,9 @@ export type Routine = {
   // a file to look at first; its runs that wait, oldest first.
   approve?: boolean;
   preview?: string;
+  // Its runs that wait for their assistant's other routine work to finish
+  // (ADR 0027), oldest first.
+  held?: RoutineRun[];
   waiting?: RoutineRun[];
 };
 
@@ -303,8 +323,19 @@ export function runSummary(run: RoutineRun): string {
       return "Running…";
     case "waiting":
       return "Waiting for your approval";
+    case "held":
+      return (
+        "Waiting for its turn" + (run.behind ? `, after ${run.behind}` : "")
+      );
+    case "merged":
+      return "Sent together with a later run";
     case "sent":
-      return "Sent; the agent is working";
+      return (
+        "Sent; the agent is working" +
+        (run.merged
+          ? ` (with ${run.merged} more ${run.merged === 1 ? "run" : "runs"})`
+          : "")
+      );
     case "queued":
       return "Waiting for the session";
     case "done":
@@ -331,9 +362,13 @@ export type RunKind =
 export function runKind(run: RoutineRun): RunKind {
   switch (run.status) {
     case "running":
+    case "held":
     case "sent":
     case "queued":
       return "active";
+    case "merged":
+      // Its output went out with another run, which shows what came of it.
+      return "quiet";
     case "waiting":
       return "waiting";
     case "failed":
@@ -390,6 +425,7 @@ export function heartbeatSummary(runs: RoutineRun[]): string {
 
 // What a quiet run did, in a few words; others say it with runSummary.
 export function runResult(run: RoutineRun): string {
+  if (run.status === "merged") return "Merged: sent with a later run";
   if (runKind(run) === "quiet")
     return run.status !== "skipped"
       ? "Quiet: finished, nothing to show"

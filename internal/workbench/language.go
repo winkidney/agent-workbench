@@ -74,6 +74,6 @@ func (m *Manager) SetLanguage(lang string) error {
 	if err := os.WriteFile(p, []byte(text), 0o644); err != nil {
 		return err
 	}
-	commitAll(v.Root, "Write to the user in "+languageNames[lang])
+	m.commitAll(v.Root, "Write to the user in "+languageNames[lang])
 	return nil
 }

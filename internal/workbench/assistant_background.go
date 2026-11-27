@@ -9,8 +9,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -130,28 +132,72 @@ func (m *Manager) AssistantChanges() ([]AssistantChange, error) {
 
 // --- running ---
 
-// inBackground runs prompt as a then commits what changed. It waits for
+// backgroundOut is what a background run answered and the files it wrote.
+type backgroundOut struct {
+	Text string
+	// Claude: the files its Edit and Write calls named (absolute, or
+	// relative to the repository), the only way it can change a file.
+	// Codex: not known (its sandbox can write with any command).
+	Wrote []string
+	Known bool
+}
+
+// inBackground runs prompt as a then commits what it changed. It waits for
 // the run before it: one at a time in the repository.
+//
+// A run's commit and undo cover only the files the run wrote (ADR 0027):
+// sessions and other assistants may change the repository at the same
+// time, and their work is neither committed in its name nor undone. Codex
+// does not report what it writes, so for Codex every change made during
+// the run counts as its own, as before.
 func (m *Manager) inBackground(a Assistant, v AssistantChange, prompt string) AssistantChange {
 	root := m.assistantsRoot()
+	if r, err := filepath.EvalSymlinks(root); err == nil {
+		root = r
+	}
 	v.Status = "running"
 	m.recordChange(v)
 	m.as.bg.Lock()
 	defer m.as.bg.Unlock()
+	allowed := backgroundWrites(a)
+	// What the run's commit includes besides what it wrote: the record an
+	// ingest reads, written for it just before.
+	extra := []string{}
+	if v.Source != "" {
+		extra = append(extra, filepath.ToSlash(filepath.Join(a.Dir, filepath.FromSlash(v.Source))))
+	}
+	known := a.Agent != "codex"
 	// What changed before the run is not the run's doing: commit it on its
-	// own, so undoing the run leaves it.
-	if _, _, err := gitCommit(root, "chore: keep changes made before "+v.Title); err != nil {
+	// own, so undoing the run leaves it. With known writes, only where the
+	// run may write; edits elsewhere stay as they are.
+	before := append(append([]string{}, allowed...), extra...)
+	if !known {
+		before = nil
+	}
+	if _, _, err := gitCommitPaths(root, "chore: keep changes made before "+v.Title, before); err != nil {
 		v.Status, v.Error, v.Finished = "failed", err.Error(), nowStamp()
 		m.recordChange(v)
 		return v
 	}
+	// Edits outside those paths that are not committed: if the run writes
+	// over one, undoing the run puts the edit back, not the last commit.
+	saved := dirtyFiles(root)
 	run := m.as.background
 	if run == nil {
 		run = m.backgroundAgent
 	}
 	out, err := run(a, backgroundPreamble+prompt)
-	v.Summary = summaryOf(out)
-	blocked, undoErr := undoOutside(root, backgroundWrites(a))
+	v.Summary = summaryOf(out.Text)
+	var blocked, own []string
+	var undoErr error
+	if known && out.Known {
+		var outside []string
+		own, outside = splitWrites(root, out.Wrote, allowed)
+		blocked, undoErr = restoreFiles(root, outside, saved)
+		own = append(own, extra...)
+	} else {
+		blocked, undoErr = undoOutside(root, allowed)
+	}
 	v.Blocked = blocked
 	if undoErr != nil && err == nil {
 		err = fmt.Errorf("checking what it changed: %w", undoErr)
@@ -159,15 +205,24 @@ func (m *Manager) inBackground(a Assistant, v AssistantChange, prompt string) As
 	if err == nil && len(blocked) > 0 {
 		err = fmt.Errorf("it changed files a background run may not change, which were undone: %s", strings.Join(blocked, ", "))
 	}
+	commit := func(message string) (string, []string, error) {
+		if known && out.Known {
+			if len(own) == 0 {
+				return "", nil, nil
+			}
+			return gitCommitPaths(root, message, own)
+		}
+		return gitCommit(root, message)
+	}
 	if err != nil {
 		v.Status, v.Error, v.Finished = "failed", err.Error(), nowStamp()
 		// Keep what it did get done, so it can be seen and undone.
-		v.Commit, v.Files, _ = gitCommit(root, v.Kind+": "+v.Title+" (stopped)")
+		v.Commit, v.Files, _ = commit(v.Kind + ": " + v.Title + " (stopped)")
 		m.recordChange(v)
 		return v
 	}
-	commit, files, err := gitCommit(root, v.Kind+": "+v.Title)
-	v.Commit, v.Files, v.Finished = commit, files, nowStamp()
+	c, files, err := commit(v.Kind + ": " + v.Title)
+	v.Commit, v.Files, v.Finished = c, files, nowStamp()
 	if err != nil {
 		v.Status, v.Error = "failed", "commit: "+err.Error()
 	} else {
@@ -175,6 +230,126 @@ func (m *Manager) inBackground(a Assistant, v AssistantChange, prompt string) As
 	}
 	m.recordChange(v)
 	return v
+}
+
+// splitWrites turns the files a run wrote into paths relative to root, and
+// splits them into those it may change and the others. Files outside the
+// repository are left out: the run's tools cannot reach them anyway.
+func splitWrites(root string, wrote, allowed []string) (own, outside []string) {
+	seen := map[string]bool{}
+	for _, p := range wrote {
+		rel := repoPath(root, p)
+		if rel == "" || seen[rel] {
+			continue
+		}
+		seen[rel] = true
+		if writeAllowed(rel, allowed) {
+			own = append(own, rel)
+		} else {
+			outside = append(outside, rel)
+		}
+	}
+	sort.Strings(own)
+	sort.Strings(outside)
+	return own, outside
+}
+
+// repoPath is p relative to root (links resolved), with forward slashes;
+// "" when it is not inside root.
+func repoPath(root, p string) string {
+	if !filepath.IsAbs(p) {
+		p = filepath.Join(root, filepath.FromSlash(p))
+	}
+	// The file may be new: resolve its folder, which exists.
+	dir, base := filepath.Split(filepath.Clean(p))
+	if r, err := filepath.EvalSymlinks(p); err == nil {
+		p = r
+	} else if d, err := filepath.EvalSymlinks(dir); err == nil {
+		p = filepath.Join(d, base)
+	}
+	rel, err := filepath.Rel(root, p)
+	if err != nil || !filepath.IsLocal(rel) || rel == ".git" || strings.HasPrefix(filepath.ToSlash(rel), ".git/") {
+		return ""
+	}
+	return filepath.ToSlash(rel)
+}
+
+// savedFile is an uncommitted file as it was before a run.
+type savedFile struct {
+	data   []byte
+	exists bool
+}
+
+// dirtySaveMax bounds what dirtyFiles keeps in memory, per file and in all.
+const (
+	dirtyFileMax  = 1 << 20
+	dirtyTotalMax = 16 << 20
+)
+
+// dirtyFiles keeps the uncommitted files of root as they are now (within
+// dirtyFileMax and dirtyTotalMax): a file a run then writes over without
+// being allowed to is put back as it was, with the user's edit in it.
+func dirtyFiles(root string) map[string]savedFile {
+	out := map[string]savedFile{}
+	status, err := gitRun(root, "status", "--porcelain=v1", "-z", "--untracked-files=all")
+	if err != nil {
+		return out
+	}
+	total := 0
+	entries := strings.Split(status, "\x00")
+	for i := 0; i < len(entries); i++ {
+		e := entries[i]
+		if len(e) < 4 {
+			continue
+		}
+		if e[0] == 'R' || e[0] == 'C' {
+			i++
+		}
+		path := e[3:]
+		b, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(path)))
+		switch {
+		case errors.Is(err, os.ErrNotExist):
+			out[path] = savedFile{}
+		case err == nil && len(b) <= dirtyFileMax && total+len(b) <= dirtyTotalMax:
+			out[path] = savedFile{data: b, exists: true}
+			total += len(b)
+		}
+	}
+	return out
+}
+
+// restoreFiles undoes a run's writes to paths: each goes back to how it was
+// before the run (an uncommitted edit kept in saved, or the last commit), a
+// file the run made is removed. It returns the paths.
+func restoreFiles(root string, paths []string, saved map[string]savedFile) ([]string, error) {
+	var firstErr error
+	fail := func(err error) {
+		if err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	for _, p := range paths {
+		full := filepath.Join(root, filepath.FromSlash(p))
+		if was, ok := saved[p]; ok {
+			if !was.exists {
+				if err := os.Remove(full); err != nil && !errors.Is(err, os.ErrNotExist) {
+					fail(err)
+				}
+				continue
+			}
+			fail(os.WriteFile(full, was.data, 0o644))
+			continue
+		}
+		if _, err := gitRun(root, "cat-file", "-e", "HEAD:"+p); err == nil {
+			_, err := gitRun(root, "checkout", "HEAD", "--", p)
+			fail(err)
+			continue
+		}
+		if err := os.Remove(full); err != nil && !errors.Is(err, os.ErrNotExist) {
+			fail(err)
+		}
+	}
+	return paths, firstErr
 }
 
 // backgroundWrites is what a background run of a may change, relative to
@@ -314,56 +489,159 @@ func backgroundModel(agent string, o Options) []string {
 // sidebar shows, limited to reading and editing files in the repository:
 // Claude with only the file tools and no MCP servers; Codex in its
 // workspace-write sandbox, which has no network.
-func (m *Manager) backgroundAgent(a Assistant, prompt string) (string, error) {
+func (m *Manager) backgroundAgent(a Assistant, prompt string) (backgroundOut, error) {
 	root := m.assistantsRoot()
 	run, err := m.cli(a.Agent)
 	if err != nil {
-		return "", err
+		return backgroundOut{}, err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), backgroundTimeout)
 	defer cancel()
 	var cmd *exec.Cmd
 	last := ""
-	if a.Agent == "codex" {
+	codex := a.Agent == "codex"
+	if codex {
 		f, err := os.CreateTemp("", "aw-background-*.txt")
 		if err != nil {
-			return "", err
+			return backgroundOut{}, err
 		}
 		last = f.Name()
 		f.Close()
 		defer os.Remove(last)
 		cmd = run.command(append([]string{"exec", "--ephemeral", "--sandbox", "workspace-write", "--skip-git-repo-check", "--color", "never", "-C", a.Path, "--add-dir", root, "-o", last}, append(backgroundModel(a.Agent, m.assistantOptions(a)), "-")...)...)
 	} else {
-		cmd = run.command(append([]string{"-p", "--no-session-persistence", "--output-format", "text", "--permission-mode", "acceptEdits", "--strict-mcp-config", "--mcp-config", `{"mcpServers":{}}`, "--add-dir", root, "--tools", backgroundTools, "--allowedTools", backgroundTools}, backgroundModel(a.Agent, m.assistantOptions(a))...)...)
+		// stream-json names every file its Edit and Write calls touch: the
+		// run's commit and undo cover those alone (inBackground).
+		cmd = run.command(append([]string{"-p", "--no-session-persistence", "--output-format", "stream-json", "--verbose", "--permission-mode", "acceptEdits", "--strict-mcp-config", "--mcp-config", `{"mcpServers":{}}`, "--add-dir", root, "--tools", backgroundTools, "--allowedTools", backgroundTools}, backgroundModel(a.Agent, m.assistantOptions(a))...)...)
 	}
 	cmd.Dir = a.Path
 	if cmd.Env == nil {
 		cmd.Env = routineEnv()
 	}
-	out := &tailBuffer{max: routineOutputMax}
-	cmd.Stdout, cmd.Stderr, cmd.Stdin = out, out, strings.NewReader(prompt)
+	errs := &tailBuffer{max: routineOutputMax}
+	stream := &claudeStream{}
+	if codex {
+		cmd.Stdout = errs
+	} else {
+		cmd.Stdout = stream
+	}
+	cmd.Stderr, cmd.Stdin = errs, strings.NewReader(prompt)
 	group, err := startGroup(cmd)
 	if err != nil {
-		return "", err
+		return backgroundOut{}, err
 	}
 	unwatch := group.killOn(ctx)
 	err = cmd.Wait()
 	unwatch()
 	group.Kill(group.PIDs())
 	group.Release()
-	text := out.String()
-	if last != "" {
+	out := backgroundOut{Text: errs.String()}
+	if codex {
 		if b, e := os.ReadFile(last); e == nil && len(bytes.TrimSpace(b)) > 0 {
-			text = string(b)
+			out.Text = string(b)
 		}
+	} else {
+		out.Text, out.Wrote, out.Known = stream.result(errs.String())
 	}
 	if ctx.Err() == context.DeadlineExceeded {
-		return text, fmt.Errorf("stopped after %d minutes", int(backgroundTimeout/time.Minute))
+		return out, fmt.Errorf("stopped after %d minutes", int(backgroundTimeout/time.Minute))
 	}
 	if err != nil {
-		return text, fmt.Errorf("%s: %w: %s", a.Agent, err, clip(strings.TrimSpace(text), 500))
+		return out, fmt.Errorf("%s: %w: %s", a.Agent, err, clip(strings.TrimSpace(out.Text), 500))
 	}
-	return text, nil
+	return out, nil
+}
+
+// claudeStream reads a background Claude's stream-json output as it comes:
+// the files its tools wrote, and its answer.
+type claudeStream struct {
+	mu      sync.Mutex
+	partial []byte
+	wrote   []string
+	answer  string
+	last    string
+	done    bool
+}
+
+func (c *claudeStream) Write(p []byte) (int, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.partial = append(c.partial, p...)
+	for {
+		i := bytes.IndexByte(c.partial, '\n')
+		if i < 0 {
+			break
+		}
+		c.line(c.partial[:i])
+		c.partial = c.partial[i+1:]
+	}
+	// A line longer than this is no record we use (a large file read).
+	if len(c.partial) > 8<<20 {
+		c.partial = nil
+	}
+	return len(p), nil
+}
+
+// line takes one record: the file_path of an Edit or Write call, the text
+// of the assistant's messages, and the result's answer.
+func (c *claudeStream) line(b []byte) {
+	var rec struct {
+		Type    string `json:"type"`
+		Result  string `json:"result"`
+		Message struct {
+			Content []struct {
+				Type  string `json:"type"`
+				Name  string `json:"name"`
+				Text  string `json:"text"`
+				Input struct {
+					FilePath     string `json:"file_path"`
+					NotebookPath string `json:"notebook_path"`
+				} `json:"input"`
+			} `json:"content"`
+		} `json:"message"`
+	}
+	if json.Unmarshal(bytes.TrimSpace(b), &rec) != nil {
+		return
+	}
+	switch rec.Type {
+	case "assistant":
+		for _, item := range rec.Message.Content {
+			switch {
+			case item.Type == "text" && strings.TrimSpace(item.Text) != "":
+				c.last = item.Text
+			case item.Type == "tool_use" && writeTools[item.Name]:
+				if f := item.Input.FilePath + item.Input.NotebookPath; f != "" {
+					c.wrote = append(c.wrote, f)
+				}
+			}
+		}
+	case "result":
+		c.answer, c.done = rec.Result, true
+	}
+}
+
+// The tools that change files; a background Claude has only Edit and Write
+// of these (backgroundTools), the others are named in case that changes.
+var writeTools = map[string]bool{"Edit": true, "Write": true, "MultiEdit": true, "NotebookEdit": true}
+
+// result is the run's answer (the result record's, else its last message,
+// else what it printed on stderr), the files it wrote, and whether the
+// stream was read at all (no record: nothing is known of its writes).
+func (c *claudeStream) result(stderr string) (string, []string, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(bytes.TrimSpace(c.partial)) > 0 {
+		c.line(c.partial)
+		c.partial = nil
+	}
+	text := c.answer
+	if !c.done {
+		text = c.last
+	}
+	if strings.TrimSpace(text) == "" {
+		text = stderr
+	}
+	return text, append([]string{}, c.wrote...), true
 }
 
 // --- git ---
@@ -393,6 +671,55 @@ func gitWithName(root string, args ...string) (string, error) {
 		args = append([]string{"-c", "user.name=Agent Workbench", "-c", "user.email=workbench@localhost"}, args...)
 	}
 	return gitRun(root, args...)
+}
+
+// gitCommitPaths commits the changes under paths only (gitCommit when
+// paths is nil), whatever else is changed or staged in root, and returns
+// the commit and its files; none when nothing under them changed.
+func gitCommitPaths(root, message string, paths []string) (string, []string, error) {
+	if paths == nil {
+		return gitCommit(root, message)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".git")); err != nil {
+		if _, err := gitRun(root, "init", "-q"); err != nil {
+			return "", nil, err
+		}
+	}
+	// git refuses a path that matches nothing: keep those that exist now or
+	// are in the last commit (deleted since).
+	var present []string
+	for _, p := range paths {
+		if _, err := os.Lstat(filepath.Join(root, filepath.FromSlash(p))); err == nil {
+			present = append(present, p)
+		} else if out, _ := gitRun(root, "ls-files", "--", p); strings.TrimSpace(out) != "" {
+			present = append(present, p)
+		}
+	}
+	if len(present) == 0 {
+		return "", nil, nil
+	}
+	if _, err := gitRun(root, append([]string{"add", "-A", "--"}, present...)...); err != nil {
+		return "", nil, err
+	}
+	if _, err := gitRun(root, append([]string{"diff", "--cached", "--quiet", "--"}, present...)...); err == nil {
+		return "", nil, nil
+	}
+	// --only (implied by paths): what else is staged stays out.
+	if _, err := gitWithName(root, append([]string{"commit", "-q", "-m", message, "--"}, present...)...); err != nil {
+		return "", nil, err
+	}
+	head, err := gitRun(root, "rev-parse", "HEAD")
+	if err != nil {
+		return "", nil, err
+	}
+	names, _ := gitRun(root, "show", "--name-only", "--format=", "HEAD")
+	files := []string{}
+	for _, f := range strings.Split(strings.TrimSpace(names), "\n") {
+		if f != "" {
+			files = append(files, f)
+		}
+	}
+	return strings.TrimSpace(head), files, nil
 }
 
 // gitCommit commits everything in root (making it a repository first) and
@@ -439,8 +766,13 @@ func (m *Manager) UndoChange(id string) (AssistantChange, error) {
 	root := m.assistantsRoot()
 	m.as.bg.Lock()
 	defer m.as.bg.Unlock()
-	if _, _, err := gitCommit(root, "chore: keep changes made before undoing "+v.Title); err != nil {
-		return v, err
+	// Only its own files are reverted; other work in the repository stays
+	// as it is, uncommitted. An uncommitted edit to one of its files would
+	// be lost or block the revert: say so instead.
+	if len(v.Files) > 0 {
+		if out, _ := gitRun(root, append([]string{"status", "--porcelain", "--"}, v.Files...)...); strings.TrimSpace(out) != "" {
+			return v, fmt.Errorf("could not undo it: %s changed since and is not committed", strings.Fields(strings.TrimSpace(out))[1])
+		}
 	}
 	if _, err := gitWithName(root, "revert", "--no-edit", v.Commit); err != nil {
 		_, _ = gitRun(root, "revert", "--abort")

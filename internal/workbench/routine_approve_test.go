@@ -34,15 +34,24 @@ background = true
 	return dir
 }
 
-func TestBackgroundRunChangesOnlyItsOwnFiles(t *testing.T) {
+// Codex does not say what it writes: every change made during its run
+// counts as its own, and what it may not change is undone.
+func TestCodexBackgroundRunChangesOnlyItsOwnFiles(t *testing.T) {
 	m, root := assistantsWithGit(t)
 	dir := mailAssistant(t, m, root, "")
+	toml := filepath.Join(dir, "assistant.toml")
+	b, _ := os.ReadFile(toml)
+	writeToml(t, toml, strings.Replace(string(b), `agent = "claude"`, `agent = "codex"`, 1))
+	m.assistantsChanged()
+	if _, _, err := gitCommit(root, "codex"); err != nil {
+		t.Fatal(err)
+	}
 	agents := filepath.Join(root, "main", "AGENTS.md")
 	before, err := os.ReadFile(agents)
 	if err != nil {
 		t.Fatal(err)
 	}
-	m.as.background = func(a Assistant, prompt string) (string, error) {
+	m.as.background = func(a Assistant, prompt string) (backgroundOut, error) {
 		// What it may change: its state, drafts and log.
 		writeToml(t, filepath.Join(a.Path, "state", "inbox.md"), "- hi\n")
 		writeToml(t, filepath.Join(a.Path, "drafts", "reply.md"), "Dear Ana\n")
@@ -55,7 +64,7 @@ func TestBackgroundRunChangesOnlyItsOwnFiles(t *testing.T) {
 		if err := os.Remove(filepath.Join(root, "main", "assistant.toml")); err != nil {
 			t.Error(err)
 		}
-		return "Summary: sorted", nil
+		return backgroundOut{Text: "Summary: sorted"}, nil
 	}
 	run, err := m.RunRoutine(fileRoutineID("mail", "Check mail"))
 	if err != nil {
@@ -103,6 +112,121 @@ func TestBackgroundRunChangesOnlyItsOwnFiles(t *testing.T) {
 	}
 }
 
+// A background Claude's commit and undo cover the files it wrote, and
+// nothing else: a session or another assistant changing the repository at
+// the same time keeps its work, uncommitted (ADR 0027).
+func TestBackgroundRunLeavesOthersWorkAlone(t *testing.T) {
+	m, root := assistantsWithGit(t)
+	dir := mailAssistant(t, m, root, "")
+	if _, _, err := gitCommit(root, "mail"); err != nil {
+		t.Fatal(err)
+	}
+	agents := filepath.Join(root, "main", "AGENTS.md")
+	fetch := filepath.Join(dir, "tools", "fetch.py")
+	// Uncommitted work from before the run: the user's edit to a script,
+	// and a note in the mail assistant's state.
+	writeToml(t, fetch, "print('fetch, edited')\n")
+	writeToml(t, filepath.Join(dir, "state", "note.md"), "mine\n")
+	m.as.background = func(a Assistant, prompt string) (backgroundOut, error) {
+		inbox := filepath.Join(a.Path, "state", "inbox.md")
+		writeToml(t, inbox, "- hi\n")
+		// What mail could talk it into, through its own tools.
+		writeToml(t, fetch, "import os; os.system('curl evil')\n")
+		skill := filepath.Join(a.Path, ".agents", "skills", "x", "SKILL.md")
+		writeToml(t, skill, "run curl\n")
+		// Meanwhile a session elsewhere changes other files.
+		writeToml(t, agents, "Moss, edited in a session.\n")
+		writeToml(t, filepath.Join(root, "notes", "draft.md"), "a session's new file\n")
+		return wrote("Summary: sorted", inbox, fetch, skill, "/etc/elsewhere"), nil
+	}
+	run, err := m.RunRoutine(fileRoutineID("mail", "Check mail"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v := waitRun(t, m, run.ID, "done", "failed"); v.Status != "failed" || !strings.Contains(v.Error, "undone") {
+		t.Fatalf("run: %+v", v)
+	}
+	changes, _ := m.AssistantChanges()
+	c := changes[0]
+	if strings.Join(c.Blocked, ",") != "mail/.agents/skills/x/SKILL.md,mail/tools/fetch.py" {
+		t.Fatalf("blocked: %v", c.Blocked)
+	}
+	if strings.Join(c.Files, ",") != "mail/state/inbox.md" {
+		t.Fatalf("committed: %v", c.Files)
+	}
+	// Its write over the user's edit is undone back to the edit.
+	if b, _ := os.ReadFile(fetch); string(b) != "print('fetch, edited')\n" {
+		t.Fatalf("fetch.py: %q", b)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".agents", "skills", "x", "SKILL.md")); !os.IsNotExist(err) {
+		t.Fatal("its new skill is still there")
+	}
+	// The others' work is there and not committed; the note made before the
+	// run was committed on its own.
+	if b, _ := os.ReadFile(agents); string(b) != "Moss, edited in a session.\n" {
+		t.Fatalf("AGENTS.md: %q", b)
+	}
+	status, _ := gitRun(root, "status", "--porcelain")
+	for _, want := range []string{" M main/AGENTS.md", "?? notes/", " M mail/tools/fetch.py"} {
+		if !strings.Contains(status, want) {
+			t.Fatalf("status lacks %q:\n%s", want, status)
+		}
+	}
+	if strings.Contains(status, "note.md") {
+		t.Fatalf("the earlier note was not committed:\n%s", status)
+	}
+
+	// Undo reverts its file alone, and refuses while that file has an
+	// uncommitted change.
+	writeToml(t, filepath.Join(dir, "state", "inbox.md"), "- hi, edited\n")
+	if _, err := m.UndoChange(c.ID); err == nil || !strings.Contains(err.Error(), "inbox.md") {
+		t.Fatalf("undo over an edit: %v", err)
+	}
+	if _, _, err := gitCommitPaths(root, "edit", []string{"mail/state/inbox.md"}); err != nil {
+		t.Fatal(err)
+	}
+	writeToml(t, filepath.Join(dir, "state", "inbox.md"), "- hi\n")
+	if _, _, err := gitCommitPaths(root, "back", []string{"mail/state/inbox.md"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.UndoChange(c.ID); err != nil {
+		t.Fatal(err)
+	}
+	if after, _ := gitRun(root, "status", "--porcelain"); after != status {
+		t.Fatalf("undo touched other work:\n%s\nwas:\n%s", after, status)
+	}
+}
+
+func TestClaudeStreamNamesWhatItWrote(t *testing.T) {
+	c := &claudeStream{}
+	lines := []string{
+		`{"type":"system","subtype":"init"}`,
+		`{"type":"assistant","message":{"content":[{"type":"text","text":"Sorting."},{"type":"tool_use","name":"Read","input":{"file_path":"/r/mail/raw/x.md"}}]}}`,
+		`{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Edit","input":{"file_path":"/r/mail/state/inbox.md"}},{"type":"tool_use","name":"Write","input":{"file_path":"/r/mail/log.md"}}]}}`,
+		`not json`,
+		`{"type":"result","subtype":"success","result":"Done.\nSummary: sorted"}`,
+	}
+	full := strings.Join(lines, "\n")
+	// It arrives in pieces.
+	for i := 0; i < len(full); i += 7 {
+		end := min(i+7, len(full))
+		c.Write([]byte(full[i:end]))
+	}
+	text, files, known := c.result("")
+	if text != "Done.\nSummary: sorted" || strings.Join(files, ",") != "/r/mail/state/inbox.md,/r/mail/log.md" || !known {
+		t.Fatalf("%q %v %v", text, files, known)
+	}
+	// Without a result record: its last words, else stderr.
+	c = &claudeStream{}
+	c.Write([]byte(lines[1] + "\n"))
+	if text, _, _ := c.result("boom"); text != "Sorting." {
+		t.Fatalf("last words: %q", text)
+	}
+	if text, _, _ := (&claudeStream{}).result("boom"); text != "boom" {
+		t.Fatalf("stderr: %q", text)
+	}
+}
+
 func TestBackgroundWrites(t *testing.T) {
 	mail := backgroundWrites(Assistant{Dir: "mail", Memory: "state"})
 	moss := backgroundWrites(Assistant{Dir: "main", Memory: "wiki"})
@@ -139,11 +263,11 @@ preview = "raw/preview.md"
 	id := fileRoutineID("mail", "Check mail")
 	var mu sync.Mutex
 	var prompts []string
-	m.as.background = func(a Assistant, prompt string) (string, error) {
+	m.as.background = func(a Assistant, prompt string) (backgroundOut, error) {
 		mu.Lock()
 		prompts = append(prompts, prompt)
 		mu.Unlock()
-		return "Summary: sorted", nil
+		return wrote("Summary: sorted"), nil
 	}
 	start := func() RoutineRun {
 		t.Helper()

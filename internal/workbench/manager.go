@@ -153,6 +153,8 @@ type Manager struct {
 	uploads *Uploads
 	// Routines: the scheduler's state (routine.go).
 	rt *routines
+	// Each assistant's routine work, one at a time (lane.go).
+	ln *lanes
 	// Assistants: the files last read, topic changes (assistant.go).
 	as assistants
 	// Keeping the computer awake, as Settings asks (keepawake.go).
@@ -160,7 +162,7 @@ type Manager struct {
 }
 
 func NewManager(store *Store, launch Launch, idle time.Duration) (*Manager, error) {
-	m := &Manager{store: store, launch: launch, idle: idle, sessions: map[string]*runtime{}, changes: newNotifier(), activity: NewActivityIndex(store), uploads: &Uploads{dir: filepath.Join(store.dir, "uploads")}, rt: newRoutines(), awake: newKeepAwake(holdAwake)}
+	m := &Manager{store: store, launch: launch, idle: idle, sessions: map[string]*runtime{}, changes: newNotifier(), activity: NewActivityIndex(store), uploads: &Uploads{dir: filepath.Join(store.dir, "uploads")}, rt: newRoutines(), ln: newLanes(), awake: newKeepAwake(holdAwake)}
 	m.renameCodex, m.codexThread, m.codexThreads = m.codexRename, m.codexThreadRequest, m.codexThreadRequests
 	m.catalog = NewNativeCatalog()
 	m.catalog.startCodex = m.startCodexClient

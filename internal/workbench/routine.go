@@ -99,6 +99,9 @@ type Routine struct {
 	// Its runs that wait for the user's approval, oldest first (outputs cut
 	// as in Recent).
 	Waiting []RoutineRun `json:"waiting,omitempty"`
+	// Its runs that wait for their assistant's lane (lane.go), oldest first,
+	// each with what it waits for.
+	Held []RoutineRun `json:"held,omitempty"`
 }
 
 // RoutineRun is one time a routine was due.
@@ -110,9 +113,21 @@ type RoutineRun struct {
 	Started  string `json:"started"`
 	Finished string `json:"finished,omitempty"`
 	// running (its command) | waiting (its output waits for the user's
-	// approval) | sent | queued (the message waits for the session) | done |
-	// failed | skipped
+	// approval) | held (it waits for its assistant's lane, lane.go) | sent |
+	// queued (the message waits for the session) | done | failed | skipped |
+	// merged (its output went out with a later hand-off, MergedInto)
 	Status string `json:"status"`
+	// The assistant whose lane the run went through, and when it was let
+	// through (lane.go).
+	Assistant string `json:"assistant,omitempty"`
+	Sent      string `json:"sent,omitempty"`
+	// merged: the run that carried its output; on that run, how many runs
+	// were merged into it.
+	MergedInto string `json:"mergedInto,omitempty"`
+	Merged     int    `json:"merged,omitempty"`
+	// held: what holds the lane now (computed for the page).
+	Behind        string `json:"behind,omitempty"`
+	BehindSession string `json:"behindSession,omitempty"`
 	// The session the message went to.
 	Session string `json:"session,omitempty"`
 	Exit    *int   `json:"exit,omitempty"`
@@ -546,9 +561,10 @@ func (s *Store) pruneRuns(now time.Time) error {
 	if _, err := s.db.Exec(`DELETE FROM routine_runs WHERE started < ?`, cut); err != nil {
 		return err
 	}
-	// A run that waits for approval is kept until it is a month old: a
-	// routine that runs every half hour would otherwise push it out in a day.
-	_, err := s.db.Exec(`DELETE FROM routine_runs WHERE id IN (SELECT id FROM (SELECT id, row_number() OVER (PARTITION BY routine ORDER BY started DESC) AS n FROM routine_runs) WHERE n > ?) AND json_extract(data,'$.status') IS NOT 'waiting'`, routineRunsKept)
+	// A run that waits for approval or for its assistant's lane is kept
+	// until it is a month old: a routine that runs every half hour would
+	// otherwise push it out in a day.
+	_, err := s.db.Exec(`DELETE FROM routine_runs WHERE id IN (SELECT id FROM (SELECT id, row_number() OVER (PARTITION BY routine ORDER BY started DESC) AS n FROM routine_runs) WHERE n > ?) AND json_extract(data,'$.status') NOT IN ('waiting','held')`, routineRunsKept)
 	return err
 }
 
@@ -590,6 +606,17 @@ func (m *Manager) Routines() ([]Routine, error) {
 			if len(waiting) > 0 {
 				list[i].Waiting = waiting
 			}
+		}
+		if held, _ := m.store.heldRuns(list[i].ID); len(held) > 0 {
+			for j := range held {
+				held[j].Output = outputPreview(held[j].Output)
+				m.ln.mu.Lock()
+				if h, busy := m.laneHolder(held[j].Assistant, held[j].ID); busy {
+					held[j].Behind, held[j].BehindSession = h.Name, h.Session
+				}
+				m.ln.mu.Unlock()
+			}
+			list[i].Held = held
 		}
 	}
 	sort.Slice(list, func(i, j int) bool { return list[i].Created < list[j].Created })
@@ -788,6 +815,7 @@ func (m *Manager) RunRoutines(ctx context.Context) {
 		// Commits go to the repository's remote shortly after (sync.go).
 		m.syncAssistants(false)
 		wait := m.dueRoutines(m.rt.now())
+		m.tickLanes(m.rt.now())
 		if !timer.Stop() {
 			select {
 			case <-timer.C:
@@ -937,6 +965,10 @@ func (m *Manager) ApproveRun(routine, id string, approve bool) (RoutineRun, erro
 	if err != nil || run.Routine != routine {
 		m.rt.mu.Unlock()
 		return RoutineRun{}, errors.New("run not found")
+	}
+	if run.Status == "held" && !approve {
+		m.rt.mu.Unlock()
+		return m.dismissHeld(run)
 	}
 	if run.Status != "waiting" {
 		m.rt.mu.Unlock()
@@ -1095,13 +1127,23 @@ func (m *Manager) sendRun(v Routine, run RoutineRun, message string) {
 		}
 		run.Session, run.Status = s.ID, "sent"
 	case "assistant":
+		// One piece of routine work at a time per assistant (lane.go); a run
+		// the lane already let through has Sent.
+		if run.Sent == "" {
+			run.Assistant = t.Assistant
+			if !m.takeLane(&run) {
+				return
+			}
+		}
 		if t.Background {
-			run.Status = "sent"
-			m.recordRun(run)
 			go m.backgroundRoutine(v, run, text)
 			return
 		}
-		s, queued, err := m.AssistantMessage(t.Assistant, text, nil, run.ID)
+		send := m.AssistantMessage
+		if m.as.foreground != nil {
+			send = m.as.foreground
+		}
+		s, queued, err := send(t.Assistant, text, nil, run.ID)
 		run.Session = s.ID
 		if err != nil {
 			m.endRun(run, "failed", err.Error(), true)
@@ -1122,6 +1164,8 @@ func (m *Manager) sendRun(v Routine, run RoutineRun, message string) {
 func (m *Manager) endRun(run RoutineRun, status, reason string, notify bool) {
 	run.Status, run.Error, run.Finished, run.Notify = status, reason, nowStamp(), notify
 	m.recordRun(run)
+	// What waited for its assistant goes next (lane.go).
+	m.laneFreed(run.Assistant)
 }
 
 // routineTurnEnded ends the run whose message started the turn that ended.
@@ -1251,7 +1295,7 @@ func runRoutineCommand(c *RoutineCommand) (string, *int, error) {
 	return out.String(), &code, nil
 }
 
-// routinesAPI serves /api/routines[/{id}[/runs|/run|/preview[?file=]|/runs/{run}/approve|dismiss]].
+// routinesAPI serves /api/routines[/{id}[/runs|/run|/preview[?file=]|/approve|/dismiss|/runs/{run}/approve|dismiss|start]].
 func (s *Server) routinesAPI(w http.ResponseWriter, r *http.Request, rest string) {
 	m := s.Manager
 	parts := strings.Split(rest, "/")
@@ -1341,6 +1385,21 @@ func (s *Server) routinesAPI(w http.ResponseWriter, r *http.Request, rest string
 		writeJSON(w, map[string]string{"text": text})
 	case len(parts) == 4 && parts[1] == "runs" && (parts[3] == "approve" || parts[3] == "dismiss") && r.Method == "POST":
 		run, err := m.ApproveRun(id, parts[2], parts[3] == "approve")
+		if err != nil {
+			bad(w, err)
+			return
+		}
+		writeJSON(w, run)
+	case len(parts) == 4 && parts[1] == "runs" && parts[3] == "start" && r.Method == "POST":
+		run, err := m.StartHeld(id, parts[2])
+		if err != nil {
+			bad(w, err)
+			return
+		}
+		writeJSON(w, run)
+	case len(parts) == 2 && (parts[1] == "approve" || parts[1] == "dismiss") && r.Method == "POST":
+		// Every waiting run at once (lane.go).
+		run, err := m.ApproveWaiting(id, parts[1] == "approve")
 		if err != nil {
 			bad(w, err)
 			return

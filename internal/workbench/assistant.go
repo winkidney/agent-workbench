@@ -143,7 +143,10 @@ type assistants struct {
 	// One background run at a time in the repository (background.go).
 	bg sync.Mutex
 	// Runs an assistant in the background; replaced in tests.
-	background func(a Assistant, prompt string) (string, error)
+	background func(a Assistant, prompt string) (backgroundOut, error)
+	// Hands a routine's message to an assistant's session (AssistantMessage);
+	// replaced in tests.
+	foreground func(dir, text string, images []string, routine string) (Session, bool, error)
 	// Conversations being ingested now.
 	ingesting map[string]bool
 	// The backup to GitHub (sync.go).
@@ -740,7 +743,7 @@ func (m *Manager) ensureShared() {
 		wrote = true
 	}
 	if wrote {
-		commitAll(root, "chore: add shared files from Agent Workbench")
+		m.commitAll(root, "chore: add shared files from Agent Workbench")
 	}
 }
 
@@ -842,7 +845,7 @@ func (m *Manager) setUp(root, agent, name, lang string) (bool, error) {
 	if _, err := m.updateMoss(abs); err != nil {
 		return false, err
 	}
-	commitAll(abs, "Set up assistants")
+	m.commitAll(abs, "Set up assistants")
 	m.assistantsChanged()
 	return created, nil
 }
@@ -917,14 +920,19 @@ func (m *Manager) NewAssistant(name, dir, agent, sessions string) (Assistant, er
 	if err := scaffoldAssistant(root, dir, scaffoldData{Name: name, Agent: agent, Sessions: sessions, Memory: "state"}); err != nil {
 		return Assistant{}, err
 	}
-	commitAll(root, "Add assistant "+dir)
+	m.commitAll(root, "Add assistant "+dir)
 	m.assistantsChanged()
 	return m.assistant(dir)
 }
 
 // commitAll commits everything in root when it is (or can become) a git
 // repository; without git the files are simply there.
-func commitAll(root, message string) {
+// commitAll commits everything in root, after the background run in
+// progress: it would otherwise commit the run's half-written files, or meet
+// its git in the index.
+func (m *Manager) commitAll(root, message string) {
+	m.as.bg.Lock()
+	defer m.as.bg.Unlock()
 	_, _, _ = gitCommit(root, message)
 }
 
@@ -1204,7 +1212,7 @@ func (m *Manager) PatchAssistant(dir string, p AssistantPatch) (Assistant, error
 		m.newTopic(a, m.topicState(a.Dir))
 		m.as.topic.Unlock()
 	}
-	commitAll(m.assistantsRoot(), a.Dir+": "+strings.Join(did, ", "))
+	m.commitAll(m.assistantsRoot(), a.Dir+": "+strings.Join(did, ", "))
 	m.assistantsChanged()
 	return m.assistant(dir)
 }

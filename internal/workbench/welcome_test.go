@@ -112,7 +112,7 @@ func TestCommitsArePushedToTheRemote(t *testing.T) {
 	waitUntil(t, "the first push", func() bool { st := m.syncState(); return st.Ahead == 0 && st.Pushed != "" })
 	// A new commit is pushed at the next look; not before syncEvery unless forced.
 	writeToml(t, filepath.Join(root, "main", "state", "loops.md"), "- call Ana\n")
-	commitAll(root, "loops")
+	m.commitAll(root, "loops")
 	if st := m.syncState(); st.Ahead != 1 {
 		t.Fatalf("ahead: %+v", st)
 	}
@@ -128,7 +128,7 @@ func TestCommitsArePushedToTheRemote(t *testing.T) {
 	}
 	// A remote that fails says so.
 	gitRun(root, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "missing.git"))
-	commitAll(root, "more")
+	m.commitAll(root, "more")
 	m.syncAssistants(true)
 	waitUntil(t, "the error", func() bool { return m.syncState().Error != "" })
 	if _, err := m.BackUpToGitHub(""); err == nil || !strings.Contains(err.Error(), "already has a remote") {

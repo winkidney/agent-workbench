@@ -138,10 +138,11 @@ func TestIngestRecordsCommitsAndUndoes(t *testing.T) {
 	s := Session{ID: "claude:s1", NativeID: "s1", Agent: "claude", Cwd: main, Title: "Tea and Ana", Status: "sleeping"}
 	m.as.lookup = func(id string) (Session, bool) { return s, id == s.ID }
 	var prompts []string
-	m.as.background = func(a Assistant, prompt string) (string, error) {
+	m.as.background = func(a Assistant, prompt string) (backgroundOut, error) {
 		prompts = append(prompts, prompt)
-		writeToml(t, filepath.Join(root, "shared", "wiki", "preferences.md"), "# Preferences\n\n- Tea\n")
-		return "Done.\nSummary: added preferences.md", nil
+		wiki := filepath.Join(root, "shared", "wiki", "preferences.md")
+		writeToml(t, wiki, "# Preferences\n\n- Tea\n")
+		return wrote("Done.\nSummary: added preferences.md", wiki), nil
 	}
 
 	m.maybeIngest(s.ID)
@@ -195,7 +196,9 @@ func TestIngestRecordsCommitsAndUndoes(t *testing.T) {
 	// retry from the same record moves on.
 	writeTranscript(t, m, main, "s1", "I prefer tea. My key is sk-abcdefghijklmnopqrstuvwxyz", "Meet Ana on Friday", "Book the train")
 	m.catalog.updated = time.Time{}
-	m.as.background = func(Assistant, string) (string, error) { return "", errors.New("claude: exit status 1") }
+	m.as.background = func(Assistant, string) (backgroundOut, error) {
+		return wrote(""), errors.New("claude: exit status 1")
+	}
 	m.maybeIngest(s.ID)
 	list, _ = m.AssistantChanges()
 	failed := list[0]
@@ -211,7 +214,7 @@ func TestIngestRecordsCommitsAndUndoes(t *testing.T) {
 	if strings.Contains(string(record), "Meet Ana") || !strings.Contains(string(record), "Book the train") {
 		t.Fatalf("second record:\n%s", record)
 	}
-	m.as.background = func(Assistant, string) (string, error) { return "Summary: nothing lasting", nil }
+	m.as.background = func(Assistant, string) (backgroundOut, error) { return wrote("Summary: nothing lasting"), nil }
 	retry, err := m.RetryChange(failed.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -236,7 +239,7 @@ func TestIngestOnlyForTheWiki(t *testing.T) {
 	writeTranscript(t, m, a.Path, "s2", "Draft it")
 	s := Session{ID: "claude:s2", NativeID: "s2", Agent: "claude", Cwd: a.Path, Title: "Draft", Status: "sleeping"}
 	m.as.lookup = func(id string) (Session, bool) { return s, id == s.ID }
-	m.as.background = func(Assistant, string) (string, error) { t.Fatal("ran"); return "", nil }
+	m.as.background = func(Assistant, string) (backgroundOut, error) { t.Fatal("ran"); return wrote(""), nil }
 	m.maybeIngest(s.ID)
 	if _, err := m.IngestNow(a.Dir, s.ID); err == nil {
 		t.Fatal("asked an assistant without the wiki to remember")
@@ -259,10 +262,11 @@ background = true
 `)
 	m.assistantsChanged()
 	var got string
-	m.as.background = func(a Assistant, prompt string) (string, error) {
+	m.as.background = func(a Assistant, prompt string) (backgroundOut, error) {
 		got = prompt
-		writeToml(t, filepath.Join(a.Path, "state", "inbox.md"), "- hi from a\n")
-		return "Summary: one new mail", nil
+		inbox := filepath.Join(a.Path, "state", "inbox.md")
+		writeToml(t, inbox, "- hi from a\n")
+		return wrote("Summary: one new mail", inbox), nil
 	}
 	list := m.Assistants()
 	var mail Assistant
@@ -323,9 +327,10 @@ func TestMemoryIsUpdatedWhenAsked(t *testing.T) {
 	writeTranscript(t, m, main, "s9", "I prefer green tea")
 	s := Session{ID: "claude:s9", NativeID: "s9", Agent: "claude", Cwd: main, Title: "Tea", Status: "idle"}
 	m.as.lookup = func(id string) (Session, bool) { return s, id == s.ID }
-	m.as.background = func(Assistant, string) (string, error) {
-		writeToml(t, filepath.Join(root, "shared", "wiki", "tea.md"), "green\n")
-		return "Summary: tea", nil
+	m.as.background = func(Assistant, string) (backgroundOut, error) {
+		tea := filepath.Join(root, "shared", "wiki", "tea.md")
+		writeToml(t, tea, "green\n")
+		return wrote("Summary: tea", tea), nil
 	}
 	m.saveTopic("main", assistantState{Current: s.ID})
 	started, err := m.IngestNow("main", "")
@@ -352,4 +357,10 @@ func TestMemoryIsUpdatedWhenAsked(t *testing.T) {
 	if list, _ := m.AssistantChanges(); len(list) != 1 {
 		t.Fatalf("changes after sleeping: %d", len(list))
 	}
+}
+
+// wrote is what a background Claude answers: text, and the files its Edit
+// and Write calls named.
+func wrote(text string, files ...string) backgroundOut {
+	return backgroundOut{Text: text, Wrote: files, Known: true}
 }

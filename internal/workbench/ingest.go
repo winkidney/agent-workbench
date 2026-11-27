@@ -331,6 +331,9 @@ func (m *Manager) maybeIngest(id string) {
 }
 
 func (m *Manager) runIngest(a Assistant, v AssistantChange) AssistantChange {
+	// Not beside a routine's work for the same assistant (lane.go).
+	release := m.holdLane(a.Dir)
+	defer release()
 	v = m.inBackground(a, v, ingestPrompt(v.Source))
 	if v.Status == "done" {
 		var done ingestProgress

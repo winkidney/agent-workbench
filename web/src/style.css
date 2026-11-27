@@ -6743,6 +6743,21 @@ span.heartbeat.compact {
 .assistant-home-approve {
   flex-wrap: wrap;
 }
+/* Runs waiting for the assistant's other routine work (ADR 0027): the
+   routine they wait for opens its session. */
+.assistant-home-held {
+  flex-wrap: wrap;
+}
+.assistant-home-held .held-behind {
+  border: none;
+  background: none;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
 /* The preview a waiting routine names, read before Approve (ADR 0023). */
 .assistant-home-preview {
   flex-basis: 100%;

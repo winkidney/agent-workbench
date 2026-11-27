@@ -136,7 +136,7 @@ func (m *Manager) BackUpToGitHub(name string) (SyncState, error) {
 		return SyncState{}, errors.New("repository name: letters, digits, - . _")
 	}
 	// What is not committed yet goes too.
-	commitAll(root, "chore: back up to GitHub")
+	m.commitAll(root, "chore: back up to GitHub")
 	cmd := exec.Command(gh, "repo", "create", name, "--private", "--source", root, "--remote", "origin", "--push", "--description", "Assistants for Agent Workbench")
 	cmd.Dir = root
 	cmd.Env = append(routineEnv(), "GIT_TERMINAL_PROMPT=0", "GH_PROMPT_DISABLED=1")

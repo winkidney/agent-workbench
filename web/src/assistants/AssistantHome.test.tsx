@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { WaitingCard, previewFilePath } from "./AssistantHome";
+import { HeldCard, WaitingCard, previewFilePath } from "./AssistantHome";
 import type { Routine } from "../routines/when";
 
 const routine = (preview?: string) =>
@@ -48,5 +48,38 @@ describe("a routine waiting for approval (ADR 0023)", () => {
       "2026-11-27",
     ])
       expect(previewFilePath("r1", path)).toBeNull();
+  });
+});
+
+describe("a routine whose runs wait for their turn (ADR 0027)", () => {
+  const held = (n: number, behindSession?: string) =>
+    ({
+      id: "r1",
+      name: "Daily summary",
+      held: Array.from({ length: n }, (_, i) => ({
+        id: `h${i}`,
+        status: "held",
+        behind: "Check mail",
+        behindSession,
+      })),
+    }) as unknown as Routine;
+  const render = (r: Routine) =>
+    renderToStaticMarkup(
+      <HeldCard routine={r} deciding={false} onAct={() => {}} />,
+    );
+
+  it("says what it waits for, with Start now and Dismiss", () => {
+    const html = render(held(1, "claude:s1"));
+    expect(html).toContain("Daily summary: 1 run waits for its turn");
+    expect(html).toMatch(/class="held-behind"[^>]*>Check mail<\/button>/);
+    expect(html).toContain("Start now");
+    expect(html).toContain("Dismiss");
+  });
+
+  it("says several go as one message, and shows nothing without runs", () => {
+    expect(render(held(3))).toContain(
+      "3 runs wait for its turn, after Check mail. It starts when that is done, as one message.",
+    );
+    expect(render(held(0))).toBe("");
   });
 });

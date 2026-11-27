@@ -1,7 +1,7 @@
 # ADR 0021: Outside content waits for the user's approval, and background runs change only their own files
 
 - Date: 2026-11-23
-- Status: accepted; amends 0009 (a routine's run can wait) and 0011 (what a background run may change)
+- Status: accepted; amends 0009 (a routine's run can wait) and 0011 (what a background run may change); Approve and the background run's commit and undo amended by [0027](0027-an-assistants-routine-work-takes-turns.md)
 
 ## Context
 
