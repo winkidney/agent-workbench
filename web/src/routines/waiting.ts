@@ -39,7 +39,8 @@ export function waitingByAssistant(list: Routine[]): WaitingRuns {
       w.count += n;
       w.routines.push(r.name);
     }
-    if (r.report) w.reports.push({ routine: r.id, name: r.name, run: r.report });
+    if (r.report)
+      w.reports.push({ routine: r.id, name: r.name, run: r.report });
     if (run) w.running.push({ routine: r.id, name: r.name, run });
   }
   return out;

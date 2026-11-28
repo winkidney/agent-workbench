@@ -188,8 +188,8 @@ export function notifyRun(
         : run.session
           ? "The agent answered."
           : run.output?.trim()
-          ? run.output.trim().slice(-200)
-          : "See Settings → Routines.";
+            ? run.output.trim().slice(-200)
+            : "See Settings → Routines.";
   try {
     const n = new Notification(title, {
       body,

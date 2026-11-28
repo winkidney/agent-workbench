@@ -26,8 +26,7 @@ export function waitingFor(
     .map((k) => `${kinds.get(k)} ${k}${kinds.get(k)! > 1 ? "s" : ""}`);
   if (runs) parts.push(`${runs} routine run${runs > 1 ? "s" : ""}`);
   if (reports) parts.push(`${reports} report${reports > 1 ? "s" : ""}`);
-  const count =
-    [...kinds.values()].reduce((a, b) => a + b, 0) + runs + reports;
+  const count = [...kinds.values()].reduce((a, b) => a + b, 0) + runs + reports;
   return { count, title: count ? `Waiting for you: ${parts.join(", ")}` : "" };
 }
 
@@ -42,8 +41,7 @@ export function assistantRows<
   nodes: Node[],
   runs: Record<
     string,
-    | { count: number; reports?: unknown[]; running?: RunningRun[] }
-    | undefined
+    { count: number; reports?: unknown[]; running?: RunningRun[] } | undefined
   >,
   showOff: boolean,
 ) {
