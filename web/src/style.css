@@ -2870,6 +2870,38 @@ textarea {
   margin-top: 12px;
   font-size: 12.5px;
 }
+/* Install and restart (ADR 0028): the sessions a restart touches, and
+   how the last update went. */
+.about-update-confirm {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--muted);
+  font-size: 13px;
+}
+.about-update-confirm p {
+  margin: 0 0 6px;
+}
+.about-update-confirm ul {
+  margin: 0 0 6px;
+  padding-left: 18px;
+}
+.about-update-confirm li {
+  overflow-wrap: anywhere;
+}
+.about-update-confirm .confirm-actions {
+  margin-top: 8px;
+}
+.about-update-status {
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  color: var(--muted-foreground);
+  overflow-wrap: anywhere;
+}
+.about-update-warn {
+  color: var(--warning);
+}
 .about-diagnostics {
   width: 100%;
   border: 1px solid var(--border);

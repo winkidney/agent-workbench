@@ -31,3 +31,4 @@ Decisions that shape how the workbench behaves, why, and what they cost. Each re
 | [0025](0025-claude-records-are-read-in-one-place.md) | Claude's records are read in one place, live and from the transcript | accepted |
 | [0026](0026-preview-links-open-files-beside-it.md) | A preview's links to Markdown files beside it open in place | accepted; amends 0023 |
 | [0027](0027-an-assistants-routine-work-takes-turns.md) | An assistant's routine work takes turns, and background runs keep to their own files | accepted; amends 0009, 0011 and 0021 |
+| [0028](0028-install-and-restart-from-about.md) | Install and restart from Settings → About | accepted |

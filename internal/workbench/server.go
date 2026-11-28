@@ -685,6 +685,8 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 	case path == "about" && r.Method == "GET":
 		w.Header().Set("Cache-Control", "no-store")
 		writeJSON(w, s.about())
+	case path == "update" && r.Method == "POST":
+		s.startUpdate(w, r)
 	case path == "updates" && r.Method == "GET":
 		tag, link, err := LatestRelease()
 		if err != nil {

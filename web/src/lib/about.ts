@@ -13,6 +13,23 @@ export type AboutAgent = {
   home?: string;
   homeSource?: "setting" | "environment" | "default";
 };
+// The last update, as the updater wrote it (update.json).
+export type UpdateStatus = {
+  state:
+    | "starting"
+    | "downloading"
+    | "verifying"
+    | "installing"
+    | "done"
+    | "failed"
+    | "rolled-back";
+  from?: string;
+  to?: string;
+  error?: string;
+  log?: string;
+  at: string;
+};
+
 export type About = {
   workbench: {
     version: string;
@@ -27,6 +44,12 @@ export type About = {
     autostart?: string;
     repo?: string;
     license?: string;
+  };
+  // Install and restart (ADR 0028): whether it can, and the last update.
+  update?: {
+    can: boolean;
+    blocked?: string;
+    last?: UpdateStatus;
   };
   agents: AboutAgent[];
   data: {

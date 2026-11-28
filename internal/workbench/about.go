@@ -150,6 +150,7 @@ func (s *Server) about() map[string]any {
 	}
 	return map[string]any{
 		"workbench": workbench,
+		"update":    s.aboutUpdate(),
 		"agents":    agents,
 		"data": map[string]any{
 			"storageBytes":  s.Manager.store.Size(),
@@ -196,17 +197,36 @@ var releasesURL = "https://api.github.com/repos/winkidney/agent-workbench/releas
 // only when asked, and GitHub limits unauthenticated requests.
 var latestRelease struct {
 	sync.Mutex
-	at        time.Time
-	tag, link string
+	at time.Time
+	v  Release
 }
 
-// LatestRelease is the newest published release (its tag and page). The
-// request carries nothing about this machine or its user.
+// Release is a published release: its tag, its page and its files.
+type Release struct {
+	Tag    string         `json:"tag_name"`
+	Link   string         `json:"html_url"`
+	Assets []ReleaseAsset `json:"assets"`
+}
+
+type ReleaseAsset struct {
+	Name string `json:"name"`
+	URL  string `json:"browser_download_url"`
+	Size int64  `json:"size"`
+}
+
+// LatestRelease is the newest published release (its tag and page).
 func LatestRelease() (tag, link string, err error) {
+	v, err := NewestRelease()
+	return v.Tag, v.Link, err
+}
+
+// NewestRelease is the newest published release with its files. The
+// request carries nothing about this machine or its user.
+func NewestRelease() (Release, error) {
 	latestRelease.Lock()
 	defer latestRelease.Unlock()
-	if latestRelease.tag != "" && time.Since(latestRelease.at) < 10*time.Minute {
-		return latestRelease.tag, latestRelease.link, nil
+	if latestRelease.v.Tag != "" && time.Since(latestRelease.at) < 10*time.Minute {
+		return latestRelease.v, nil
 	}
 	req, _ := http.NewRequest("GET", releasesURL, nil)
 	req.Header.Set("Accept", "application/vnd.github+json")
@@ -214,19 +234,30 @@ func LatestRelease() (tag, link string, err error) {
 	client := http.Client{Timeout: 8 * time.Second}
 	res, err := client.Do(req)
 	if err != nil {
-		return "", "", err
+		return Release{}, err
 	}
 	defer res.Body.Close()
 	if res.StatusCode != 200 {
-		return "", "", fmt.Errorf("GitHub answered %s", res.Status)
+		return Release{}, fmt.Errorf("GitHub answered %s", res.Status)
 	}
-	var v struct {
-		Tag  string `json:"tag_name"`
-		Link string `json:"html_url"`
+	var v Release
+	if err := json.NewDecoder(io.LimitReader(res.Body, 4<<20)).Decode(&v); err != nil || v.Tag == "" {
+		return Release{}, errors.New("unreadable release information")
 	}
-	if err := json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(&v); err != nil || v.Tag == "" {
-		return "", "", errors.New("unreadable release information")
-	}
-	latestRelease.at, latestRelease.tag, latestRelease.link = time.Now(), v.Tag, v.Link
-	return v.Tag, v.Link, nil
+	latestRelease.at, latestRelease.v = time.Now(), v
+	return v, nil
+}
+
+func forgetRelease() {
+	latestRelease.Lock()
+	latestRelease.v = Release{}
+	latestRelease.Unlock()
+}
+
+// SetReleasesURL points the update check elsewhere (tests), and forgets
+// the last answer.
+func SetReleasesURL(u string) {
+	latestRelease.Lock()
+	defer latestRelease.Unlock()
+	releasesURL, latestRelease.v = u, Release{}
 }

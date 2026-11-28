@@ -37,6 +37,8 @@ Commands:
   install     copy this binary to the user's program folder, start the
               workbench at login, and start it now (also upgrades)
   uninstall   remove the login start (--purge also deletes data)
+  update      install the newest release over this one and restart it
+              (checked against the release's checksums; --to vX.Y.Z)
   serve       run in the foreground
   doctor      check the agents and the platform
   version     print the version
@@ -69,6 +71,9 @@ type config struct {
 	envFile string
 	env     []string
 	purge   bool
+	// update: the release to install, and the program the workbench runs
+	// (from the About tab).
+	to, program string
 }
 
 func main() {
@@ -106,6 +111,8 @@ func run() error {
 		return nil
 	})
 	flags.BoolVar(&c.purge, "purge", false, "uninstall: also delete the data directory")
+	flags.StringVar(&c.to, "to", "", "update: the release to install (the newest)")
+	flags.StringVar(&c.program, "program", "", "update: the program the workbench runs")
 	// The service name; by default the instance's, from --data-dir and
 	// --listen (instance.go).
 	flags.StringVar(&c.name, "name", workbench.DefaultInstance, "service name")
@@ -140,6 +147,8 @@ func run() error {
 		return install(c)
 	case "uninstall":
 		return uninstall(c)
+	case "update":
+		return update(c, c.to)
 	case "doctor":
 		return doctor(c)
 	case "version":
@@ -183,6 +192,15 @@ func serve(c config) error {
 	}
 	workbench.Version = version
 	workbench.Autostart = func() string { return autostartState(c) }
+	// Install and restart from Settings → About (update.go).
+	workbench.StartUpdate = func(to string) error { return startUpdate(c, to) }
+	workbench.UpdateBlocked = func() string {
+		exe, err := executable()
+		if err != nil {
+			return err.Error()
+		}
+		return updateBlocked(c, exe)
+	}
 	writeInstance(c)
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()

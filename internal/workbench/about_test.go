@@ -141,7 +141,7 @@ func TestLatestReleaseIsAskedOnlyWhenNeeded(t *testing.T) {
 	releasesURL = gh.URL
 	defer func() { releasesURL = old }()
 	latestRelease.Lock()
-	latestRelease.tag = ""
+	latestRelease.v = Release{}
 	latestRelease.Unlock()
 	s, _ := authServer(t)
 	for i := 0; i < 2; i++ {

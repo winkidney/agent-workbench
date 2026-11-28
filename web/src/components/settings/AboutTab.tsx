@@ -12,6 +12,12 @@ import {
   type AboutAgent,
 } from "../../lib/about";
 import { copyField } from "../../lib/copy";
+import {
+  busySessions,
+  lastUpdate,
+  restartEffect,
+  updateUnderWay,
+} from "../../lib/update";
 import { Button } from "../ui/button";
 
 const HOME_SOURCES: Record<string, string> = {
@@ -90,6 +96,7 @@ export function AgentRow({ agent }: { agent: AboutAgent }) {
 }
 
 type Update = { current: string; latest: string; url?: string };
+type Busy = { id: string; title?: string; nativeId?: string };
 
 // About: this workbench, the agents it runs, its data; read when the tab
 // is shown, and gone with the dialog.
@@ -100,6 +107,26 @@ export function AboutTab({ active }: { active: boolean }) {
   const [checking, setChecking] = useState(false);
   const [updateError, setUpdateError] = useState("");
   const [copied, setCopied] = useState(false);
+  // Install and restart (ADR 0028): the release being installed, and the
+  // sessions to confirm a restart over.
+  const [installing, setInstalling] = useState("");
+  const [confirm, setConfirm] = useState<Busy[] | null>(null);
+  const lastState = about?.update?.last?.state;
+  // While an update runs, About is read again until the workbench it
+  // restarts says how it went; requests fail meanwhile.
+  useEffect(() => {
+    if (!active || (!installing && !updateUnderWay(about?.update?.last)))
+      return;
+    const t = window.setInterval(() => {
+      api<About>("about")
+        .then((v) => {
+          setAbout(v);
+          if (!updateUnderWay(v.update?.last)) setInstalling("");
+        })
+        .catch(() => {});
+    }, 3000);
+    return () => window.clearInterval(t);
+  }, [active, installing, lastState]);
   useEffect(() => {
     if (!active || about) return;
     let live = true;
@@ -120,7 +147,9 @@ export function AboutTab({ active }: { active: boolean }) {
     );
   if (!about) return <p className="subtle">Loading…</p>;
   const w = about.workbench;
-  const release = /^v\d+\.\d+\.\d+/.test(w.version);
+  // A release build prints its version without the tag's v (0.7.24);
+  // a build of the repository says how far past a tag it is.
+  const release = /^v?\d+\.\d+\.\d+$/.test(w.version);
   const check = async () => {
     setChecking(true);
     setUpdateError("");
@@ -132,6 +161,28 @@ export function AboutTab({ active }: { active: boolean }) {
       setChecking(false);
     }
   };
+  const install = async (to: string) => {
+    setConfirm(null);
+    setUpdateError("");
+    try {
+      await api("update", "POST", { to });
+      setInstalling(to);
+    } catch (e) {
+      setUpdateError(e instanceof Error ? e.message : String(e));
+    }
+  };
+  // Sessions that work or wait for the user are named first.
+  const begin = async (to: string) => {
+    setUpdateError("");
+    const busy = busySessions(
+      await api<(Busy & { status: string; attention?: string })[]>(
+        "sessions",
+      ).catch(() => []),
+    );
+    if (busy.length) setConfirm(busy);
+    else await install(to);
+  };
+  const last = lastUpdate(about.update?.last, w.version);
   const report = diagnostics(about);
   const sessions = about.data.sessions ?? {};
   return (
@@ -145,7 +196,7 @@ export function AboutTab({ active }: { active: boolean }) {
             {release && w.repo && (
               <a
                 className="about-link"
-                href={`${w.repo}/releases/tag/${w.version}`}
+                href={`${w.repo}/releases/tag/v${w.version.replace(/^v/, "")}`}
                 target="_blank"
                 rel="noreferrer"
               >
@@ -222,11 +273,29 @@ export function AboutTab({ active }: { active: boolean }) {
             Check for updates
           </Button>
           {update &&
-            (newer(update.current, update.latest) ? (
-              <a href={update.url} target="_blank" rel="noreferrer">
-                {update.latest} is available{" "}
-                <ArrowUpRight size={12} aria-hidden />
-              </a>
+            (newer(w.version, update.latest) ? (
+              <>
+                <a href={update.url} target="_blank" rel="noreferrer">
+                  {update.latest} is available{" "}
+                  <ArrowUpRight size={12} aria-hidden />
+                </a>
+                {about.update?.can ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={!!installing || !!confirm}
+                    onClick={() => void begin(update.latest)}
+                  >
+                    Install and restart
+                  </Button>
+                ) : (
+                  about.update?.blocked && (
+                    <span className="subtle">
+                      Not from here: {about.update.blocked}.
+                    </span>
+                  )
+                )}
+              </>
             ) : release ? (
               <span className="subtle">You have the latest release.</span>
             ) : (
@@ -236,6 +305,61 @@ export function AboutTab({ active }: { active: boolean }) {
             ))}
           {updateError && <span className="warn">{updateError}</span>}
         </div>
+        {confirm && update && (
+          <div
+            role="alertdialog"
+            aria-label={`Install ${update.latest} and restart?`}
+            className="about-update-confirm"
+          >
+            <p>
+              Install {update.latest} and restart? {confirm.length}{" "}
+              {confirm.length === 1
+                ? "session is working or waiting"
+                : "sessions are working or waiting"}{" "}
+              for you:
+            </p>
+            <ul>
+              {confirm.slice(0, 5).map((s) => (
+                <li key={s.id}>{s.title || s.nativeId || s.id}</li>
+              ))}
+              {confirm.length > 5 && <li>+{confirm.length - 5} more</li>}
+            </ul>
+            <p className="subtle">{restartEffect(w.engines)}</p>
+            <div className="confirm-actions">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setConfirm(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => void install(update.latest)}
+              >
+                Restart now
+              </Button>
+            </div>
+          </div>
+        )}
+        {installing && !updateUnderWay(about.update?.last) ? (
+          <p className="about-update-status" role="status">
+            Installing {installing}… the page reconnects when it is back.
+          </p>
+        ) : (
+          last && (
+            <p
+              className={
+                "about-update-status" + (last.warn ? " about-update-warn" : "")
+              }
+              role="status"
+            >
+              {last.text}
+            </p>
+          )
+        )}
       </section>
       <section className="settings-section">
         <h3>Agents</h3>

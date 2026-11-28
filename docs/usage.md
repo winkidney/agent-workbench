@@ -282,6 +282,7 @@ An assistant does one kind of work your way. Each is a folder in a repository of
   - The instance name, for a workbench that is not the default one (see [More than one workbench](install.md#more-than-one-workbench)).
   - Local data: size, how long live events are kept, the number of sessions.
   - **Check for updates** asks GitHub for the latest release, only when you click it. The workbench makes the request, without anything about you or this machine.
+  - **Install and restart** appears beside a newer release. The workbench downloads this platform's archive from that release, checks it against the release's `checksums.txt`, installs it and restarts (the same as `agent-workbench update`; see [ADR 0028](adr/0028-install-and-restart-from-about.md)). If sessions are working or waiting for you, it names them first and asks: with engines as systemd units (Linux) they keep running; otherwise their current turns stop, and their conversations are kept. The page reconnects when the new version is up and says how it went: "Updated from … to …", or why it failed. If the new version does not start, the previous one is put back. A workbench a package manager installed (deb, rpm, Homebrew), or one not installed to start at login, says so instead: update it the way it was installed.
   - **Copy diagnostics** copies the same facts as `agent-workbench doctor`, for a bug report.
 
 The tab you used last opens next time, per browser.
