@@ -5,6 +5,7 @@ import {
   Clock,
   Eye,
   FileText,
+  MessageSquareText,
   Settings,
   ShieldAlert,
   Sparkles,
@@ -27,6 +28,7 @@ import {
 } from "../routines/when";
 import { RoutineLine } from "../routines/RoutineLine";
 import { openRoutine } from "../routines/open";
+import { seeReport } from "../routines/waiting";
 import { MossIcon } from "../components/MossIcon";
 import { ATTENTION_LABEL } from "../attention";
 import { relativeTime, type Session } from "../sidebar/tree";
@@ -109,11 +111,25 @@ export function AssistantHome({
       setReload((n) => n + 1);
     }
   };
+  // The user saw r's report: Open goes on to its session.
+  const see = async (r: Routine, open?: string) => {
+    if (open) onOpenSession(open);
+    try {
+      await seeReport(r.id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setReload((n) => n + 1);
+    }
+  };
   const waiting = (routines ?? []).filter((r) => r.waiting?.length);
   const held = (routines ?? []).filter((r) => r.held?.length);
+  const reports = (routines ?? []).filter((r) => r.report);
   // What waits for the user, as its sidebar bell counts it (waitingFor.ts).
   const needs =
-    sessions.length + waiting.reduce((n, r) => n + (r.waiting?.length ?? 0), 0);
+    sessions.length +
+    reports.length +
+    waiting.reduce((n, r) => n + (r.waiting?.length ?? 0), 0);
   const now = useNow(!!routines?.some(underWay));
   const agent = a.agent === "codex" ? "Codex" : "Claude";
   return (
@@ -180,6 +196,14 @@ export function AssistantHome({
               from={routineOfSession(routines ?? [], s.id)}
               now={now}
               onOpen={() => onOpenSession(s.id)}
+            />
+          ))}
+          {reports.map((r) => (
+            <ReportCard
+              key={r.id}
+              routine={r}
+              now={now}
+              onSee={(open) => void see(r, open)}
             />
           ))}
           {waiting.map((r) => (
@@ -342,6 +366,46 @@ export function WaitingSession({
       <Button size="sm" onClick={onOpen}>
         Open
       </Button>
+    </div>
+  );
+}
+
+// A routine's report for the user (routine.go reportOf): the agent's reply,
+// which the card shows as it is; Open goes to the conversation, Dismiss
+// only records that it was read. Either takes it out of the bell.
+export function ReportCard({
+  routine: r,
+  now,
+  onSee,
+}: {
+  routine: Routine;
+  now: number;
+  onSee: (open?: string) => void;
+}) {
+  const run = r.report;
+  if (!run) return null;
+  const at = run.finished || run.started;
+  const ago = at ? relativeTime(at, now) : "";
+  return (
+    <div className="assistant-home-setup assistant-home-report" role="status">
+      <MessageSquareText size={14} />
+      <span>
+        <strong>{r.name}</strong> · report
+        {ago && ` · ${ago === "now" ? "just now" : `${ago} ago`}`}
+      </span>
+      {run.session && (
+        <Button size="sm" onClick={() => onSee(run.session)}>
+          Open
+        </Button>
+      )}
+      <Button size="sm" variant="ghost" onClick={() => onSee()}>
+        Dismiss
+      </Button>
+      <div className="assistant-home-preview">
+        <EnvContext.Provider value={PREVIEW_ENV}>
+          <Markdown text={run.report ?? ""} />
+        </EnvContext.Provider>
+      </div>
     </div>
   );
 }

@@ -83,7 +83,7 @@ import { LogoMark } from "./components/Logo";
 import { PreviewPanel } from "./preview/PreviewPanel";
 import { FileList, type Entry } from "./preview/FileList";
 import { mayLeave } from "./preview/unsaved";
-import { useWaitingRuns, waitingTotal } from "./routines/waiting";
+import { seeReport, useWaitingRuns, waitingTotal } from "./routines/waiting";
 import { inTerminal } from "./preview/terminal";
 import {
   drifted,
@@ -714,6 +714,24 @@ export default function App() {
     runsWaiting,
   );
   openSession.current = selectSession;
+  // A routine's report is seen once its conversation is on screen in a page
+  // in front: the reply is there, at its end. Not while a new request (an
+  // assistant's card) covers it.
+  useEffect(() => {
+    if (!active || composing) return;
+    const reports = Object.values(waitingRuns).flatMap((w) =>
+      w.reports.filter((r) => r.run.session === active),
+    );
+    if (!reports.length) return;
+    const check = () => {
+      if (document.visibilityState !== "visible" || !document.hasFocus())
+        return;
+      for (const r of reports) void seeReport(r.routine).catch(() => {});
+    };
+    check();
+    window.addEventListener("focus", check);
+    return () => window.removeEventListener("focus", check);
+  }, [active, composing, waitingRuns]);
   const recent = useMemo(
     () => recentProjects(sessions, sidebarPrefs.prefs, workspaces),
     [sessions, sidebarPrefs.prefs, workspaces],

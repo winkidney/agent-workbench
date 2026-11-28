@@ -6,12 +6,21 @@ import { underWay, type Routine, type RoutineRun } from "./when";
 // A routine's run under way (when.ts underWay).
 export type RunningRun = { routine: string; name: string; run: RoutineRun };
 
+// A routine's report the user has not seen (routine.go reportOf).
+export type ReportRun = { routine: string; name: string; run: RoutineRun };
+
 // By the assistant they belong to: runs that wait for the user's approval
-// (ADR 0021), how many and the routines they come from; and the runs under
-// way, which its sidebar row shows as running.
+// (ADR 0021), how many and the routines they come from; the reports for the
+// user not yet seen; and the runs under way, which its sidebar row shows as
+// running.
 export type WaitingRuns = Record<
   string,
-  { count: number; routines: string[]; running: RunningRun[] }
+  {
+    count: number;
+    routines: string[];
+    reports: ReportRun[];
+    running: RunningRun[];
+  }
 >;
 
 export function waitingByAssistant(list: Routine[]): WaitingRuns {
@@ -19,23 +28,29 @@ export function waitingByAssistant(list: Routine[]): WaitingRuns {
   for (const r of list) {
     const n = r.waiting?.length ?? 0;
     const run = underWay(r);
-    if (!n && !run) continue;
+    if (!n && !run && !r.report) continue;
     const w = (out[routineOwner(r)] ??= {
       count: 0,
       routines: [],
+      reports: [],
       running: [],
     });
     if (n) {
       w.count += n;
       w.routines.push(r.name);
     }
+    if (r.report) w.reports.push({ routine: r.id, name: r.name, run: r.report });
     if (run) w.running.push({ routine: r.id, name: r.name, run });
   }
   return out;
 }
 
 export const waitingTotal = (w: WaitingRuns) =>
-  Object.values(w).reduce((n, x) => n + x.count, 0);
+  Object.values(w).reduce((n, x) => n + x.count + x.reports.length, 0);
+
+// The user saw a routine's report: opened its session or dismissed it.
+export const seeReport = (routine: string) =>
+  api(`routines/${encodeURIComponent(routine)}/seen`, "POST");
 
 // Kept in step with the routines: read again when one changes (App.tsx
 // dispatches workbench:routines for every routine event) and when the page

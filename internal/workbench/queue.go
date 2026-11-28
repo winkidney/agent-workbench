@@ -89,8 +89,10 @@ func (m *Manager) turnEnded(r *runtime, failed bool) {
 		} else if interrupted {
 			reason = "the turn was interrupted"
 		}
-		go m.routineTurnEnded(run, id, failed || interrupted, reason)
+		reply := r.reply
+		go m.routineTurnEnded(run, id, failed || interrupted, reason, reply)
 	}
+	r.reply = ""
 	if len(r.queue) == 0 {
 		return
 	}
@@ -135,7 +137,7 @@ func (m *Manager) RemoveQueued(id, qid string) error {
 	for i, q := range r.queue {
 		if q.ID == qid {
 			if q.Routine != "" {
-				go m.routineTurnEnded(q.Routine, id, true, "removed from the queue")
+				go m.routineTurnEnded(q.Routine, id, true, "removed from the queue", "")
 			}
 			r.queue = append(r.queue[:i], r.queue[i+1:]...)
 			if len(r.queue) == 0 {

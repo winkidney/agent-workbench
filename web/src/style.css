@@ -6845,6 +6845,15 @@ span.heartbeat.compact {
   align-items: center;
   gap: 6px;
 }
+/* A routine's report for the user (routine.go reportOf): the reply itself,
+   short ones whole, long ones scrolled, so most need no Open. */
+.assistant-home-report {
+  flex-wrap: wrap;
+}
+.assistant-home-report .assistant-home-preview {
+  max-height: 16em;
+  font-size: 13px;
+}
 .assistant-home-foot {
   display: flex;
   flex-wrap: wrap;

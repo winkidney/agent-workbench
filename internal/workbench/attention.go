@@ -93,6 +93,19 @@ func trackAttention(r *runtime, method string, params map[string]any) {
 	}
 }
 
+// trackReply keeps the last message of a Codex turn: a routine's run keeps
+// it as its report (routine.go reportOf). Claude's comes with its result.
+func trackReply(r *runtime, method string, params map[string]any) {
+	switch method {
+	case "turn/started":
+		r.reply = ""
+	case "item/completed":
+		if item := obj(params["item"]); str(item["type"]) == "agentMessage" {
+			r.reply = str(item["text"])
+		}
+	}
+}
+
 // userActed clears what the user answered by writing to the session: a
 // message, a steer or an interrupt answers or sets aside the async questions
 // and the plan decision (m.mu held).

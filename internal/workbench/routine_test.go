@@ -162,9 +162,11 @@ func TestRoutineMessageEndsWithItsTurn(t *testing.T) {
 	if !strings.HasPrefix(text, "[Routine: Morning]\n\nCheck the inbox") {
 		t.Fatalf("sent %q", text)
 	}
+	m.receive(s.ID, gen, map[string]any{"method": "item/completed", "params": map[string]any{"item": map[string]any{"type": "agentMessage", "text": "Two mails need you."}}})
 	m.receive(s.ID, gen, map[string]any{"method": "turn/completed", "params": map[string]any{"turn": map[string]any{"status": "completed"}}})
-	// The session took its native id with the first turn.
-	if run := waitRun(t, m, first.ID, "done", "failed"); run.Status != "done" || run.Session != "codex:n" || !run.Notify {
+	// The session took its native id with the first turn; the turn's last
+	// message is the run's report.
+	if run := waitRun(t, m, first.ID, "done", "failed"); run.Status != "done" || run.Session != "codex:n" || !run.Notify || !run.ForYou || run.Report != "Two mails need you." {
 		t.Fatalf("first run: %+v", run)
 	}
 	// The queued message went out when the turn ended; its own turn fails.

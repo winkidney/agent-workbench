@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import {
   AssistantHome,
   HeldCard,
+  ReportCard,
   RunningNow,
   WaitingCard,
   WaitingSession,
@@ -211,6 +212,50 @@ describe("where what waits comes from, and what runs", () => {
           routines={[routines[3]]}
           now={now}
           onOpenSession={() => {}}
+        />,
+      ),
+    ).toBe("");
+  });
+});
+
+describe("a routine's report for the user", () => {
+  const withReport = (session?: string) =>
+    ({
+      id: "d",
+      name: "Daily check",
+      report: {
+        id: "x",
+        status: "done",
+        finished: new Date(Date.now() - 5 * 60_000).toISOString(),
+        report: "Due today:\n\n- **renew** the domain",
+        forYou: true,
+        session,
+      },
+    }) as unknown as Routine;
+  it("shows the reply itself, with Open and Dismiss", () => {
+    const html = renderToStaticMarkup(
+      <ReportCard
+        routine={withReport("claude:s1")}
+        now={Date.now()}
+        onSee={() => {}}
+      />,
+    );
+    expect(html).toContain("<strong>Daily check</strong> · report · 5m ago");
+    expect(html).toContain("<strong>renew</strong>");
+    expect(html).toContain(">Open<");
+    expect(html).toContain(">Dismiss<");
+  });
+  it("offers no Open without a session, and is nothing without a report", () => {
+    const html = renderToStaticMarkup(
+      <ReportCard routine={withReport()} now={Date.now()} onSee={() => {}} />,
+    );
+    expect(html).not.toContain(">Open<");
+    expect(
+      renderToStaticMarkup(
+        <ReportCard
+          routine={{ id: "q", name: "Quiet" } as Routine}
+          now={Date.now()}
+          onSee={() => {}}
         />,
       ),
     ).toBe("");

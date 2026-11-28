@@ -115,7 +115,7 @@ func TestApprovingWaitingRunsSendsThemTogether(t *testing.T) {
 	}
 
 	// Dismissed together: nothing is sent.
-	m.routineTurnEnded(first.ID, "s1", false, "")
+	m.routineTurnEnded(first.ID, "s1", false, "", "")
 	a, b := runNow(t, m, id, "waiting"), runNow(t, m, id, "waiting")
 	if _, err := m.ApproveWaiting(id, false); err != nil {
 		t.Fatal(err)
@@ -163,7 +163,7 @@ func TestAnAssistantsRoutineWorkTakesTurns(t *testing.T) {
 	fake.waitFor(t, 2)
 
 	// The turn ends: the oldest held run goes next, alone (another routine).
-	m.routineTurnEnded(first.ID, "s1", false, "")
+	m.routineTurnEnded(first.ID, "s1", false, "", "")
 	fake.waitFor(t, 3)
 	if fake.sent[2].run != summary.ID || !strings.Contains(fake.sent[2].text, "Summarize yesterday.") {
 		t.Fatalf("next: %+v", fake.sent[2])
@@ -173,7 +173,7 @@ func TestAnAssistantsRoutineWorkTakesTurns(t *testing.T) {
 		t.Fatalf("%d sessions", fake.count())
 	}
 	// Then the two checks, as one.
-	m.routineTurnEnded(summary.ID, fake.sent[2].session, false, "")
+	m.routineTurnEnded(summary.ID, fake.sent[2].session, false, "", "")
 	fake.waitFor(t, 4)
 	if fake.sent[3].run != second.ID || strings.Count(fake.sent[3].text, "--- run of ") != 2 {
 		t.Fatalf("merged checks: %q", fake.sent[3].text)
@@ -284,7 +284,7 @@ func TestAMemoryUpdateWaitsForTheLane(t *testing.T) {
 		t.Fatal("a memory update ran beside a routine's session")
 	case <-time.After(100 * time.Millisecond):
 	}
-	m.routineTurnEnded(first.ID, "s1", false, "")
+	m.routineTurnEnded(first.ID, "s1", false, "", "")
 	var release func()
 	select {
 	case release = <-held:

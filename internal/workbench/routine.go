@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/robfig/cron/v3"
 )
@@ -102,6 +103,8 @@ type Routine struct {
 	// Its runs that wait for their assistant's lane (lane.go), oldest first,
 	// each with what it waits for.
 	Held []RoutineRun `json:"held,omitempty"`
+	// Its newest run whose report is for the user and not yet seen.
+	Report *RoutineRun `json:"report,omitempty"`
 }
 
 // RoutineRun is one time a routine was due.
@@ -136,11 +139,19 @@ type RoutineRun struct {
 	Error  string `json:"error,omitempty"`
 	// Whether the page should notify about this run's end.
 	Notify bool `json:"notify,omitempty"`
+	// A message run: the agent's last reply in the turn it started, up to
+	// routineReportMax bytes, without the quiet mark. ForYou: the reply did
+	// not say it has nothing for the user, so the page shows it to them
+	// until Seen (when they opened its session or dismissed it).
+	Report string `json:"report,omitempty"`
+	ForYou bool   `json:"forYou,omitempty"`
+	Seen   string `json:"seen,omitempty"`
 }
 
 const (
 	routineOutputMax  = 16 << 10
 	routineHandOffMax = 4 << 10
+	routineReportMax  = 8 << 10
 	routineTimeoutMin = 10
 	routineTimeoutMax = 60
 	routineMinMinutes = 5
@@ -456,7 +467,7 @@ func (s *Store) routine(id string) (Routine, error) {
 }
 
 func (s *Store) saveRoutine(v Routine) error {
-	v.Next, v.Last, v.Recent, v.Waiting = "", nil, nil, nil
+	v.Next, v.Last, v.Recent, v.Waiting, v.Report = "", nil, nil, nil, nil
 	b, _ := json.Marshal(v)
 	_, err := s.db.Exec(`INSERT INTO routines(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data`, v.ID, string(b))
 	return err
@@ -534,6 +545,28 @@ func (s *Store) waitingRuns(routine string) ([]RoutineRun, error) {
 	return out, rows.Err()
 }
 
+// unseenReports lists a routine's runs whose report is for the user and not
+// yet seen, newest first.
+func (s *Store) unseenReports(routine string) ([]RoutineRun, error) {
+	rows, err := s.db.Query(`SELECT data FROM routine_runs WHERE routine=? AND json_extract(data,'$.forYou')=1 AND json_extract(data,'$.seen') IS NULL ORDER BY started DESC`, routine)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []RoutineRun{}
+	for rows.Next() {
+		var data string
+		if rows.Scan(&data) != nil {
+			continue
+		}
+		var v RoutineRun
+		if json.Unmarshal([]byte(data), &v) == nil {
+			out = append(out, v)
+		}
+	}
+	return out, rows.Err()
+}
+
 // openRuns lists the runs not yet ended.
 func (s *Store) openRuns() ([]RoutineRun, error) {
 	rows, err := s.db.Query(`SELECT data FROM routine_runs WHERE json_extract(data,'$.status') IN ('running','sent','queued')`)
@@ -592,10 +625,14 @@ func (m *Manager) Routines() ([]Routine, error) {
 		runs, _ := m.store.runs(list[i].ID, routineRecentShown)
 		for j := range runs {
 			runs[j].Output = outputPreview(runs[j].Output)
+			runs[j].Report = outputPreview(runs[j].Report)
+		}
+		if reports, _ := m.store.unseenReports(list[i].ID); len(reports) > 0 {
+			list[i].Report = &reports[0]
 		}
 		if len(runs) > 0 {
 			last := runs[0]
-			last.Output = ""
+			last.Output, last.Report = "", ""
 			list[i].Last, list[i].Recent = &last, runs
 		}
 		if list[i].Approve {
@@ -750,7 +787,9 @@ func (m *Manager) routineChanged(id string, run *RoutineRun) {
 	data := map[string]any{"routine": id}
 	if run != nil {
 		r := *run
-		r.Output = ""
+		// The report's first lines are enough for a notification; the page
+		// reads the whole of it with the routines.
+		r.Output, r.Report = "", outputPreview(r.Report)
 		data["run"] = r
 	}
 	m.emit("", "routine", data)
@@ -1107,6 +1146,9 @@ func routineText(name, message string) string {
 func (m *Manager) sendRun(v Routine, run RoutineRun, message string) {
 	text := routineText(v.Name, message)
 	t := v.Target
+	if !t.Background {
+		text += reportNote
+	}
 	switch t.Kind {
 	case "session":
 		run.Session = t.Session
@@ -1168,8 +1210,53 @@ func (m *Manager) endRun(run RoutineRun, status, reason string, notify bool) {
 	m.laneFreed(run.Assistant)
 }
 
-// routineTurnEnded ends the run whose message started the turn that ended.
-func (m *Manager) routineTurnEnded(id, session string, failed bool, reason string) {
+// What a routine's message asks of the agent's reply: it is the run's
+// report, shown to the user unless it ends with quietMark. Routine work
+// often finds nothing (no mail, nothing due), and the user is told only
+// when there is something to look at or do.
+const (
+	quietMark  = "[Nothing for you]"
+	reportNote = "\n\n(Workbench: your last reply is shown to the user as this routine's report. If nothing in it needs them to look or act, end it with the line " + quietMark + " and they are not told.)"
+)
+
+// reportOf is a turn's last reply as a run's report, without the quiet
+// mark, and whether it is for the user: not when the reply is empty or
+// ends with the mark (in bold, code or with a period, as agents write it).
+func reportOf(reply string) (string, bool) {
+	text := strings.TrimSpace(reply)
+	lines := strings.Split(text, "\n")
+	last := strings.Trim(strings.TrimSpace(lines[len(lines)-1]), "*_`.。 ")
+	quiet := strings.EqualFold(last, quietMark)
+	if quiet {
+		text = strings.TrimSpace(strings.Join(lines[:len(lines)-1], "\n"))
+	}
+	if len(text) > routineReportMax {
+		cut := routineReportMax
+		for cut > 0 && !utf8.RuneStart(text[cut]) {
+			cut--
+		}
+		text = text[:cut] + "…"
+	}
+	return text, text != "" && !quiet
+}
+
+// SeeReports records that the user saw a routine's reports: they opened the
+// session or dismissed the report.
+func (m *Manager) SeeReports(id string) error {
+	runs, err := m.store.unseenReports(id)
+	if err != nil {
+		return err
+	}
+	for _, run := range runs {
+		run.Seen, run.Notify = nowStamp(), false
+		m.recordRun(run)
+	}
+	return nil
+}
+
+// routineTurnEnded ends the run whose message started the turn that ended,
+// keeping the last reply as its report.
+func (m *Manager) routineTurnEnded(id, session string, failed bool, reason, reply string) {
 	run, err := m.store.run(id)
 	if err != nil || (run.Status != "sent" && run.Status != "queued") {
 		return
@@ -1181,7 +1268,12 @@ func (m *Manager) routineTurnEnded(id, session string, failed bool, reason strin
 		m.endRun(run, "failed", reason, true)
 		return
 	}
-	m.endRun(run, "done", "", true)
+	// An older report of the routine the user has not seen gives way to
+	// this one: the page shows the newest.
+	if run.Report, run.ForYou = reportOf(reply); run.ForYou {
+		_ = m.SeeReports(run.Routine)
+	}
+	m.endRun(run, "done", "", run.ForYou)
 }
 
 // tidyRoutines ends runs that never reported back, drops old runs and the
@@ -1405,6 +1497,13 @@ func (s *Server) routinesAPI(w http.ResponseWriter, r *http.Request, rest string
 			return
 		}
 		writeJSON(w, run)
+	case len(parts) == 2 && parts[1] == "seen" && r.Method == "POST":
+		// The user saw its report: opened its session or dismissed it.
+		if err := m.SeeReports(id); err != nil {
+			bad(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 	case len(parts) == 2 && parts[1] == "run" && r.Method == "POST":
 		run, err := m.RunRoutine(id)
 		if err != nil {

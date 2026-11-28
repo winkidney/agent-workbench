@@ -24,9 +24,9 @@ describe("runs waiting for approval", () => {
       routine({ name: "Empty", createdBy: "file:news", waiting: [] }),
     ]);
     expect(w).toEqual({
-      mail: { count: 2, routines: ["Check mail"], running: [] },
-      news: { count: 1, routines: ["Sent to it"], running: [] },
-      main: { count: 1, routines: ["Moss's"], running: [] },
+      mail: { count: 2, routines: ["Check mail"], reports: [], running: [] },
+      news: { count: 1, routines: ["Sent to it"], reports: [], running: [] },
+      main: { count: 1, routines: ["Moss's"], reports: [], running: [] },
     });
     expect(waitingTotal(w)).toBe(4);
     expect(waitingTotal({})).toBe(0);
@@ -64,6 +64,7 @@ describe("runs waiting for approval", () => {
       mail: {
         count: 0,
         routines: [],
+        reports: [],
         running: [
           { routine: "a", name: "Check mail", run: at("sent") },
           { routine: "b", name: "Summary", run: at("queued", "s1") },
@@ -71,5 +72,30 @@ describe("runs waiting for approval", () => {
       },
     });
     expect(waitingTotal(w)).toBe(0);
+  });
+  it("counts the reports not yet seen in the bell's total", () => {
+    const report = {
+      id: "x",
+      status: "done",
+      report: "Two loops are due.",
+      forYou: true,
+      session: "s1",
+    } as RoutineRun;
+    const w = waitingByAssistant([
+      routine({ id: "d", name: "Daily check", report }),
+      routine({
+        id: "m",
+        name: "Check mail",
+        createdBy: "file:mail",
+        waiting: [run("1")],
+      }),
+    ]);
+    expect(w.main).toEqual({
+      count: 0,
+      routines: [],
+      reports: [{ routine: "d", name: "Daily check", run: report }],
+      running: [],
+    });
+    expect(waitingTotal(w)).toBe(2);
   });
 });

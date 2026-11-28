@@ -3,12 +3,13 @@ import type { RunningRun } from "../routines/waiting";
 import type { Node } from "./tree";
 
 // What waits for the user at an assistant (its sidebar row): its sessions
-// (and their subsessions) that need the user, and its routine runs waiting
-// for approval, as one count with a hover text that says what they are. The
-// row shows the same bell for both.
+// (and their subsessions) that need the user, its routine runs waiting
+// for approval, and its routines' reports not yet seen, as one count with a
+// hover text that says what they are. The row shows the same bell for all.
 export function waitingFor(
   nodes: Node[],
   runs: number,
+  reports = 0,
 ): { count: number; title: string } {
   const kinds = new Map<string, number>();
   const visit = (n: Node) => {
@@ -24,7 +25,9 @@ export function waitingFor(
     .filter((k) => kinds.get(k))
     .map((k) => `${kinds.get(k)} ${k}${kinds.get(k)! > 1 ? "s" : ""}`);
   if (runs) parts.push(`${runs} routine run${runs > 1 ? "s" : ""}`);
-  const count = [...kinds.values()].reduce((a, b) => a + b, 0) + runs;
+  if (reports) parts.push(`${reports} report${reports > 1 ? "s" : ""}`);
+  const count =
+    [...kinds.values()].reduce((a, b) => a + b, 0) + runs + reports;
   return { count, title: count ? `Waiting for you: ${parts.join(", ")}` : "" };
 }
 
@@ -37,17 +40,23 @@ export function assistantRows<
 >(
   assistants: A[],
   nodes: Node[],
-  runs: Record<string, { count: number; running?: RunningRun[] } | undefined>,
+  runs: Record<
+    string,
+    | { count: number; reports?: unknown[]; running?: RunningRun[] }
+    | undefined
+  >,
   showOff: boolean,
 ) {
   const rows = assistants.map((assistant) => {
     const own = nodes.filter((n) => n.session.cwd === assistant.path);
     const count = runs[assistant.dir]?.count ?? 0;
+    const reports = runs[assistant.dir]?.reports?.length ?? 0;
     return {
       assistant,
       nodes: own,
       runs: count,
-      wait: waitingFor(own, count),
+      reports,
+      wait: waitingFor(own, count, reports),
       // Its routine runs under way: the row shows them as running.
       running: runs[assistant.dir]?.running ?? [],
     };

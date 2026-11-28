@@ -116,6 +116,13 @@ describe("routines", () => {
     });
     expect(routineLabel("[Routine: x] typed by hand")).toBeUndefined();
   });
+  it("leaves out the note about the report (reportNote in routine.go)", () => {
+    const note =
+      "\n\n(Workbench: your last reply is shown to the user as this routine's report. If nothing in it needs them to look or act, end it with the line [Nothing for you] and they are not told.)";
+    expect(
+      routineLabel("[Routine: Daily check]\n\nCheck loops" + note),
+    ).toEqual({ kind: "Routine", name: "Daily check", rest: "Check loops" });
+  });
 });
 
 describe("routines to assistants", () => {

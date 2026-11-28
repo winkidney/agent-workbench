@@ -52,6 +52,11 @@ export type RoutineRun = {
   output?: string;
   error?: string;
   notify?: boolean;
+  // A message run: the agent's last reply in its turn (in a list, its first
+  // line). forYou: the reply is for the user, shown to them until seen.
+  report?: string;
+  forYou?: boolean;
+  seen?: string;
 };
 
 export type Routine = {
@@ -79,6 +84,8 @@ export type Routine = {
   // (ADR 0027), oldest first.
   held?: RoutineRun[];
   waiting?: RoutineRun[];
+  // Its newest run whose report is for the user and not yet seen.
+  report?: RoutineRun;
 };
 
 export const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -314,9 +321,14 @@ export function routineLabel(
   return {
     kind: m[1] as "Routine" | "Workbench",
     name: m[2],
-    rest: text.slice(m[0].length),
+    rest: text.slice(m[0].length).replace(REPORT_NOTE, ""),
   };
 }
+
+// What the workbench adds to a routine's message about the reply being its
+// report (reportNote in routine.go): for the agent, not shown.
+const REPORT_NOTE =
+  /\n\n\(Workbench: your last reply is shown to the user as this routine's report\.[^\n]*\)$/;
 
 // What a run did, in a few words.
 export function runSummary(run: RoutineRun): string {

@@ -995,6 +995,7 @@ function AssistantRow({
   open: isOpen,
   installed,
   runs = 0,
+  reports = 0,
   running = [],
 }: {
   assistant: Assistant;
@@ -1010,6 +1011,8 @@ function AssistantRow({
   // Its routine runs waiting for approval: shown first, like a session
   // that needs the user.
   runs?: number;
+  // Its routines' reports the user has not seen: counted in the same bell.
+  reports?: number;
   // Its routine runs under way (routines/waiting.ts): a pulse beside the
   // bell, or alone.
   running?: RunningRun[];
@@ -1031,7 +1034,7 @@ function AssistantRow({
   const latest = nodes[0]?.session;
   // Its sessions and routine runs waiting for the user: one bell; else
   // its latest session's state.
-  const wait = waitingFor(nodes, runs);
+  const wait = waitingFor(nodes, runs, reports);
   const shown = latest;
   const runTitle = running
     .map(
@@ -1605,6 +1608,7 @@ export function Sidebar({
                 open={r.assistant.dir === openAssistantDir}
                 installed={installedAgents}
                 runs={r.runs}
+                reports={r.reports}
                 running={r.running}
               />
             ))}

@@ -146,9 +146,11 @@ export function useAttention<S extends Waiting>(
 }
 
 // A routine run ended (routines/when.ts): failures always notify, and so do
-// runs the server marked (an agent answered, or a command printed what its
-// routine asked to hear about), and runs that wait for approval; only while
-// this page is in the background, like the attention notifications.
+// runs the server marked (an agent's reply it did not say was nothing for
+// the user, or a command printed what its routine asked to hear about), and
+// runs that wait for approval; only while this page is in the background,
+// like the attention notifications. A report also waits in its assistant's
+// bell until seen, for a page that was closed or in front.
 export function notifyRun(
   run: {
     id: string;
@@ -158,6 +160,8 @@ export function notifyRun(
     error?: string;
     output?: string;
     notify?: boolean;
+    report?: string;
+    forYou?: boolean;
   },
   onOpen: (id: string) => void,
 ) {
@@ -165,20 +169,25 @@ export function notifyRun(
   const ended = run.status === "done" || run.status === "failed";
   if (!(ended || waiting) || !(run.notify || run.status === "failed")) return;
   if (notifyState() !== "on" || !background()) return;
+  const report = run.status === "done" && run.forYou && run.report?.trim();
   const title = waiting
     ? `Waiting for your approval: ${run.name}`
     : run.status === "failed"
       ? `Routine failed: ${run.name}`
-      : `Routine done: ${run.name}`;
+      : report
+        ? `Report: ${run.name}`
+        : `Routine done: ${run.name}`;
   // A waiting run's output is not shown here: the user looks at it in its
   // assistant's preview first (ADR 0021).
   const body = waiting
     ? "Open its assistant to look at it and approve or dismiss it."
     : run.status === "failed"
       ? run.error || "See Settings → Routines."
-      : run.session
-        ? "The agent answered."
-        : run.output?.trim()
+      : report
+        ? report
+        : run.session
+          ? "The agent answered."
+          : run.output?.trim()
           ? run.output.trim().slice(-200)
           : "See Settings → Routines.";
   try {

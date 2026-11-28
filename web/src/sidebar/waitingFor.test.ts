@@ -27,6 +27,15 @@ describe("what waits for the user at an assistant", () => {
       title: "",
     });
   });
+  it("counts the reports not yet seen in the same bell", () => {
+    expect(waitingFor([node("a", "question")], 0, 1)).toEqual({
+      count: 2,
+      title: "Waiting for you: 1 question, 1 report",
+    });
+    expect(waitingFor([], 1, 2).title).toBe(
+      "Waiting for you: 1 routine run, 2 reports",
+    );
+  });
   it("names one run and a plan", () => {
     expect(waitingFor([node("p", "plan")], 1).title).toBe(
       "Waiting for you: 1 plan, 1 routine run",

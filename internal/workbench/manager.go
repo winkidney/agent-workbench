@@ -100,8 +100,10 @@ type runtime struct {
 	// the scheduling calls awaiting their results (schedule.go).
 	schedules     map[string]*schedule
 	scheduleCalls map[string]scheduleCall
-	// The routine run whose message started the running turn (routine.go).
+	// The routine run whose message started the running turn (routine.go),
+	// and the turn's last reply so far, which becomes the run's report.
 	routineRun string
+	reply      string
 }
 type Manager struct {
 	// Terminal tabs (terminal.go), made on first use.
@@ -734,6 +736,7 @@ func (m *Manager) receive(id string, generation int, v map[string]any) {
 		method := str(v["method"])
 		params := obj(v["params"])
 		trackAttention(r, method, params)
+		trackReply(r, method, params)
 		if method == "mcpServer/startupStatus/updated" {
 			r.mcp[str(params["name"])] = str(params["status"])
 			if mcpSettled(r) && !r.turn {
@@ -898,6 +901,7 @@ func (m *Manager) receive(id string, generation int, v map[string]any) {
 			}
 			r.turn = false
 			r.pending = map[string]any{}
+			r.reply = str(v["result"])
 			// A user interrupt ends the turn with an error result; the transcript already says so.
 			if v["is_error"] == true && !r.interrupted {
 				m.emit(r.session.ID, "error", v)
@@ -1308,7 +1312,7 @@ func (m *Manager) exited(id string, generation int, err error) {
 	m.sideExited(r)
 	if run := r.routineRun; run != "" {
 		r.routineRun = ""
-		go m.routineTurnEnded(run, r.session.ID, true, "the agent stopped before the turn ended")
+		go m.routineTurnEnded(run, r.session.ID, true, "the agent stopped before the turn ended", "")
 	}
 	r.proc = nil
 	r.ready = false
