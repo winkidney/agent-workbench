@@ -1,20 +1,35 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { routineOwner } from "../lib/assistants";
-import type { Routine } from "./when";
+import { underWay, type Routine, type RoutineRun } from "./when";
 
-// Runs that wait for the user's approval (ADR 0021), by the assistant they
-// belong to: how many, and the routines they come from.
-export type WaitingRuns = Record<string, { count: number; routines: string[] }>;
+// A routine's run under way (when.ts underWay).
+export type RunningRun = { routine: string; name: string; run: RoutineRun };
+
+// By the assistant they belong to: runs that wait for the user's approval
+// (ADR 0021), how many and the routines they come from; and the runs under
+// way, which its sidebar row shows as running.
+export type WaitingRuns = Record<
+  string,
+  { count: number; routines: string[]; running: RunningRun[] }
+>;
 
 export function waitingByAssistant(list: Routine[]): WaitingRuns {
   const out: WaitingRuns = {};
   for (const r of list) {
     const n = r.waiting?.length ?? 0;
-    if (!n) continue;
-    const w = (out[routineOwner(r)] ??= { count: 0, routines: [] });
-    w.count += n;
-    w.routines.push(r.name);
+    const run = underWay(r);
+    if (!n && !run) continue;
+    const w = (out[routineOwner(r)] ??= {
+      count: 0,
+      routines: [],
+      running: [],
+    });
+    if (n) {
+      w.count += n;
+      w.routines.push(r.name);
+    }
+    if (run) w.running.push({ routine: r.id, name: r.name, run });
   }
   return out;
 }

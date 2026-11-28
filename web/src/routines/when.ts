@@ -127,6 +127,8 @@ export function shortTime(iso: string, now = new Date()): string {
 // routine that ran) says nothing.
 export function routineState(r: Routine, now = new Date()): string {
   if (r.assistantOff) return "Waiting: its assistant is turned off";
+  const run = underWay(r);
+  if (run) return `Running · ${since(run.started, now.getTime())}`;
   if (!r.enabled) return "Off";
   return r.next ? `Next ${shortTime(r.next, now)}` : "";
 }
@@ -359,6 +361,26 @@ export function runSummary(run: RoutineRun): string {
 export type RunKind =
   "active" | "waiting" | "delivered" | "failed" | "quiet" | "missed";
 
+// A run under way: its command runs, or the agent works on what it handed
+// over (in a conversation or in the background), or its message waits in
+// the conversation's queue. Held and waiting runs wait instead.
+export const runUnderWay = (run?: RoutineRun) =>
+  !!run && ["running", "sent", "queued"].includes(run.status);
+
+// The routine's run under way, if one is.
+export function underWay(r: Routine): RoutineRun | undefined {
+  return [r.last, ...(r.recent ?? [])].find(runUnderWay);
+}
+
+// Where a run under way is: "running its command", "in the background", …
+export function whereRuns(run: RoutineRun): string {
+  if (run.status === "running") return "running its command";
+  if (run.status === "queued") return "waiting in its conversation's queue";
+  return run.session
+    ? "working in a conversation"
+    : "working in the background";
+}
+
 export function runKind(run: RoutineRun): RunKind {
   switch (run.status) {
     case "running":
@@ -387,8 +409,17 @@ export function runKind(run: RoutineRun): RunKind {
 // How long a run took: "4.9 s", "2 min", "1 h 5 min"; "" while it runs.
 export function runDuration(run: RoutineRun): string {
   if (!run.finished) return "";
-  const ms = Date.parse(run.finished) - Date.parse(run.started);
+  return span(Date.parse(run.finished) - Date.parse(run.started));
+}
+
+// How long since a run started, in the same words.
+export function since(started: string, now = Date.now()): string {
+  return span(Math.max(0, now - Date.parse(started)), false);
+}
+
+function span(ms: number, tenths = true): string {
   if (!(ms >= 0)) return "";
+  if (!tenths && ms < 60_000) return `${Math.floor(ms / 1000)} s`;
   if (ms < 60_000) return `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)} s`;
   const min = Math.round(ms / 60_000);
   if (min < 60) return `${min} min`;

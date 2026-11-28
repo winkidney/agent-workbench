@@ -7,7 +7,10 @@ import {
   routineOf,
   routineState,
   shortTime,
+  since,
+  whereRuns,
   type Routine,
+  type RoutineRun,
 } from "./when";
 
 describe("routines", () => {
@@ -189,5 +192,26 @@ describe("routineState", () => {
     expect(routineState(r({ assistantOff: true, enabled: false }), now)).toBe(
       "Waiting: its assistant is turned off",
     );
+  });
+  it("says a run is under way, and for how long", () => {
+    const started = new Date(now.getTime() - 125_000).toISOString();
+    const run = (status: string, session?: string) =>
+      ({ id: "x", status, started, session }) as RoutineRun;
+    const next = new Date(2026, 10, 27, 10, 0).toISOString();
+    expect(routineState(r({ next, last: run("sent") }), now)).toBe(
+      "Running · 2 min",
+    );
+    expect(routineState(r({ next, recent: [run("running")] }), now)).toBe(
+      "Running · 2 min",
+    );
+    expect(routineState(r({ next, last: run("held") }), now)).toBe(
+      "Next today 10:00",
+    );
+    expect(
+      since(new Date(now.getTime() - 9_400).toISOString(), now.getTime()),
+    ).toBe("9 s");
+    expect(whereRuns(run("sent"))).toBe("working in the background");
+    expect(whereRuns(run("sent", "s"))).toBe("working in a conversation");
+    expect(whereRuns(run("running"))).toBe("running its command");
   });
 });

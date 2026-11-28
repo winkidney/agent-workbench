@@ -1,4 +1,5 @@
 import { needsYou } from "../attention";
+import type { RunningRun } from "../routines/waiting";
 import type { Node } from "./tree";
 
 // What waits for the user at an assistant (its sidebar row): its sessions
@@ -36,13 +37,20 @@ export function assistantRows<
 >(
   assistants: A[],
   nodes: Node[],
-  runs: Record<string, { count: number } | undefined>,
+  runs: Record<string, { count: number; running?: RunningRun[] } | undefined>,
   showOff: boolean,
 ) {
   const rows = assistants.map((assistant) => {
     const own = nodes.filter((n) => n.session.cwd === assistant.path);
     const count = runs[assistant.dir]?.count ?? 0;
-    return { assistant, nodes: own, runs: count, wait: waitingFor(own, count) };
+    return {
+      assistant,
+      nodes: own,
+      runs: count,
+      wait: waitingFor(own, count),
+      // Its routine runs under way: the row shows them as running.
+      running: runs[assistant.dir]?.running ?? [],
+    };
   });
   const listed = rows.filter(
     (r) => r.assistant.enabled !== false || showOff || r.wait.count > 0,

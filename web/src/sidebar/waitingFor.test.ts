@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { assistantRows, waitingFor } from "./waitingFor";
+import type { RunningRun } from "../routines/waiting";
 import type { Node } from "./tree";
 
 const node = (id: string, attention?: string, children: Node[] = []) =>
@@ -55,6 +56,27 @@ describe("the Assistants heading and its rows", () => {
     ]);
     expect(v.waiting).toBe(3);
     expect(v.folded).toBe(1);
+  });
+  it("hands each row its runs under way, which wait for no one", () => {
+    const run = { routine: "r", name: "Check mail", run: {} } as RunningRun;
+    const v = assistantRows(
+      assistants,
+      nodes,
+      { idle: { count: 0, running: [run] } },
+      false,
+    );
+    const idle = v.listed.find((r) => r.assistant.dir === "idle");
+    // Turned off and nothing waits: folded away, running or not.
+    expect(idle).toBeUndefined();
+    const on = assistantRows(
+      [{ dir: "news", path: "/a/news" }],
+      [],
+      { news: { count: 0, running: [run] } },
+      false,
+    );
+    expect(on.listed[0].running).toEqual([run]);
+    expect(on.listed[0].wait.count).toBe(0);
+    expect(on.waiting).toBe(0);
   });
   it("lists every assistant once shown", () => {
     const v = assistantRows(assistants, nodes, {}, true);

@@ -24,11 +24,52 @@ describe("runs waiting for approval", () => {
       routine({ name: "Empty", createdBy: "file:news", waiting: [] }),
     ]);
     expect(w).toEqual({
-      mail: { count: 2, routines: ["Check mail"] },
-      news: { count: 1, routines: ["Sent to it"] },
-      main: { count: 1, routines: ["Moss's"] },
+      mail: { count: 2, routines: ["Check mail"], running: [] },
+      news: { count: 1, routines: ["Sent to it"], running: [] },
+      main: { count: 1, routines: ["Moss's"], running: [] },
     });
     expect(waitingTotal(w)).toBe(4);
     expect(waitingTotal({})).toBe(0);
+  });
+  it("names the runs under way, in the background too", () => {
+    const at = (status: RoutineRun["status"], session?: string) =>
+      ({ id: status, status, started: "", session }) as RoutineRun;
+    const w = waitingByAssistant([
+      routine({
+        id: "a",
+        name: "Check mail",
+        createdBy: "file:mail",
+        last: at("sent"),
+      }),
+      routine({
+        id: "b",
+        name: "Summary",
+        createdBy: "file:mail",
+        recent: [at("queued", "s1")],
+      }),
+      routine({
+        id: "c",
+        name: "Done",
+        createdBy: "file:mail",
+        last: at("done"),
+      }),
+      routine({
+        id: "d",
+        name: "Held",
+        createdBy: "file:news",
+        last: at("held"),
+      }),
+    ]);
+    expect(w).toEqual({
+      mail: {
+        count: 0,
+        routines: [],
+        running: [
+          { routine: "a", name: "Check mail", run: at("sent") },
+          { routine: "b", name: "Summary", run: at("queued", "s1") },
+        ],
+      },
+    });
+    expect(waitingTotal(w)).toBe(0);
   });
 });

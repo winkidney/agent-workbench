@@ -1704,7 +1704,7 @@ export default function App() {
             !composing &&
             (() => {
               const w = waitingRuns[topicOf.dir];
-              if (!w) return null;
+              if (!w?.count) return null;
               return (
                 <div className="update-banner" role="status">
                   {w.routines.join(", ")}: {w.count} run

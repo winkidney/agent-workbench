@@ -6748,6 +6748,37 @@ span.heartbeat.compact {
 .assistant-home-approve {
   flex-wrap: wrap;
 }
+/* What waits for the user, and the routine runs under way: each row says
+   where it comes from, what it is, since when, and how to get to it. */
+.assistant-home-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.assistant-home-block h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+.assistant-home-count {
+  min-width: 16px;
+  padding: 0 5px;
+  border-radius: var(--radius-sm);
+  background: var(--warning);
+  color: var(--background);
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+.assistant-home-setup strong {
+  font-weight: 600;
+}
+.assistant-home-running {
+  flex-wrap: wrap;
+}
 /* Runs waiting for the assistant's other routine work (ADR 0027): the
    routine they wait for opens its session. */
 .assistant-home-held {
@@ -6863,6 +6894,10 @@ span.heartbeat.compact {
   }
 }
 
+/* An assistant row with routine runs under way: a pulse beside the bell. */
+.assistant-running {
+  margin-right: 4px;
+}
 /* An assistant row with routine runs waiting for approval (ADR 0021). */
 .assistant-waiting {
   display: inline-flex;

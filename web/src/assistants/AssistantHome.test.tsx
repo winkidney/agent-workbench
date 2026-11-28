@@ -3,8 +3,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 import {
   AssistantHome,
   HeldCard,
+  RunningNow,
   WaitingCard,
+  WaitingSession,
   previewFilePath,
+  routineOfSession,
 } from "./AssistantHome";
 import type { Assistant } from "../lib/assistants";
 import type { Session } from "../sidebar/tree";
@@ -128,6 +131,9 @@ describe("an assistant's card", () => {
     expect(html).toContain("[Routine: Daily summary] Yesterday");
     expect(html).toContain("Needs your approval");
     expect(html.match(/>Open<\/button>/g)).toHaveLength(2);
+    // Under one heading that counts them, as the sidebar's bell does.
+    expect(html).toContain('aria-label="Waiting for you"');
+    expect(html).toContain('<span class="assistant-home-count">2</span>');
   });
 
   it("says nothing of them when none waits", () => {
@@ -137,5 +143,76 @@ describe("an assistant's card", () => {
           <AssistantHome assistant={mail} onTry={() => {}} {...props} />,
         ),
       ).not.toContain(">Open</button>");
+  });
+});
+
+describe("where what waits comes from, and what runs", () => {
+  const now = Date.parse("2026-11-28T10:00:00Z");
+  const at = (status: string, session?: string, ago = 125_000) => ({
+    id: status + (session ?? ""),
+    status,
+    session,
+    started: new Date(now - ago).toISOString(),
+  });
+  const routines = [
+    { id: "sum", name: "Daily summary", last: at("done", "claude:q") },
+    { id: "mail", name: "Check mail", recent: [at("sent")] },
+    { id: "bili", name: "Comments", last: at("sent", "claude:b", 40_000) },
+    { id: "quiet", name: "Quiet", last: at("done") },
+  ] as unknown as Routine[];
+
+  it("names the routine a session came from, else the session", () => {
+    expect(routineOfSession(routines, "claude:q")).toBe("Daily summary");
+    expect(routineOfSession(routines, "claude:mine")).toBeUndefined();
+    const s = {
+      id: "claude:q",
+      title: "[Routine: Daily summary] Yesterday",
+      attention: "question",
+      updated: new Date(now - 12 * 60_000).toISOString(),
+    } as Session;
+    const html = renderToStaticMarkup(
+      <WaitingSession
+        session={s}
+        from="Daily summary"
+        now={now}
+        onOpen={() => {}}
+      />,
+    );
+    expect(html).toContain(
+      "<strong>Daily summary</strong> · Has a question for you · 12m ago",
+    );
+    expect(
+      renderToStaticMarkup(
+        <WaitingSession
+          session={{ ...s, title: "Mine" }}
+          now={now}
+          onOpen={() => {}}
+        />,
+      ),
+    ).toContain("<strong>Mine</strong>");
+  });
+
+  it("lists the runs under way, with Open or their runs", () => {
+    const html = renderToStaticMarkup(
+      <RunningNow routines={routines} now={now} onOpenSession={() => {}} />,
+    );
+    expect(html).toContain(
+      "<strong>Check mail</strong> · working in the background · 2 min",
+    );
+    expect(html).toContain(
+      "<strong>Comments</strong> · working in a conversation · 40 s",
+    );
+    expect(html).not.toContain("Daily summary");
+    expect(html.match(/>Open<\/button>/g)).toHaveLength(1);
+    expect(html.match(/>Runs<\/button>/g)).toHaveLength(1);
+    expect(
+      renderToStaticMarkup(
+        <RunningNow
+          routines={[routines[3]]}
+          now={now}
+          onOpenSession={() => {}}
+        />,
+      ),
+    ).toBe("");
   });
 });

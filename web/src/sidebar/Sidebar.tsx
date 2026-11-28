@@ -58,7 +58,9 @@ import {
   setUpAssistants,
   type Assistant,
 } from "../lib/assistants";
-import type { WaitingRuns } from "../routines/waiting";
+import type { RunningRun, WaitingRuns } from "../routines/waiting";
+import { since, whereRuns } from "../routines/when";
+import { PixelPulse } from "../components/pixel";
 import { api } from "../lib/api";
 import { LIST_SHOWN, ShowMoreLess, limited } from "./limit";
 import { assistantRows, waitingFor } from "./waitingFor";
@@ -993,6 +995,7 @@ function AssistantRow({
   open: isOpen,
   installed,
   runs = 0,
+  running = [],
 }: {
   assistant: Assistant;
   nodes: Node[];
@@ -1007,6 +1010,9 @@ function AssistantRow({
   // Its routine runs waiting for approval: shown first, like a session
   // that needs the user.
   runs?: number;
+  // Its routine runs under way (routines/waiting.ts): a pulse beside the
+  // bell, or alone.
+  running?: RunningRun[];
 }) {
   const [open, setOpen] = useState(false);
   const [limit, setLimit] = useState(LIST_SHOWN);
@@ -1027,6 +1033,23 @@ function AssistantRow({
   // its latest session's state.
   const wait = waitingFor(nodes, runs);
   const shown = latest;
+  const runTitle = running
+    .map(
+      (r) =>
+        `${r.name}: ${whereRuns(r.run)} · ${since(r.run.started, actions.now)}`,
+    )
+    .join("\n");
+  const pulse = (
+    <span
+      className="status-icon background assistant-running"
+      role="img"
+      aria-label={runTitle}
+      title={runTitle}
+    >
+      {running.length > 1 && <span className="bg-count">{running.length}</span>}
+      <PixelPulse live />
+    </span>
+  );
   const selected = isOpen;
   const movable = a.dir !== "main";
   const at = order.indexOf(a.dir);
@@ -1101,10 +1124,15 @@ function AssistantRow({
             <Highlight text={a.name} query={actions.query} />
           </span>
           {wait.count > 0 ? (
-            <span className="assistant-waiting" title={wait.title}>
-              <StatusIcon status="waiting" />
-              {wait.count}
-            </span>
+            <>
+              {running.length > 0 && pulse}
+              <span className="assistant-waiting" title={wait.title}>
+                <StatusIcon status="waiting" />
+                {wait.count}
+              </span>
+            </>
+          ) : running.length > 0 ? (
+            pulse
           ) : a.enabled === false ? (
             <span className="session-time">off</span>
           ) : !a.ready && !a.error ? (
@@ -1577,6 +1605,7 @@ export function Sidebar({
                 open={r.assistant.dir === openAssistantDir}
                 installed={installedAgents}
                 runs={r.runs}
+                running={r.running}
               />
             ))}
             {(showOff ? offCount > 0 : rows.folded > 0) && (

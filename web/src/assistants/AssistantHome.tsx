@@ -18,12 +18,19 @@ import {
   setUpAssistant,
   type Assistant,
 } from "../lib/assistants";
-import { firstLine, type Routine } from "../routines/when";
+import {
+  firstLine,
+  since,
+  underWay,
+  whereRuns,
+  type Routine,
+} from "../routines/when";
 import { RoutineLine } from "../routines/RoutineLine";
 import { openRoutine } from "../routines/open";
 import { MossIcon } from "../components/MossIcon";
 import { ATTENTION_LABEL } from "../attention";
-import type { Session } from "../sidebar/tree";
+import { relativeTime, type Session } from "../sidebar/tree";
+import { PixelPulse } from "../components/pixel";
 import { Button } from "../components/ui/button";
 import { Markdown } from "../transcript/Markdown";
 import { EnvContext, type Env } from "../transcript/media";
@@ -104,6 +111,10 @@ export function AssistantHome({
   };
   const waiting = (routines ?? []).filter((r) => r.waiting?.length);
   const held = (routines ?? []).filter((r) => r.held?.length);
+  // What waits for the user, as its sidebar bell counts it (waitingFor.ts).
+  const needs =
+    sessions.length + waiting.reduce((n, r) => n + (r.waiting?.length ?? 0), 0);
+  const now = useNow(!!routines?.some(underWay));
   const agent = a.agent === "codex" ? "Codex" : "Claude";
   return (
     <section className="assistant-home" aria-label={`${a.name}: about`}>
@@ -146,38 +157,54 @@ export function AssistantHome({
           </Button>
         </div>
       )}
-      {sessions.map((s) => (
+      {(needs > 0 || held.length > 0) && (
         <div
-          key={s.id}
-          className="assistant-home-setup assistant-home-approve"
-          role="status"
+          className="assistant-home-block"
+          role="group"
+          aria-label="Waiting for you"
         >
-          <BellRing size={14} />
-          <span>
-            {ATTENTION_LABEL[s.attention ?? ""] ?? "Needs you"}:{" "}
-            <strong>{s.title || s.nativeId}</strong>
-          </span>
-          <Button size="sm" onClick={() => onOpenSession(s.id)}>
-            Open
-          </Button>
+          <h3>
+            {needs > 0 ? (
+              <>
+                Waiting for you{" "}
+                <span className="assistant-home-count">{needs}</span>
+              </>
+            ) : (
+              "Waiting for its turn"
+            )}
+          </h3>
+          {sessions.map((s) => (
+            <WaitingSession
+              key={s.id}
+              session={s}
+              from={routineOfSession(routines ?? [], s.id)}
+              now={now}
+              onOpen={() => onOpenSession(s.id)}
+            />
+          ))}
+          {waiting.map((r) => (
+            <WaitingCard
+              key={r.id}
+              routine={r}
+              deciding={deciding === r.id}
+              onDecide={(action) => void decide(r, action)}
+            />
+          ))}
+          {held.map((r) => (
+            <HeldCard
+              key={r.id}
+              routine={r}
+              deciding={deciding === r.id}
+              onAct={(run, action) => void actOnHeld(r, run, action)}
+            />
+          ))}
         </div>
-      ))}
-      {waiting.map((r) => (
-        <WaitingCard
-          key={r.id}
-          routine={r}
-          deciding={deciding === r.id}
-          onDecide={(action) => void decide(r, action)}
-        />
-      ))}
-      {held.map((r) => (
-        <HeldCard
-          key={r.id}
-          routine={r}
-          deciding={deciding === r.id}
-          onAct={(run, action) => void actOnHeld(r, run, action)}
-        />
-      ))}
+      )}
+      <RunningNow
+        routines={routines ?? []}
+        now={now}
+        onOpenSession={onOpenSession}
+      />
       {error && <p className="error-text">{error}</p>}
       <p className="assistant-home-description">
         {a.description || (
@@ -261,6 +288,106 @@ export function AssistantHome({
         )}
       </footer>
     </section>
+  );
+}
+
+// Now, ticking every 30 seconds while on: for how long runs have run.
+function useNow(on: boolean): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!on) return;
+    setNow(Date.now());
+    const t = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(t);
+  }, [on]);
+  return now;
+}
+
+// The routine a session came from: the routine whose run it was sent to.
+export function routineOfSession(
+  routines: Routine[],
+  session: string,
+): string | undefined {
+  return routines.find((r) =>
+    [r.last, ...(r.recent ?? [])].some((run) => run?.session === session),
+  )?.name;
+}
+
+// A session of the assistant that needs the user: where it comes from (its
+// routine, else its name), what it wants, since when, and Open.
+export function WaitingSession({
+  session: s,
+  from,
+  now,
+  onOpen,
+}: {
+  session: Session;
+  from?: string;
+  now: number;
+  onOpen: () => void;
+}) {
+  const ago = s.updated ? relativeTime(s.updated, now) : "";
+  return (
+    <div
+      className="assistant-home-setup assistant-home-approve"
+      role="status"
+      title={s.title || s.nativeId}
+    >
+      <BellRing size={14} />
+      <span>
+        <strong>{from ?? (s.title || s.nativeId)}</strong> ·{" "}
+        {ATTENTION_LABEL[s.attention ?? ""] ?? "Needs you"}
+        {ago && ` · ${ago === "now" ? "just now" : `${ago} ago`}`}
+      </span>
+      <Button size="sm" onClick={onOpen}>
+        Open
+      </Button>
+    </div>
+  );
+}
+
+// The assistant's routine runs under way: where each runs and for how long,
+// with its conversation (Open) or, in the background, its runs.
+export function RunningNow({
+  routines,
+  now,
+  onOpenSession,
+}: {
+  routines: Routine[];
+  now: number;
+  onOpenSession: (id: string) => void;
+}) {
+  const running = routines.flatMap((r) => {
+    const run = underWay(r);
+    return run ? [{ r, run }] : [];
+  });
+  if (!running.length) return null;
+  return (
+    <div className="assistant-home-block" role="group" aria-label="Running now">
+      <h3>Running now</h3>
+      {running.map(({ r, run }) => (
+        <div
+          key={r.id}
+          className="assistant-home-setup assistant-home-running"
+          role="status"
+        >
+          <PixelPulse live />
+          <span>
+            <strong>{r.name}</strong> · {whereRuns(run)} ·{" "}
+            {since(run.started, now)}
+          </span>
+          {run.session ? (
+            <Button size="sm" onClick={() => onOpenSession(run.session!)}>
+              Open
+            </Button>
+          ) : (
+            <Button size="sm" variant="ghost" onClick={() => openRoutine(r.id)}>
+              Runs
+            </Button>
+          )}
+        </div>
+      ))}
+    </div>
   );
 }
 
