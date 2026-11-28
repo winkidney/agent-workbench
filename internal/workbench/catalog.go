@@ -279,14 +279,14 @@ const (
 // refreshManaged names, in .git/info/exclude, the installed assistants'
 // definition files that match their catalog and the files made where they
 // are installed, and takes them out of the index if they were committed.
-// It reports whether the index changed (the caller commits).
-func refreshManaged(root string) (bool, error) {
+// It returns what it took out of the index (the caller commits that).
+func refreshManaged(root string) ([]string, error) {
 	if _, err := os.Stat(filepath.Join(root, ".git")); err != nil {
-		return false, nil
+		return nil, nil
 	}
 	lock, err := readLock(root)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	var managed []string
 	dirs := make([]string, 0, len(lock.Assistants))
@@ -314,11 +314,11 @@ func refreshManaged(root string) (bool, error) {
 		}
 	}
 	if err := writeExclude(root, managed); err != nil {
-		return false, err
+		return nil, err
 	}
 	tracked, err := gitRun(root, "ls-files", "-z")
 	if err != nil {
-		return false, nil
+		return nil, nil
 	}
 	in := map[string]bool{}
 	for _, f := range strings.Split(tracked, "\x00") {
@@ -331,12 +331,12 @@ func refreshManaged(root string) (bool, error) {
 		}
 	}
 	if len(drop) == 0 {
-		return false, nil
+		return nil, nil
 	}
 	if _, err := gitRun(root, append([]string{"rm", "-q", "--cached", "--"}, drop...)...); err != nil {
-		return false, err
+		return nil, err
 	}
-	return true, nil
+	return drop, nil
 }
 
 func writeExclude(root string, paths []string) error {
@@ -465,7 +465,7 @@ func (m *Manager) InstallAssistant(url, path, dir, agent string) (Assistant, err
 	if err := writeLock(root, lock); err != nil {
 		return Assistant{}, err
 	}
-	m.commitAll(root, fmt.Sprintf("%s: install %s from %s@%s", dir, f.Name, url, short(commit)))
+	m.commitPaths(root, fmt.Sprintf("%s: install %s from %s@%s", dir, f.Name, url, short(commit)), []string{dir, lockFile})
 	m.assistantsChanged()
 	return m.assistant(dir)
 }
@@ -548,6 +548,8 @@ type AssistantCatalog struct {
 	// those missing here.
 	Changed []string `json:"changed,omitempty"`
 	Missing []string `json:"missing,omitempty"`
+	// What its catalog could update (checked daily).
+	Update *CatalogUpdate `json:"update,omitempty"`
 }
 
 // withCatalogs says, of each installed assistant, where it came from.

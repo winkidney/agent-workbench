@@ -62,6 +62,7 @@ func (m *Manager) MigrateAssistants(url string, apply bool, useCatalog []string)
 		return nil, err
 	}
 	var items []MigrationItem
+	var bound []string
 	for _, a := range m.Assistants() {
 		item := MigrationItem{Dir: a.Dir}
 		switch {
@@ -131,6 +132,7 @@ func (m *Manager) MigrateAssistants(url string, apply bool, useCatalog []string)
 			return items, err
 		}
 		lock.Assistants[a.Dir] = entry
+		bound = append(bound, a.Dir)
 	}
 	if !apply {
 		return items, nil
@@ -138,7 +140,7 @@ func (m *Manager) MigrateAssistants(url string, apply bool, useCatalog []string)
 	if err := writeLock(root, lock); err != nil {
 		return items, err
 	}
-	m.commitAll(root, "Bind the assistants to their catalog "+url+"@"+short(commit))
+	m.commitPaths(root, "Bind the assistants to their catalog "+url+"@"+short(commit), append([]string{lockFile}, bound...))
 	m.assistantsChanged()
 	return items, nil
 }

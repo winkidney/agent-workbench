@@ -41,7 +41,35 @@ export type Assistant = {
     commit: string;
     changed?: string[];
     missing?: string[];
+    update?: CatalogUpdate;
   };
+};
+
+// What updating an installed assistant from its catalog does (ADR 0031).
+export type CatalogUpdate = {
+  dir: string;
+  catalog: string;
+  from: string;
+  commit?: string;
+  applied?: boolean;
+  files?: {
+    rel: string;
+    result:
+      "update" | "merge" | "add" | "same" | "delete" | "kept" | "conflict";
+    runs?: boolean;
+    base?: string;
+    theirs?: string;
+  }[];
+};
+
+export const UPDATE_RESULT: Record<string, string> = {
+  update: "the catalog's new version",
+  merge: "the catalog's change merged into yours",
+  add: "new",
+  same: "new, already the same here",
+  delete: "removed",
+  kept: "removed there, yours kept",
+  conflict: "changed there and here: choose",
 };
 
 type Agent = "claude" | "codex";

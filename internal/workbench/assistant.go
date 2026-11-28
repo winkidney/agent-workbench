@@ -157,6 +157,8 @@ type assistants struct {
 	bg sync.Mutex
 	// The workbench's clones of catalogs (catalog.go).
 	catalog sync.Mutex
+	// What a catalog could update, by assistant (catalog_update.go).
+	updates map[string]CatalogUpdate
 	// Runs an assistant in the background; replaced in tests.
 	background func(a Assistant, prompt string) (backgroundOut, error)
 	// Hands a routine's message to an assistant's session (AssistantMessage);
@@ -484,6 +486,14 @@ func (m *Manager) Assistants() []Assistant {
 	m.sortAssistants(list)
 	if root != "" {
 		withCatalogs(root, list)
+		m.as.mu.Lock()
+		updates := m.as.updates
+		m.as.mu.Unlock()
+		for i := range list {
+			if u, ok := updates[list[i].Dir]; ok && list[i].Catalog != nil {
+				list[i].Catalog.Update = &u
+			}
+		}
 	}
 	m.syncFileRoutines(list)
 	m.as.mu.Lock()
@@ -781,12 +791,12 @@ func (m *Manager) ensureShared() {
 	for _, err := range m.restoreDefinitions(root) {
 		fmt.Fprintln(os.Stderr, "assistants: catalog:", err)
 	}
-	changed, err := refreshManaged(root)
+	drop, err := refreshManaged(root)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "assistants: catalog files:", err)
 	}
-	if wrote || changed {
-		m.commitAll(root, "chore: add shared files from Agent Workbench")
+	if wrote || len(drop) > 0 {
+		m.commitPaths(root, "chore: add shared files from Agent Workbench", sharedPaths())
 	}
 }
 
@@ -867,6 +877,7 @@ func (m *Manager) setUp(root, agent, name, lang string) (bool, error) {
 		return false, err
 	}
 	// A repository first, so the secret check guards the first commit.
+	_, noHead := gitRun(abs, "rev-parse", "-q", "--verify", "HEAD")
 	if _, err := os.Stat(filepath.Join(abs, ".git")); err != nil {
 		_, _ = gitRun(abs, "init", "-q")
 	}
@@ -893,7 +904,17 @@ func (m *Manager) setUp(root, agent, name, lang string) (bool, error) {
 	for _, err := range m.restoreDefinitions(abs) {
 		fmt.Fprintln(os.Stderr, "assistants: catalog:", err)
 	}
-	m.commitAll(abs, "Set up assistants")
+	// A new repository's first commit has everything; an existing one (a
+	// clone from another computer) only what setting up wrote.
+	if noHead != nil {
+		m.commitAll(abs, "Set up assistants")
+	} else {
+		paths := sharedPaths()
+		if created {
+			paths = append(paths, "main")
+		}
+		m.commitPaths(abs, "Set up assistants", paths)
+	}
 	m.assistantsChanged()
 	return created, nil
 }
@@ -968,7 +989,7 @@ func (m *Manager) NewAssistant(name, dir, agent, sessions string) (Assistant, er
 	if err := scaffoldAssistant(root, dir, scaffoldData{Name: name, Agent: agent, Sessions: sessions, Memory: "state"}); err != nil {
 		return Assistant{}, err
 	}
-	m.commitAll(root, "Add assistant "+dir)
+	m.commitPaths(root, "Add assistant "+dir, []string{dir})
 	m.assistantsChanged()
 	return m.assistant(dir)
 }
@@ -978,15 +999,44 @@ func (m *Manager) NewAssistant(name, dir, agent, sessions string) (Assistant, er
 // commitAll commits everything in root, after the background run in
 // progress: it would otherwise commit the run's half-written files, or meet
 // its git in the index.
+// commitAll commits the whole repository: setting it up, a backup.
 func (m *Manager) commitAll(root, message string) {
+	m.commitPaths(root, message, nil)
+}
+
+// commitPaths commits what the workbench changed, paths, and nothing of
+// the assistants' work in progress elsewhere; nil paths commit everything.
+// Definition files as their catalog has them leave the index on the way
+// (catalog.go).
+func (m *Manager) commitPaths(root, message string, paths []string) {
 	m.as.bg.Lock()
 	defer m.as.bg.Unlock()
-	// Definition files as their catalog has them are not the user's to
-	// commit (catalog.go).
-	if _, err := refreshManaged(root); err != nil {
+	drop, err := refreshManaged(root)
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "assistants: catalog files:", err)
 	}
-	_, _, _ = gitCommit(root, message)
+	if paths == nil {
+		_, _, _ = gitCommit(root, message)
+		return
+	}
+	if _, err := gitCommitOnly(root, message, paths, drop); err != nil {
+		fmt.Fprintln(os.Stderr, "assistants: commit:", err)
+	}
+}
+
+// sharedPaths are the files the workbench keeps at the top of the
+// repository and in Moss's folder.
+func sharedPaths() []string {
+	var out []string
+	for p := range sharedFiles {
+		out = append(out, p)
+	}
+	for p := range mossFiles {
+		out = append(out, p)
+	}
+	out = append(out, ".agents/skills/.gitkeep", ".claude/skills")
+	sort.Strings(out)
+	return out
 }
 
 func (m *Manager) assistantsChanged() {
@@ -1293,7 +1343,16 @@ func (m *Manager) PatchAssistant(dir string, p AssistantPatch) (Assistant, error
 		m.newTopic(a, m.topicState(a.Dir))
 		m.as.topic.Unlock()
 	}
-	m.commitAll(m.assistantsRoot(), a.Dir+": "+strings.Join(did, ", "))
+	paths := []string{a.Dir + "/assistant.toml", a.Dir + "/" + settingsFile}
+	// An icon image, put in place or removed with the choice.
+	if p.Icon != nil {
+		for _, icon := range []string{a.file.Icon, *p.Icon} {
+			if icon != "" && !builtinIcon(icon) {
+				paths = append(paths, a.Dir+"/"+icon)
+			}
+		}
+	}
+	m.commitPaths(m.assistantsRoot(), a.Dir+": "+strings.Join(did, ", "), paths)
 	m.assistantsChanged()
 	return m.assistant(dir)
 }
@@ -1567,6 +1626,21 @@ func (s *Server) assistantsAPI(w http.ResponseWriter, r *http.Request, rest stri
 			return
 		}
 		writeJSON(w, a)
+	case len(parts) == 2 && parts[1] == "update" && r.Method == "POST":
+		var v struct {
+			Apply   bool
+			Choices map[string]string
+		}
+		if err := decode(w, r, &v); err != nil {
+			bad(w, err)
+			return
+		}
+		u, err := m.UpdateFromCatalog(parts[0], v.Apply, v.Choices)
+		if err != nil {
+			bad(w, err)
+			return
+		}
+		writeJSON(w, u)
 	case rest == "migrate" && r.Method == "POST":
 		var v struct {
 			Catalog    string

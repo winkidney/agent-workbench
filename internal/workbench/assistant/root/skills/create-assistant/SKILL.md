@@ -7,6 +7,10 @@ description: Create a new assistant in this repository for a job the user wants 
 
 An assistant is a folder in this repository. Everything it is stays in that folder: its settings, procedure, scripts, state and data. Agent Workbench lists it in the sidebar, runs its routines, and picks up changes to its files without a restart.
 
+## 0. Is there one already?
+
+Look in the catalogs first: `"$AGENT_WORKBENCH_BIN" assistant catalog` lists the assistants others share (folder, name, agents, whether installed). If one does the job, say what it does, whose catalog it comes from, and that its scripts will run on this computer; ask (Install, Make a new one, Cancel). On Install: `"$AGENT_WORKBENCH_BIN" assistant install <folder> [--agent claude|codex]`, then help the user set it up as its procedure says. Its definition then follows its catalog: `"$AGENT_WORKBENCH_BIN" assistant update <folder> --check` says what a newer version would change (files the user changed get the catalog's changes merged in); update only when the user asks. Make a new one only when none fits.
+
 ## 1. Understand the job
 
 Ask only what you cannot tell from the conversation:

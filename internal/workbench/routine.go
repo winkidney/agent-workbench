@@ -840,6 +840,8 @@ func (m *Manager) RunRoutines(ctx context.Context) {
 	m.loadRoutines()
 	m.endOpenChanges()
 	m.ensureShared()
+	// Installed assistants' catalogs: what they could update, daily.
+	go m.updateLoop(ctx.Done())
 	timer := time.NewTimer(0)
 	defer timer.Stop()
 	for {

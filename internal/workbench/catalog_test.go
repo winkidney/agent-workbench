@@ -1,9 +1,11 @@
 package workbench
 
 import (
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	goruntime "runtime"
 	"strings"
 	"testing"
@@ -293,5 +295,219 @@ func TestCatalogClonesHaveShortNames(t *testing.T) {
 	}
 	if len(filepath.Base(b)) > 41 || a == b {
 		t.Fatalf("b: %s", b)
+	}
+}
+
+// The workbench commits what it changed, never an assistant's work in
+// progress: setting changes, icons, shared files and installs leave other
+// changes uncommitted.
+func TestWorkbenchCommitsOnlyWhatItChanged(t *testing.T) {
+	m, root, _, url := installFixture(t)
+	if _, err := m.InstallAssistant(url, "mail", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	dirty := filepath.Join(root, "mail/state/loops.md")
+	os.WriteFile(dirty, []byte("- [ ] half written\n"), 0o644)
+	os.WriteFile(filepath.Join(root, "main/state/handoff.md"), []byte("moss at work\n"), 0o644)
+	stillDirty := func(step string) {
+		t.Helper()
+		out, _ := exec.Command("git", "-C", root, "status", "--porcelain").Output()
+		for _, f := range []string{"mail/state/loops.md", "main/state/handoff.md"} {
+			if !strings.Contains(string(out), f) {
+				t.Fatalf("%s committed %s:\n%s", step, f, out)
+			}
+		}
+	}
+	bell := "bell"
+	if _, err := m.PatchAssistant("mail", AssistantPatch{Icon: &bell}); err != nil {
+		t.Fatal(err)
+	}
+	stillDirty("a setting")
+	if c := lastCommit(t, root); !strings.Contains(c, "mail/settings.toml") || strings.Contains(c, "state/") {
+		t.Fatalf("commit %q", c)
+	}
+	// Shared files written again at start (here the credentials block of
+	// .gitignore, which the start puts back).
+	gi := filepath.Join(root, ".gitignore")
+	b, _ := os.ReadFile(gi)
+	os.WriteFile(gi, []byte(strings.Replace(string(b), "*.pem\n", "", 1)), 0o644)
+	m.commitPaths(root, "drop a line", []string{".gitignore"})
+	m.ensureShared()
+	stillDirty("shared files")
+	if c := lastCommit(t, root); !strings.Contains(c, ".gitignore") || strings.Contains(c, "state/") {
+		t.Fatalf("commit %q", c)
+	}
+	// A definition file put back as the catalog has it leaves the index in
+	// a commit of its own paths; it is not added back.
+	agents := filepath.Join(root, "mail/AGENTS.md")
+	os.WriteFile(agents, []byte("# mine\n"), 0o644)
+	m.commitPaths(root, "mine", []string{"mail/AGENTS.md"})
+	if !tracked(t, root)["mail/AGENTS.md"] {
+		t.Fatal("the change was not committed")
+	}
+	os.WriteFile(agents, []byte("# Mail\n"), 0o644)
+	m.commitPaths(root, "back", []string{"mail/AGENTS.md"})
+	if tracked(t, root)["mail/AGENTS.md"] {
+		t.Fatal("put back as the catalog has it, it stayed committed")
+	}
+	stillDirty("putting a file back")
+	// An uploaded icon goes in with its setting; removing it takes it out.
+	os.WriteFile(filepath.Join(root, "mail/icon.png"), squarePNG(t, 128, 128), 0o644)
+	png := "icon.png"
+	if _, err := m.PatchAssistant("mail", AssistantPatch{Icon: &png}); err != nil {
+		t.Fatal(err)
+	}
+	if !tracked(t, root)["mail/icon.png"] {
+		t.Fatal("the icon was not committed")
+	}
+	os.Remove(filepath.Join(root, "mail/icon.png"))
+	camera := "camera"
+	if _, err := m.PatchAssistant("mail", AssistantPatch{Icon: &camera}); err != nil {
+		t.Fatal(err)
+	}
+	if tracked(t, root)["mail/icon.png"] {
+		t.Fatal("the removed icon stayed committed")
+	}
+	stillDirty("icons")
+}
+
+// Updating keeps the user's copy the catalog's plus their changes: what
+// they did not change follows the catalog, their changes take the
+// catalog's merged in, and what does not merge stays theirs unless they
+// choose the catalog's.
+func TestAssistantsFollowTheirCatalogWithTheirChanges(t *testing.T) {
+	m, root, work, url := installFixture(t)
+	writeCat := func(rel, body string) {
+		os.MkdirAll(filepath.Dir(filepath.Join(work, rel)), 0o755)
+		os.WriteFile(filepath.Join(work, rel), []byte(body), 0o644)
+	}
+	writeCat("mail/tools/fetch.py", "import sys\n\nprint('fetch')\n\nprint('done')\n")
+	writeCat("mail/.agents/skills/check/SKILL.md", "---\nname: check\n---\nstep one\n")
+	gitIn := func(args ...string) {
+		t.Helper()
+		if out, err := exec.Command("git", append([]string{"-C", work, "-c", "user.name=t", "-c", "user.email=t@t"}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %s", args, out)
+		}
+	}
+	gitIn("add", "-A")
+	gitIn("commit", "-q", "-m", "longer files")
+	if _, err := m.InstallAssistant(url, "mail", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(root, "mail")
+	// The user's changes: a line of their own in the script (merges), and
+	// the same line of the skill the catalog changes too (conflicts).
+	os.WriteFile(filepath.Join(dir, "tools/fetch.py"), []byte("import sys\n\nprint('fetch')\n\nprint('done')\nprint('mine')\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, ".agents/skills/check/SKILL.md"), []byte("---\nname: check\n---\nmy step one\n"), 0o644)
+	m.commitPaths(root, "mine", []string{"mail"})
+	if u, err := m.UpdateFromCatalog("mail", false, nil); err != nil || u.Commit != "" {
+		t.Fatalf("an update with nothing new: %+v %v", u, err)
+	}
+	// The catalog's next version.
+	writeCat("mail/AGENTS.md", "# Mail, version two\n")
+	writeCat("mail/tools/fetch.py", "import os, sys\n\nprint('fetch')\n\nprint('done')\n")
+	writeCat("mail/.agents/skills/check/SKILL.md", "---\nname: check\n---\nstep one, better\n")
+	writeCat("mail/tools/new.py", "print('new')\n")
+	os.Remove(filepath.Join(work, "mail/config.example.toml"))
+	toml, _ := os.ReadFile(filepath.Join(work, "mail/assistant.toml"))
+	writeCat("mail/assistant.toml", strings.Replace(string(toml), "uv run tools/fetch.py", "uv run tools/fetch.py --all", 1))
+	gitIn("add", "-A")
+	gitIn("commit", "-q", "-m", "version two")
+
+	check, err := m.UpdateFromCatalog("mail", false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	runs := map[string]bool{}
+	for _, f := range check.Files {
+		got[f.Rel], runs[f.Rel] = f.Result, f.Runs
+	}
+	want := map[string]string{"AGENTS.md": "update", "tools/fetch.py": "merge", ".agents/skills/check/SKILL.md": "conflict", "tools/new.py": "add", "config.example.toml": "delete", "assistant.toml": "update"}
+	if !reflect.DeepEqual(got, want) || !runs["assistant.toml"] || !runs["tools/new.py"] || runs["AGENTS.md"] || check.Conflicts() != 1 {
+		t.Fatalf("check %v runs %v", got, runs)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "AGENTS.md")); string(b) != "# Mail\n" {
+		t.Fatal("a check changed a file")
+	}
+	u, err := m.UpdateFromCatalog("mail", true, nil)
+	if err != nil || !u.Applied {
+		t.Fatalf("apply %+v %v", u, err)
+	}
+	read := func(rel string) string {
+		b, _ := os.ReadFile(filepath.Join(dir, rel))
+		return string(b)
+	}
+	if read("AGENTS.md") != "# Mail, version two\n" || read("tools/new.py") != "print('new')\n" {
+		t.Fatal("the catalog's files were not taken")
+	}
+	if read("tools/fetch.py") != "import os, sys\n\nprint('fetch')\n\nprint('done')\nprint('mine')\n" {
+		t.Fatalf("not merged: %q", read("tools/fetch.py"))
+	}
+	if read(".agents/skills/check/SKILL.md") != "---\nname: check\n---\nmy step one\n" {
+		t.Fatal("a conflict did not keep the user's file")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "config.example.toml")); err == nil {
+		t.Fatal("a file the catalog deleted stayed")
+	}
+	in := tracked(t, root)
+	if in["mail/AGENTS.md"] || in["mail/tools/new.py"] || !in["mail/tools/fetch.py"] || !in["mail/.agents/skills/check/SKILL.md"] {
+		t.Fatalf("tracking after the update: %v", in)
+	}
+	lock, _ := readLock(root)
+	if lock.Assistants["mail"].Commit != u.Commit || lock.Assistants["mail"].Files["tools/new.py"] == "" {
+		t.Fatalf("lock %+v", lock.Assistants["mail"])
+	}
+	if out, _ := exec.Command("git", "-C", root, "status", "--porcelain").Output(); len(out) != 0 {
+		t.Fatalf("not clean:\n%s", out)
+	}
+	// Next time, the conflicting file is chosen as the catalog's.
+	writeCat("mail/.agents/skills/check/SKILL.md", "---\nname: check\n---\nstep one, best\n")
+	gitIn("add", "-A")
+	gitIn("commit", "-q", "-m", "version three")
+	if _, err := m.UpdateFromCatalog("mail", true, map[string]string{".agents/skills/check/SKILL.md": "theirs"}); err != nil {
+		t.Fatal(err)
+	}
+	if read(".agents/skills/check/SKILL.md") != "---\nname: check\n---\nstep one, best\n" || tracked(t, root)["mail/.agents/skills/check/SKILL.md"] {
+		t.Fatal("choosing the catalog's did not take it")
+	}
+}
+
+// An agent (Moss) lists and installs assistants from a catalog, and checks
+// for an update, through the local commands' API; only with its token.
+func TestAgentsInstallFromACatalog(t *testing.T) {
+	m, _, _, url := installFixture(t)
+	m.SetCatalogSources([]CatalogSource{{URL: url}})
+	s := NewServer(m, nil, "agent.localhost:17880", "")
+	if err := s.writeAgentToken(); err != nil {
+		t.Fatal(err)
+	}
+	call := func(method, path, body, tok string) (int, string) {
+		r := httptest.NewRequest(method, "http://127.0.0.1:17880/api/local/"+path, strings.NewReader(body))
+		r.RemoteAddr = "127.0.0.1:4000"
+		if tok != "" {
+			r.Header.Set(agentHeader, tok)
+		}
+		w := httptest.NewRecorder()
+		s.ServeHTTP(w, r)
+		return w.Code, w.Body.String()
+	}
+	if code, _ := call("GET", "assistants/catalog", "", ""); code != 403 {
+		t.Fatalf("without the token: %d", code)
+	}
+	code, body := call("GET", "assistants/catalog", "", s.agentToken)
+	if code != 200 || !strings.Contains(body, `"path":"mail"`) {
+		t.Fatalf("catalog %d %s", code, body)
+	}
+	code, body = call("POST", "assistants/install", `{"path":"mail","agent":"codex"}`, s.agentToken)
+	if code != 200 || !strings.Contains(body, `"agent":"codex"`) {
+		t.Fatalf("install %d %s", code, body)
+	}
+	code, body = call("POST", "assistants/mail/update", `{"apply":false}`, s.agentToken)
+	if code != 200 || strings.Contains(body, `"commit"`) {
+		t.Fatalf("update check %d %s", code, body)
+	}
+	if code, _ := call("POST", "assistants/install", `{"path":"mail"}`, s.agentToken); code != 400 {
+		t.Fatalf("installed over a folder: %d", code)
 	}
 }

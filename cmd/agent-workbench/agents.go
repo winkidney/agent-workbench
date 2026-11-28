@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,6 +32,10 @@ const agentUsage = `usage:
   agent-workbench assistant send ASSISTANT TEXT
   agent-workbench assistant new --name NAME [--folder DIR] [--agent claude|codex]
                                 [--sessions per-task|continuous]
+  agent-workbench assistant catalog [--catalog URL]
+  agent-workbench assistant install NAME [--folder DIR] [--agent claude|codex]
+                                    [--catalog URL]
+  agent-workbench assistant update NAME [--check]
   agent-workbench assistant reload
   agent-workbench assistant memory
   agent-workbench session new [--folder DIR] [--agent claude|codex] [--title T] TEXT
@@ -119,6 +124,20 @@ func agentCommand(group string, args []string) error {
 		flags.StringVar(&started.dir, "folder", "", "where it works (default: the current directory)")
 		flags.StringVar(&started.agent, "agent", "", "claude or codex (default: the asking session's)")
 		flags.StringVar(&started.title, "title", "", "its title (default: from the message)")
+	}
+	var fromCatalog struct {
+		catalog, dir, agent string
+		check               bool
+	}
+	if group == "assistant" && (verb == "catalog" || verb == "install") {
+		flags.StringVar(&fromCatalog.catalog, "catalog", "", "the catalog's git address (default: the first in Settings)")
+	}
+	if group == "assistant" && verb == "install" {
+		flags.StringVar(&fromCatalog.dir, "folder", "", "its folder (default: its folder in the catalog)")
+		flags.StringVar(&fromCatalog.agent, "agent", "", "claude or codex (default: its author's)")
+	}
+	if group == "assistant" && verb == "update" {
+		flags.BoolVar(&fromCatalog.check, "check", false, "only say what updating would do")
 	}
 	if group == "assistant" && verb == "new" {
 		flags.StringVar(&made.name, "name", "", "its name")
@@ -224,6 +243,47 @@ func agentCommand(group string, args []string) error {
 			fmt.Println("Nothing new to remember since the last update.")
 		}
 		return nil
+	case "assistant catalog":
+		var out struct {
+			Catalog    string                   `json:"catalog"`
+			Assistants []workbench.CatalogEntry `json:"assistants"`
+		}
+		if err := c.call("GET", "assistants/catalog?url="+url.QueryEscape(fromCatalog.catalog), nil, &out); err != nil {
+			return err
+		}
+		fmt.Printf("Catalog %s:\n", out.Catalog)
+		for _, e := range out.Assistants {
+			agents := strings.Join(e.Agents, ", ")
+			if agents == "" {
+				agents = "claude, codex"
+			}
+			state := "not installed"
+			if e.Installed != "" {
+				state = "installed as " + e.Installed
+			}
+			fmt.Printf("%s  %s  (%s; %s) %s\n", e.Path, e.Name, agents, state, e.Description)
+		}
+		return nil
+	case "assistant install":
+		if len(rest) != 1 {
+			return errors.New("assistant install NAME [--folder DIR] [--agent claude|codex]")
+		}
+		var a workbench.Assistant
+		if err := c.call("POST", "assistants/install", map[string]string{"catalog": fromCatalog.catalog, "path": rest[0], "dir": fromCatalog.dir, "agent": fromCatalog.agent}, &a); err != nil {
+			return err
+		}
+		fmt.Printf("Installed %s (%s) in %s. It needs setting up: open it in the sidebar and press Set up; its routines stay off until then.\n", a.Name, a.Agent, a.Path)
+		return nil
+	case "assistant update":
+		if len(rest) != 1 {
+			return errors.New("assistant update NAME [--check]")
+		}
+		var out workbench.CatalogUpdate
+		if err := c.call("POST", "assistants/"+rest[0]+"/update", map[string]any{"apply": !fromCatalog.check}, &out); err != nil {
+			return err
+		}
+		printUpdate(out, !fromCatalog.check)
+		return nil
 	case "assistant reload":
 		if err := c.call("POST", "assistants/reload", nil, nil); err != nil {
 			return err
@@ -300,4 +360,24 @@ func describe(v workbench.Routine) string {
 		}
 	}
 	return when
+}
+
+// printUpdate says what updating an assistant from its catalog does, or did.
+func printUpdate(u workbench.CatalogUpdate, applied bool) {
+	if u.Commit == "" || len(u.Files) == 0 {
+		fmt.Println("Up to date with its catalog.")
+		return
+	}
+	verb := map[bool]string{true: "Updated to", false: "Its catalog has"}[applied]
+	fmt.Printf("%s %s:\n", verb, u.Commit[:min(7, len(u.Commit))])
+	for _, f := range u.Files {
+		note := ""
+		if f.Runs {
+			note = "  (runs: read it)"
+		}
+		fmt.Printf("  %-10s %s%s\n", f.Result, f.Rel, note)
+	}
+	if n := u.Conflicts(); n > 0 {
+		fmt.Printf("%d conflicting files kept as they are: choose in the assistant's settings (Update), or merge them with the user.\n", n)
+	}
 }

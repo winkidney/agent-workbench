@@ -297,6 +297,15 @@ export function AssistantHome({
         </>
       )}
       <footer className="assistant-home-foot">
+        {!!a.catalog?.update?.files?.length && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => openAssistantSettings(a.dir)}
+          >
+            Update available ({a.catalog.update.files.length})
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="sm"

@@ -17,6 +17,7 @@ import type { Routine } from "../routines/when";
 import { RoutineLine } from "../routines/RoutineLine";
 import { openRoutine } from "../routines/open";
 import { IconPicker } from "./IconPicker";
+import { CatalogUpdatePanel } from "./CatalogUpdatePanel";
 import { DEFAULT_ICON } from "../components/AssistantIcon";
 
 type Agent = "claude" | "codex";
@@ -163,6 +164,7 @@ export function AssistantSettings({
                 ` Missing here: ${a.catalog.missing.join(", ")}.`}
             </p>
           )}
+          <CatalogUpdatePanel assistant={a} />
           <IconPicker
             assistant={a}
             agent={agent}

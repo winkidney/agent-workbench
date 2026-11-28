@@ -148,7 +148,7 @@ func (m *Manager) ResolveMoss(take bool) error {
 		}
 	}
 	if take && len(st.Pending) > 0 {
-		m.commitAll(root, "chore: take the new Moss from Agent Workbench")
+		m.commitPaths(root, "chore: take the new Moss from Agent Workbench", sharedPaths())
 	}
 	st.Pending = nil
 	if err := m.store.setting("moss", st); err != nil {

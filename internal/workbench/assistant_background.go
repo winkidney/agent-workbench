@@ -647,13 +647,18 @@ func (c *claudeStream) result(stderr string) (string, []string, bool) {
 // --- git ---
 
 func gitRun(root string, args ...string) (string, error) {
+	return gitRunEnv(root, nil, args...)
+}
+
+// gitRunEnv is gitRun with more environment (a temporary index).
+func gitRunEnv(root string, env []string, args ...string) (string, error) {
 	git, err := exec.LookPath("git")
 	if err != nil {
 		return "", errors.New("git is not installed")
 	}
 	cmd := exec.Command(git, args...)
 	cmd.Dir = root
-	cmd.Env = append(routineEnv(), "GIT_TERMINAL_PROMPT=0")
+	cmd.Env = append(append(routineEnv(), "GIT_TERMINAL_PROMPT=0"), env...)
 	var out bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &out
 	err = cmd.Run()
@@ -671,6 +676,88 @@ func gitWithName(root string, args ...string) (string, error) {
 		args = append([]string{"-c", "user.name=Agent Workbench", "-c", "user.email=workbench@localhost"}, args...)
 	}
 	return gitRun(root, args...)
+}
+
+// gitCommitOnly commits the changes under paths, and drop taken out of
+// the index, and nothing else: through a temporary index from HEAD, so what
+// else is changed or staged stays as it is (the assistants' work in
+// progress). The real index then follows HEAD for those paths.
+func gitCommitOnly(root, message string, paths, drop []string) (string, error) {
+	if len(paths)+len(drop) == 0 {
+		return "", nil
+	}
+	f, err := os.CreateTemp("", "aw-index-*")
+	if err != nil {
+		return "", err
+	}
+	index := f.Name()
+	f.Close()
+	os.Remove(index)
+	defer os.Remove(index)
+	env := []string{"GIT_INDEX_FILE=" + index}
+	if _, err := gitRun(root, "rev-parse", "-q", "--verify", "HEAD"); err == nil {
+		if _, err := gitRunEnv(root, env, "read-tree", "HEAD"); err != nil {
+			return "", err
+		}
+	} else if _, err := gitRunEnv(root, env, "read-tree", "--empty"); err != nil {
+		return "", err
+	}
+	// A path that is neither here nor in HEAD would stop add.
+	var add []string
+	if len(paths) > 0 {
+		known, _ := gitRunEnv(root, env, append([]string{"ls-files", "-z", "--"}, paths...)...)
+		inHead := map[string]bool{}
+		for _, k := range strings.Split(known, "\x00") {
+			inHead[k] = true
+		}
+		for _, p := range paths {
+			p = strings.TrimSuffix(p, "/")
+			_, err := os.Lstat(filepath.Join(root, filepath.FromSlash(p)))
+			if err == nil || inHead[p] || strings.Contains(known, p+"/") {
+				add = append(add, p)
+			}
+		}
+	}
+	// A path git ignores and does not track (a definition file as its
+	// catalog has it) is not the commit's: naming it would stop add.
+	if len(add) > 0 {
+		ignored, _ := gitRunEnv(root, env, append([]string{"-c", "core.quotePath=false", "check-ignore", "--"}, add...)...)
+		skip := map[string]bool{}
+		for _, p := range strings.Split(ignored, "\n") {
+			skip[p] = true
+		}
+		kept := add[:0]
+		for _, p := range add {
+			if !skip[p] {
+				kept = append(kept, p)
+			}
+		}
+		add = kept
+	}
+	if len(add) > 0 {
+		if _, err := gitRunEnv(root, env, append([]string{"add", "-A", "--"}, add...)...); err != nil {
+			return "", err
+		}
+	}
+	if len(drop) > 0 {
+		if _, err := gitRunEnv(root, env, append([]string{"rm", "-q", "--cached", "--ignore-unmatch", "--"}, drop...)...); err != nil {
+			return "", err
+		}
+	}
+	if _, err := gitRunEnv(root, env, "diff", "--cached", "--quiet"); err == nil {
+		return "", nil
+	}
+	args := []string{"commit", "-q", "-m", message}
+	if out, err := gitRun(root, "config", "user.email"); err != nil || strings.TrimSpace(out) == "" {
+		args = append([]string{"-c", "user.name=Agent Workbench", "-c", "user.email=workbench@localhost"}, args...)
+	}
+	if _, err := gitRunEnv(root, env, args...); err != nil {
+		return "", err
+	}
+	sync := append(append([]string{"reset", "-q", "--"}, add...), drop...)
+	gitRun(root, sync...)
+	head, err := gitRun(root, "rev-parse", "HEAD")
+	return strings.TrimSpace(head), err
 }
 
 // gitCommitPaths commits the changes under paths only (gitCommit when

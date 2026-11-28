@@ -333,6 +333,44 @@ func (s *Server) localAgentAPI(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, session)
+	case rest == "assistants/catalog" && r.Method == "GET":
+		u := r.URL.Query().Get("url")
+		if u == "" {
+			u = m.catalogSources()[0].URL
+		}
+		list, err := m.CatalogEntries(u)
+		if err != nil {
+			bad(w, err)
+			return
+		}
+		writeJSON(w, map[string]any{"catalog": u, "assistants": list})
+	case rest == "assistants/install" && r.Method == "POST":
+		var v struct{ Catalog, Path, Dir, Agent string }
+		if err := decode(w, r, &v); err != nil {
+			bad(w, err)
+			return
+		}
+		if v.Catalog == "" {
+			v.Catalog = m.catalogSources()[0].URL
+		}
+		a, err := m.InstallAssistant(v.Catalog, v.Path, v.Dir, v.Agent)
+		if err != nil {
+			bad(w, err)
+			return
+		}
+		writeJSON(w, a)
+	case len(parts) == 3 && parts[0] == "assistants" && parts[2] == "update" && r.Method == "POST":
+		var v struct{ Apply bool }
+		if err := decode(w, r, &v); err != nil {
+			bad(w, err)
+			return
+		}
+		u, err := m.UpdateFromCatalog(parts[1], v.Apply, nil)
+		if err != nil {
+			bad(w, err)
+			return
+		}
+		writeJSON(w, u)
 	case rest == "assistants/reload" && r.Method == "POST":
 		// An agent changed an assistant.toml: apply it now (ADR 0014).
 		m.assistantsChanged()

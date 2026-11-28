@@ -7105,3 +7105,28 @@ span.heartbeat.compact {
   font-size: 12.5px;
   overflow-wrap: anywhere;
 }
+.catalog-update {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.catalog-update p {
+  margin: 0;
+  font-size: 12.5px;
+}
+.catalog-runs {
+  color: var(--warning);
+  font-size: 11px;
+}
+.catalog-choice {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin-left: 6px;
+}
+.catalog-choice label {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}

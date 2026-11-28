@@ -124,7 +124,7 @@ func (m *Manager) assistantIconAPI(w http.ResponseWriter, r *http.Request, dir s
 		name := iconFile
 		if a.file.Icon == iconFile {
 			// Only the image changed: committed as the patch would.
-			m.commitAll(m.assistantsRoot(), a.Dir+": icon")
+			m.commitPaths(m.assistantsRoot(), a.Dir+": icon", []string{a.Dir + "/" + iconFile})
 			m.assistantsChanged()
 			a, err = m.assistant(dir)
 		} else {
