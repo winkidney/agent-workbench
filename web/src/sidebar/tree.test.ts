@@ -4,6 +4,8 @@ import {
   buildSidebar,
   emptyPrefs,
   listedByDefault,
+  waitingAt,
+  waitingCard,
   needsYou,
   relativeTime,
   resumeCommand,
@@ -578,5 +580,48 @@ describe("a folder whose sessions are all hidden or archived", () => {
       { workspaces },
     );
     expect(names(pinned.projects)).toContain("w>pinry");
+  });
+});
+
+describe("the sessions waiting at an assistant", () => {
+  const at = "/home/u/assistants/mail";
+  const s = (id: string, over: Record<string, unknown> = {}) =>
+    ({ id, cwd: at, ...over }) as unknown as Session;
+  it("lists its own and its subsessions' that need the user", () => {
+    const listed = [
+      s("a", { attention: "question" }),
+      s("b"),
+      s("c"),
+      s("c1", { parentId: "c", cwd: "/elsewhere", attention: "approval" }),
+      s("d", { cwd: "/other", attention: "question" }),
+      s("e", { attention: "unknown" }),
+    ];
+    expect(waitingAt(listed, at).map((x) => x.id)).toEqual(["a", "c1"]);
+  });
+  it("leaves out what the sidebar does not list", () => {
+    const all = [
+      s("a", { attention: "question", archived: true }),
+      s("b", { attention: "question" }),
+    ];
+    const prefs = { ...emptyPrefs(), hidden: ["b"] };
+    expect(waitingAt(listedByDefault(all, prefs), at)).toEqual([]);
+  });
+});
+
+describe("the sessions an assistant's card names", () => {
+  const at = "/home/u/assistants/mail";
+  const s = (id: string, over: Record<string, unknown> = {}) =>
+    ({
+      id,
+      cwd: at,
+      title: id,
+      attention: "question",
+      ...over,
+    }) as unknown as Session;
+  it("titles them as the sidebar does and leaves out the open one", () => {
+    const prefs = { ...emptyPrefs(), aliases: { a: "Renamed" } };
+    expect(
+      waitingCard([s("a"), s("b"), s("c")], prefs, at, "b").map((x) => x.title),
+    ).toEqual(["Renamed", "c"]);
   });
 });

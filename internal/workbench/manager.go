@@ -828,7 +828,16 @@ func (m *Manager) receive(id string, generation int, v map[string]any) {
 			if oldID != r.session.ID {
 				m.moveSessionRows(oldID, r.session.ID)
 			}
+			// A session just started has no time of its own until the
+			// CLI's records are read: now, so it sorts with the newest.
+			if r.session.Updated == "" {
+				r.session.Updated = time.Now().UTC().Format(time.RFC3339)
+			}
 			_ = m.store.Save(r.session)
+			// Pages list a session only under its native identity: say it
+			// now, not at the end of the first turn (as Codex's thread
+			// answer does).
+			m.emit(r.session.ID, "status", r.session)
 		}
 		// Claude starts turns itself too (a background task ended, a monitor
 		// reported): they run like the page's.

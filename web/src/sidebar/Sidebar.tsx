@@ -58,9 +58,10 @@ import {
   setUpAssistants,
   type Assistant,
 } from "../lib/assistants";
-import { waitingTotal, type WaitingRuns } from "../routines/waiting";
+import type { WaitingRuns } from "../routines/waiting";
 import { api } from "../lib/api";
 import { LIST_SHOWN, ShowMoreLess, limited } from "./limit";
+import { assistantRows, waitingFor } from "./waitingFor";
 import {
   buildSidebar,
   relativeTime,
@@ -301,6 +302,12 @@ const SessionRow = memo(function SessionRow({
   );
   const [open, setOpen] = useState(childSelected);
   const [limit, setLimit] = useState(LIST_SHOWN);
+  const kids = limited(
+    node.children,
+    limit,
+    (c) => keepsNode(c, actions.activeId),
+    !!actions.query,
+  );
   const ref = useRef<HTMLDivElement>(null);
   const menuKey = scope + ":" + s.id;
   const [anchor, setAnchor] = useState<DOMRect | null>(null);
@@ -470,12 +477,7 @@ const SessionRow = memo(function SessionRow({
       )}
       {open && (
         <>
-          {limited(
-            node.children,
-            limit,
-            (c) => c.session.id === actions.activeId,
-            !!actions.query,
-          ).map((c) => (
+          {kids.map((c) => (
             <SessionRow
               key={c.session.id}
               node={c}
@@ -486,6 +488,7 @@ const SessionRow = memo(function SessionRow({
           ))}
           <ShowMoreLess
             total={node.children.length}
+            shown={kids.length}
             limit={limit}
             setLimit={setLimit}
             depth={depth + 1}
@@ -501,6 +504,10 @@ const holds = (p: Project, id: string): boolean =>
   p.nodes.some(
     (n) => n.session.id === id || n.children.some((c) => c.session.id === id),
   ) || p.children.some((c) => holds(c, id));
+
+// Whether a folder holds a session that needs the user, at any depth.
+const waitsIn = (p: Project): boolean =>
+  p.nodes.some(needsYou) || p.children.some(waitsIn);
 
 function ProjectNode({
   project,
@@ -521,6 +528,12 @@ function ProjectNode({
   );
   const [limit, setLimit] = useState(LIST_SHOWN);
   const [relatedLimit, setRelatedLimit] = useState(LIST_SHOWN);
+  const related = limited(
+    project.related,
+    relatedLimit,
+    (n) => keepsNode(n, actions.activeId),
+    forceOpen,
+  );
   const [relatedOpen, setRelatedOpen] = useState(false);
   const [anchor, setAnchor] = useState<DOMRect | null>(null);
   const menuKey = "folder:" + project.path;
@@ -532,15 +545,16 @@ function ProjectNode({
     if (holdsActive) setOpen(true);
   }, [holdsActive]);
   const expanded = forceOpen || open;
-  // Folders and sessions share one list ordered by activity; the entry holding
-  // the selected session stays visible beyond the limit.
+  // Folders and sessions share one list ordered by activity; the entries
+  // holding the selected session or one that needs the user stay visible
+  // beyond the limit.
   const shown = limited(
     project.entries,
     limit,
     (e) =>
       e.kind === "project"
-        ? holds(e.project, actions.activeId)
-        : holdsNode(e.node, actions.activeId),
+        ? holds(e.project, actions.activeId) || waitsIn(e.project)
+        : keepsNode(e.node, actions.activeId),
     forceOpen,
   );
   const pinOp: PrefsOp = project.pinned ? "unpinWorkspace" : "pinWorkspace";
@@ -670,6 +684,7 @@ function ProjectNode({
           )}
           <ShowMoreLess
             total={project.entries.length}
+            shown={shown.length}
             limit={limit}
             setLimit={setLimit}
             depth={depth + 1}
@@ -692,12 +707,7 @@ function ProjectNode({
                 Related · {project.related.length}
               </button>
               {showRelated &&
-                limited(
-                  project.related,
-                  relatedLimit,
-                  (n) => holdsNode(n, actions.activeId),
-                  forceOpen,
-                ).map((n) => (
+                related.map((n) => (
                   <SessionRow
                     key={"related:" + n.session.id}
                     node={n}
@@ -716,6 +726,7 @@ function ProjectNode({
               {showRelated && (
                 <ShowMoreLess
                   total={project.related.length}
+                  shown={related.length}
                   limit={relatedLimit}
                   setLimit={setRelatedLimit}
                   depth={depth + 1}
@@ -765,7 +776,7 @@ function OtherGroup({
   const shown = limited(
     nodes,
     limit,
-    (n) => holdsNode(n, actions.activeId),
+    (n) => keepsNode(n, actions.activeId),
     forceOpen,
   );
   return (
@@ -803,6 +814,7 @@ function OtherGroup({
           ))}
           <ShowMoreLess
             total={nodes.length}
+            shown={shown.length}
             limit={limit}
             setLimit={setLimit}
             all={forceOpen}
@@ -1002,11 +1014,19 @@ function AssistantRow({
   // project's are.
   const searching = !!actions.query && nodes.length > 0;
   const listed = open || searching;
+  const items = limited(
+    nodes,
+    limit,
+    (n) => keepsNode(n, actions.activeId),
+    searching,
+  );
   const [anchor, setAnchor] = useState<DOMRect | null>(null);
   const menuKey = "assistant:" + a.dir;
   const latest = nodes[0]?.session;
-  const waiting = nodes.find((n) => needsYou(n))?.session;
-  const shown = waiting ?? latest;
+  // Its sessions and routine runs waiting for the user: one bell; else
+  // its latest session's state.
+  const wait = waitingFor(nodes, runs);
+  const shown = latest;
   const selected = isOpen;
   const movable = a.dir !== "main";
   const at = order.indexOf(a.dir);
@@ -1080,13 +1100,10 @@ function AssistantRow({
           <span className="session-name">
             <Highlight text={a.name} query={actions.query} />
           </span>
-          {runs > 0 ? (
-            <span
-              className="assistant-waiting"
-              title={`${runs} run${runs === 1 ? "" : "s"} wait for your approval`}
-            >
+          {wait.count > 0 ? (
+            <span className="assistant-waiting" title={wait.title}>
               <StatusIcon status="waiting" />
-              {runs}
+              {wait.count}
             </span>
           ) : a.enabled === false ? (
             <span className="session-time">off</span>
@@ -1219,12 +1236,7 @@ function AssistantRow({
       )}
       {listed && (
         <>
-          {limited(
-            nodes,
-            limit,
-            (n) => holdsNode(n, actions.activeId),
-            searching,
-          ).map((n) => (
+          {items.map((n) => (
             <SessionRow
               key={n.session.id}
               node={n}
@@ -1235,6 +1247,7 @@ function AssistantRow({
           ))}
           <ShowMoreLess
             total={nodes.length}
+            shown={items.length}
             limit={limit}
             setLimit={setLimit}
             all={searching}
@@ -1250,10 +1263,16 @@ export function holdsNode(n: Node, id?: string | null): boolean {
   return n.session.id === id || n.children.some((c) => c.session.id === id);
 }
 
-function needsYouBadge(nodes: Node[], more = 0) {
-  const n = nodes.filter(needsYou).length + more;
-  return n ? `${n} need${n === 1 ? "s" : ""} you` : undefined;
+// What a folded list keeps past its limit: the open session, and every one
+// that needs the user (sidebar/limit.tsx), so a badge always has a row.
+export const keepsNode = (n: Node, id?: string | null): boolean =>
+  holdsNode(n, id) || needsYou(n);
+
+function needsYouBadge(nodes: Node[]) {
+  return countBadge(nodes.filter(needsYou).length);
 }
+const countBadge = (n: number) =>
+  n ? `${n} need${n === 1 ? "s" : ""} you` : undefined;
 
 function Section({
   id,
@@ -1403,6 +1422,14 @@ export function Sidebar({
       assistantRoot,
     ],
   );
+  // The assistants' rows and what their heading counts
+  // (sidebar/waitingFor.ts).
+  const rows = assistantRows(
+    assistants,
+    model.assistants,
+    waitingRuns,
+    showOff,
+  );
   const names = useMemo(
     () => new Map(model.projects.map((p) => [p.path, p.name])),
     [model.projects],
@@ -1535,34 +1562,30 @@ export function Sidebar({
             id="assistants"
             title="Assistants"
             count={assistants.length - offCount}
-            badge={needsYouBadge(model.assistants, waitingTotal(waitingRuns))}
+            badge={countBadge(rows.waiting)}
             forceOpen={false}
           >
-            {assistants
-              .filter((a) => a.enabled !== false || showOff)
-              .map((a) => (
-                <AssistantRow
-                  key={a.dir}
-                  assistant={a}
-                  nodes={model.assistants.filter(
-                    (n) => n.session.cwd === a.path,
-                  )}
-                  actions={actions}
-                  onOpen={onOpenAssistant}
-                  order={assistantOrder}
-                  drag={assistantDrag}
-                  open={a.dir === openAssistantDir}
-                  installed={installedAgents}
-                  runs={waitingRuns[a.dir]?.count ?? 0}
-                />
-              ))}
-            {offCount > 0 && (
+            {rows.listed.map((r) => (
+              <AssistantRow
+                key={r.assistant.dir}
+                assistant={r.assistant}
+                nodes={r.nodes}
+                actions={actions}
+                onOpen={onOpenAssistant}
+                order={assistantOrder}
+                drag={assistantDrag}
+                open={r.assistant.dir === openAssistantDir}
+                installed={installedAgents}
+                runs={r.runs}
+              />
+            ))}
+            {(showOff ? offCount > 0 : rows.folded > 0) && (
               <button
                 type="button"
                 className="show-more"
                 onClick={() => setShowOff(!showOff)}
               >
-                {showOff ? "Show less" : `Show ${offCount} more (off)`}
+                {showOff ? "Show less" : `Show ${rows.folded} more (off)`}
               </button>
             )}
           </Section>

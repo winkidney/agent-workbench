@@ -976,7 +976,13 @@ func (m *Manager) NativeList() ([]Session, error) {
 			}
 		}
 		if !found {
-			list = append([]Session{r.session}, list...)
+			// Not in the CLI's records yet: it sorts by when it last
+			// did something here.
+			s := r.session
+			if s.Updated == "" {
+				s.Updated = r.last.UTC().Format(time.RFC3339)
+			}
+			list = append([]Session{s}, list...)
 		}
 	}
 	m.mu.Unlock()

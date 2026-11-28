@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
+  BellRing,
   Clock,
   Eye,
   FileText,
@@ -21,6 +22,8 @@ import { firstLine, type Routine } from "../routines/when";
 import { RoutineLine } from "../routines/RoutineLine";
 import { openRoutine } from "../routines/open";
 import { MossIcon } from "../components/MossIcon";
+import { ATTENTION_LABEL } from "../attention";
+import type { Session } from "../sidebar/tree";
 import { Button } from "../components/ui/button";
 import { Markdown } from "../transcript/Markdown";
 import { EnvContext, type Env } from "../transcript/media";
@@ -32,12 +35,18 @@ export function AssistantHome({
   assistant: a,
   onTry,
   onOpenFile,
+  waiting: sessions = [],
+  onOpenSession = openSessionLater,
 }: {
   assistant: Assistant;
   // An example request was picked: put it in the composer.
   onTry: (text: string) => void;
   // Opens one of its files in the preview panel.
   onOpenFile?: (path: string) => void;
+  // Its sessions that need the user (sidebar/tree.ts waitingAt): its bell
+  // in the sidebar counts them, so the card names each with Open.
+  waiting?: Session[];
+  onOpenSession?: (id: string) => void;
 }) {
   // Its routines, read for this view only, and again when one changes (a
   // run that starts waiting for approval).
@@ -137,6 +146,22 @@ export function AssistantHome({
           </Button>
         </div>
       )}
+      {sessions.map((s) => (
+        <div
+          key={s.id}
+          className="assistant-home-setup assistant-home-approve"
+          role="status"
+        >
+          <BellRing size={14} />
+          <span>
+            {ATTENTION_LABEL[s.attention ?? ""] ?? "Needs you"}:{" "}
+            <strong>{s.title || s.nativeId}</strong>
+          </span>
+          <Button size="sm" onClick={() => onOpenSession(s.id)}>
+            Open
+          </Button>
+        </div>
+      ))}
       {waiting.map((r) => (
         <WaitingCard
           key={r.id}

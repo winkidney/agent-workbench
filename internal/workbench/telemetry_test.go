@@ -76,6 +76,49 @@ func TestClaudeOptionsFollowNativeIdentity(t *testing.T) {
 	}
 }
 
+// A new Claude session tells the pages its native identity as soon as the
+// CLI names it: pages ignore a session's status under its temporary id, so
+// without this a routine's new session stayed out of the sidebar until the
+// next poll (or its turn's end).
+func TestClaudeNativeIdentityIsAnnounced(t *testing.T) {
+	m, _ := fixture(t)
+	s, _ := m.Create("claude", t.TempDir(), "test")
+	if err := m.Start(s.ID); err != nil {
+		t.Fatal(err)
+	}
+	r := m.sessions[s.ID]
+	m.receive(s.ID, r.generation, map[string]any{"type": "system", "subtype": "init", "session_id": "native"})
+	events, _ := m.store.Events("claude:native", 0, 1000)
+	announced := false
+	for _, e := range events {
+		var v Session
+		if e.Kind == "status" && json.Unmarshal(e.Data, &v) == nil && v.ID == "claude:native" && v.NativeID == "native" {
+			announced = true
+			// With a time: a row without one sorts last and folds away.
+			if v.Updated == "" {
+				t.Fatal("announced without a time")
+			}
+		}
+	}
+	if !announced {
+		t.Fatalf("no status under claude:native in %d events", len(events))
+	}
+	// The list has it before the CLI's records do, with a time too.
+	list, err := m.NativeList()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range list {
+		if s.ID == "claude:native" {
+			if s.Updated == "" {
+				t.Fatal("listed without a time")
+			}
+			return
+		}
+	}
+	t.Fatal("not listed")
+}
+
 // The context follows each reply of the main conversation, with the window
 // a result names, or the last one known before that.
 func TestClaudeContextFollowsReplies(t *testing.T) {

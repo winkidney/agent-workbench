@@ -1,3 +1,4 @@
+import { ATTENTION_LABEL } from "../attention";
 // Sidebar view model: pinned, active and a project → session → subsession
 // tree, derived from native sessions plus workbench-only preferences.
 
@@ -119,6 +120,35 @@ export function listedByDefault<S extends Session>(
     return !parent || depth > 8 || listed(parent, depth + 1);
   };
   return sessions.filter((s) => listed(s));
+}
+
+// The sessions that need the user at an assistant's folder, as the sidebar
+// lists them (pass listedByDefault's list): its own, and the subsessions of
+// its own. Its card names them, so its bell leads somewhere.
+export function waitingAt<S extends Session>(listed: S[], path: string): S[] {
+  const byId = new Map(listed.map((s) => [s.id, s]));
+  const root = (s: S, depth = 0): S => {
+    const parent = s.parentId ? byId.get(s.parentId) : undefined;
+    return parent && depth < 8 ? root(parent, depth + 1) : s;
+  };
+  return listed.filter(
+    (s) =>
+      !!s.attention && s.attention in ATTENTION_LABEL && root(s).cwd === path,
+  );
+}
+
+// What an assistant's card names as waiting: the sessions listed by default
+// that need the user there, titled as the sidebar titles them (an alias
+// first), less the one the user is in.
+export function waitingCard<S extends Session>(
+  sessions: S[],
+  prefs: Prefs,
+  path: string,
+  current?: string,
+): S[] {
+  return waitingAt(listedByDefault(sessions, prefs), path)
+    .filter((s) => s.id !== current)
+    .map((s) => ({ ...s, title: displayTitle(s, prefs) }));
 }
 
 export function relativeTime(iso: string, now: number): string {

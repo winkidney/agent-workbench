@@ -25,11 +25,18 @@ type SteerResult = {
 import { Sidebar, statusLabels as labels } from "./sidebar/Sidebar";
 import { usePrefs } from "./sidebar/usePrefs";
 import { FolderDialog, type FolderTarget } from "./sidebar/FolderDialog";
-import { displayTitle, listedByDefault, type Session } from "./sidebar/tree";
+import {
+  displayTitle,
+  listedByDefault,
+  waitingCard,
+  type Session,
+} from "./sidebar/tree";
 import { api, download } from "./lib/api";
 import { randomUUID } from "./lib/uuid";
+import { coalesced } from "./lib/coalesce";
 import {
   afterError,
+  catchesUp,
   footerConnection,
   reconnectDelay,
   shouldRenew,
@@ -81,6 +88,8 @@ import { inTerminal } from "./preview/terminal";
 import {
   drifted,
   mergeSessions,
+  namesUnknownSession,
+  withStatus,
   type SessionsDelta,
 } from "./lib/sessionsDelta";
 import { tabFromPreview, type Preview } from "./preview/tabs";
@@ -248,6 +257,9 @@ export default function App() {
   // only what changed since (sessionlist.go).
   const listToken = useRef("");
   const current = sessions.find((s) => s.id === active);
+  // The list as it is now, for the event stream's handlers.
+  const sessionsRef = useRef(sessions);
+  sessionsRef.current = sessions;
   const [verbose, setVerbose] = useState(false);
   // Side panel widths: dragged by the handles, saved per browser.
   const [widths, setWidths] = useState<Widths>(loadWidths);
@@ -350,6 +362,12 @@ export default function App() {
     setWorkspaces(await api<string[]>("workspaces"));
     setPreviews(await api<Preview[]>("previews"));
   };
+  // The list read again now rather than at the next poll (a session it
+  // lacks was named, the page woke, the stream came back), once at a time.
+  // (refresh reads only refs and setters, so the first one serves.)
+  const catchUp = useRef(
+    coalesced(() => refresh(false).catch(catchError)),
+  ).current;
   useEffect(() => {
     const requirePairing = () => {
       setAuthReady(true);
@@ -480,11 +498,7 @@ export default function App() {
       const v = JSON.parse(e.data) as Event;
       streamCursor.current = v.seq;
       if (v.kind === "status") {
-        setSessions((old) => {
-          const s = v.data as unknown as Session;
-          if (!s.nativeId || s.id !== `${s.agent}:${s.nativeId}`) return old;
-          return [s, ...old.filter((x) => x.id !== s.id)];
-        });
+        setSessions((old) => withStatus(old, v.data as unknown as Session));
       }
       if (v.kind === "deleted") {
         forget.current(v.session);
@@ -494,6 +508,13 @@ export default function App() {
         assistantsChanged();
         return;
       }
+      // A run started a session this list does not have yet.
+      if (
+        namesUnknownSession(v.kind, v.data, (id) =>
+          sessionsRef.current.some((s) => s.id === id),
+        )
+      )
+        catchUp();
       if (v.kind === "assistant") {
         // A background run started or ended (assistants/Changes.tsx).
         changesChanged();
@@ -515,6 +536,7 @@ export default function App() {
     source.addEventListener("ping", heard);
     source.onopen = () => {
       heard();
+      if (catchesUp(liveRef.current)) catchUp();
       gaveUp.current = 0;
       setLive("open");
     };
@@ -555,7 +577,11 @@ export default function App() {
     };
     const timer = window.setInterval(() => check(false), 5000);
     const wake = () => {
-      if (document.visibilityState === "visible") check(true);
+      if (document.visibilityState !== "visible") return;
+      check(true);
+      // The poll stops while the page is hidden: what changed meanwhile
+      // shows now, not at its next round.
+      catchUp();
     };
     document.addEventListener("visibilitychange", wake);
     window.addEventListener("online", wake);
@@ -2116,6 +2142,16 @@ export default function App() {
               </button>
               <AssistantHome
                 assistant={topicOf}
+                waiting={waitingCard(
+                  sessions,
+                  sidebarPrefs.prefs,
+                  topicOf.path,
+                  current.id,
+                )}
+                onOpenSession={(id) => {
+                  setAboutOpen(false);
+                  selectSession(id);
+                }}
                 onTry={(text) => {
                   setAboutOpen(false);
                   window.dispatchEvent(

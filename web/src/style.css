@@ -3392,9 +3392,14 @@ textarea {
 .session-row.is-archived {
   opacity: 0.55;
 }
-/* Touch screens have no hover: the selected row shows its actions. */
+/* Touch screens have no hover: the selected row shows its actions, after
+   its status rather than over it, so its bell (needs you) stays in view. */
 @media (hover: none) {
   .session-row.selected .side-actions {
+    position: static;
+    flex-shrink: 0;
+    padding-left: 2px;
+    background: none;
     opacity: 1;
     pointer-events: auto;
   }

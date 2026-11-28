@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { LIST_SHOWN, LIST_STEP, ShowMoreLess, limited } from "./limit";
-import { holdsNode } from "./Sidebar";
+import { holdsNode, keepsNode } from "./Sidebar";
 import type { Node } from "./tree";
 
 const node = (id: string, children: string[] = []) =>
@@ -44,6 +44,43 @@ describe("a folded session list in the sidebar", () => {
     expect(limited(nodes, 5, holding("s2"))).toHaveLength(5);
   });
 
+  it("keeps every session that needs the user listed past the limit", () => {
+    const waiting = nodes.map((n, i) =>
+      i === 8 || i === 11
+        ? { ...n, session: { ...n.session, attention: "question" } }
+        : n,
+    ) as Node[];
+    expect(ids(limited(waiting, 5, (n) => keepsNode(n, "s7")))).toEqual([
+      "s0",
+      "s1",
+      "s2",
+      "s3",
+      "s4",
+      "s7",
+      "s8",
+      "s11",
+    ]);
+    // A subsession waiting keeps its parent listed.
+    const child = nodes.map((n, i) =>
+      i === 9
+        ? {
+            ...n,
+            children: [
+              { session: { id: "child", attention: "approval" }, children: [] },
+            ],
+          }
+        : n,
+    ) as unknown as Node[];
+    expect(ids(limited(child, 5, (n) => keepsNode(n, null)))).toEqual([
+      "s0",
+      "s1",
+      "s2",
+      "s3",
+      "s4",
+      "s9",
+    ]);
+  });
+
   it("shows every item while searching", () => {
     expect(limited(nodes, 5, undefined, true)).toHaveLength(12);
   });
@@ -57,6 +94,22 @@ describe("a folded session list in the sidebar", () => {
         all={all}
       />,
     );
+
+  it("counts only the rows not shown yet: kept rows are already there", () => {
+    const more = (total: number, shown: number) =>
+      renderToStaticMarkup(
+        <ShowMoreLess
+          total={total}
+          limit={5}
+          shown={shown}
+          setLimit={() => {}}
+        />,
+      );
+    // Five newest plus two kept past the limit, of nine.
+    expect(more(9, 7)).toContain("Show 2 more");
+    // Every row already shown: nothing more to offer.
+    expect(more(7, 7)).not.toContain("more");
+  });
 
   it("offers Show more and Show less as the list needs", () => {
     expect(buttons(12, 5)).toContain("Show 7 more");

@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { HeldCard, WaitingCard, previewFilePath } from "./AssistantHome";
+import {
+  AssistantHome,
+  HeldCard,
+  WaitingCard,
+  previewFilePath,
+} from "./AssistantHome";
+import type { Assistant } from "../lib/assistants";
+import type { Session } from "../sidebar/tree";
 import type { Routine } from "../routines/when";
 
 const routine = (preview?: string) =>
@@ -81,5 +88,54 @@ describe("a routine whose runs wait for their turn (ADR 0027)", () => {
       "3 runs wait for its turn, after Check mail. It starts when that is done, as one message.",
     );
     expect(render(held(0))).toBe("");
+  });
+});
+
+describe("an assistant's card", () => {
+  const mail = {
+    dir: "mail",
+    path: "/home/u/assistants/mail",
+    name: "Mail",
+    agent: "claude",
+    sessions: "per-request",
+    ready: true,
+  } as unknown as Assistant;
+  const waiting = [
+    {
+      id: "claude:q",
+      agent: "claude",
+      title: "[Routine: Daily summary] Yesterday",
+      attention: "question",
+    },
+    {
+      id: "claude:a",
+      agent: "claude",
+      title: "Check mail",
+      attention: "approval",
+    },
+  ] as unknown as Session[];
+
+  it("names the sessions that wait for the user, each with Open", () => {
+    const html = renderToStaticMarkup(
+      <AssistantHome
+        assistant={mail}
+        onTry={() => {}}
+        waiting={waiting}
+        onOpenSession={() => {}}
+      />,
+    );
+    expect(html).toContain("Has a question for you");
+    expect(html).toContain("[Routine: Daily summary] Yesterday");
+    expect(html).toContain("Needs your approval");
+    expect(html.match(/>Open<\/button>/g)).toHaveLength(2);
+  });
+
+  it("says nothing of them when none waits", () => {
+    for (const props of [{ waiting: [] }, {}])
+      expect(
+        renderToStaticMarkup(
+          <AssistantHome assistant={mail} onTry={() => {}} {...props} />,
+        ),
+      ).not.toContain(">Open</button>");
   });
 });

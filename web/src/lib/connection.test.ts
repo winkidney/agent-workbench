@@ -3,6 +3,7 @@ import {
   STALL_MS,
   WAKE_MS,
   afterError,
+  catchesUp,
   footerConnection,
   reconnectDelay,
   shouldRenew,
@@ -82,5 +83,13 @@ describe("the sidebar's connection line", () => {
     expect(
       shouldRenew({ now, last: 0, live: "reconnecting", waking: true }),
     ).toBe(true);
+  });
+});
+
+describe("catchesUp", () => {
+  it("reads the list again only when the stream comes back after a break", () => {
+    expect(catchesUp("reconnecting")).toBe(true);
+    expect(catchesUp("connecting")).toBe(false);
+    expect(catchesUp("open")).toBe(false);
   });
 });

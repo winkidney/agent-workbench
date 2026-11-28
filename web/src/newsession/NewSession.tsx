@@ -5,7 +5,12 @@ import { NewSessionOptions, type Options } from "../AgentControls";
 import { api } from "../lib/api";
 import { randomUUID } from "../lib/uuid";
 import { newlineKey } from "../lib/newline";
-import { shortPath, type Prefs, type Session } from "../sidebar/tree";
+import {
+  shortPath,
+  waitingCard,
+  type Prefs,
+  type Session,
+} from "../sidebar/tree";
 import { ProjectPicker } from "./ProjectPicker";
 import { AgentIcon } from "../components/AgentIcon";
 import { recentProjects } from "./recent";
@@ -62,6 +67,11 @@ export function NewSession({
   // Opens added images in the viewer.
   onView?: (items: ViewItem[], index: number) => void;
 }) {
+  // The assistant's sessions that need the user, named on its card.
+  const waiting = useMemo(
+    () => (assistant ? waitingCard(sessions, prefs, assistant.path) : []),
+    [sessions, prefs, assistant],
+  );
   const recent = useMemo(
     () => recentProjects(sessions, prefs, workspaces),
     [sessions, prefs, workspaces],
@@ -189,6 +199,7 @@ export function NewSession({
       {assistant && (
         <AssistantHome
           assistant={assistant}
+          waiting={waiting}
           onTry={(t) => {
             setText(t);
             requestAnimationFrame(() => {

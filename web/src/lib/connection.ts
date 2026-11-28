@@ -60,6 +60,12 @@ export function afterError(was: Live): Live {
   return was === "open" ? "reconnecting" : was;
 }
 
+// Whether a stream that opens comes back after a break: the list may have
+// missed what happened meanwhile, so it is read again at once. The first
+// stream (the page just read the list) and a switch to another session
+// (the stream was open) need nothing.
+export const catchesUp = (was: Live) => was === "reconnecting";
+
 // How long to wait before making the stream again after the browser gave up
 // on it: longer each time, then every 30 seconds, for as long as it takes.
 const DELAYS = [1000, 2000, 5000, 10000, 20000, 30000];
