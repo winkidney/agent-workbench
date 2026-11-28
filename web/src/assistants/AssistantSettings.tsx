@@ -164,7 +164,7 @@ export function AssistantSettings({
                 ` Missing here: ${a.catalog.missing.join(", ")}.`}
             </p>
           )}
-          <CatalogUpdatePanel assistant={a} />
+          <CatalogUpdatePanel assistant={a} onUpdated={onClose} />
           <IconPicker
             assistant={a}
             agent={agent}

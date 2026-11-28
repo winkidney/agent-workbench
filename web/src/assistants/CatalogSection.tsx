@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Download, Loader2, RefreshCw } from "lucide-react";
 import { api } from "../lib/api";
 import {
@@ -27,26 +27,33 @@ export function CatalogSection() {
   const [loading, setLoading] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
+  // The latest request: an older answer (another catalog, an earlier
+  // click) is dropped.
+  const latest = useRef(0);
   const load = async (u: string) => {
+    const n = ++latest.current;
     setLoading(true);
     setError("");
     try {
       const v = await api<{ catalog: string; assistants: CatalogEntry[] }>(
         `assistants/catalog?url=${encodeURIComponent(u)}`,
       );
-      setList(v.assistants ?? []);
+      if (n === latest.current) setList(v.assistants ?? []);
     } catch (e) {
+      if (n !== latest.current) return;
       setList(null);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      if (n === latest.current) setLoading(false);
     }
   };
   useEffect(() => {
-    void api<{ url: string }[]>("assistants/catalogs").then((v) => {
-      setSources(v);
-      setUrl(v[0]?.url ?? "");
-    });
+    api<{ url: string }[]>("assistants/catalogs")
+      .then((v) => {
+        setSources(v);
+        setUrl(v[0]?.url ?? "");
+      })
+      .catch((e) => setError(e instanceof Error ? e.message : String(e)));
   }, []);
   const saveSources = async () => {
     const urls = draft
@@ -81,6 +88,7 @@ export function CatalogSection() {
             <select
               aria-label="Catalog"
               value={url}
+              disabled={loading}
               onChange={(e) => {
                 setUrl(e.target.value);
                 setList(null);
@@ -151,7 +159,7 @@ export function CatalogSection() {
           {list.length === 0 && <li className="subtle">No assistants yet.</li>}
         </ul>
       )}
-      {list && <BindSection url={url} />}
+      {list && <BindSection url={url} onBound={() => void load(url)} />}
     </section>
   );
 }
@@ -233,7 +241,11 @@ function CatalogItem({
           <div className="catalog-install-row">
             <label className="routine-field">
               <span className="routine-label">Folder</span>
-              <Input value={dir} onChange={(ev) => setDir(ev.target.value)} />
+              <Input
+                autoFocus
+                value={dir}
+                onChange={(ev) => setDir(ev.target.value)}
+              />
             </label>
             {agents.length > 1 && (
               <div
@@ -288,7 +300,7 @@ function CatalogItem({
 
 // A repository made before catalogs: its assistants that the catalog also
 // has are bound to it. Shown first as what would happen.
-function BindSection({ url }: { url: string }) {
+function BindSection({ url, onBound }: { url: string; onBound: () => void }) {
   const [plan, setPlan] = useState<MigrationItem[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -306,6 +318,7 @@ function BindSection({ url }: { url: string }) {
       if (apply) {
         setDone(true);
         assistantsChanged();
+        onBound();
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));

@@ -45,6 +45,8 @@ func (m *Manager) MigrateAssistants(url string, apply bool, useCatalog []string)
 		return nil, errors.New("set up assistants first")
 	}
 	if apply {
+		m.as.lockMu.Lock()
+		defer m.as.lockMu.Unlock()
 		if out, err := gitRun(root, "status", "--porcelain"); err != nil || strings.TrimSpace(out) != "" {
 			return nil, fmt.Errorf("commit or put aside the changes in %s first:\n%s", root, out)
 		}

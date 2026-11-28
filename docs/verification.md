@@ -1382,3 +1382,14 @@ These are maintainer notes on how each feature of Agent Workbench was verified, 
   - `TestAgentsInstallFromACatalog`: the local commands' API refuses without the agent token, lists, installs for Codex, checks for an update, refuses to install over a folder.
   - Vitest (470): the update panel's files, what runs, conflict choices and Ask Moss; a check when nothing is known.
   - `go test -race ./...`, `GOOS=windows` and `GOOS=darwin go vet ./...` passed.
+- Review of the catalog work (f4b228e, 756769b and after; two reviewers, backend and page, 2026-11-29). Fixed with tests (`catalog_review_test.go` unless named):
+  - A catalog or the lock naming `../` paths could write outside the folder: paths are checked (`safeRel`, `lockEntryValid`); clones and fetches take `--` before the address and give up on a stalled server.
+  - A background run could change definition files as the catalog has them (not tracked, so not seen) for good: copied before the run and put back after it; for Claude only what the run wrote, so a session's edit meanwhile stays.
+  - Deleting an installed assistant's folder brought it back from its catalog at start: it is uninstalled (the lock forgets it). Installing always writes `state/` and `log.md`, so a clone keeps the folder.
+  - An icon changed on both sides went through `git merge-file`: binary files are conflicts. A script that only became runnable was not an update; modes are compared and set.
+  - A file taken out of the index at start was not taken out of the commit (`TestStartUpCommitsWhatLeavesTheRepository` fails without the fix).
+  - Choosing the default icon over the author's saved nothing: it saves `camera`.
+  - Also: Claude's settings (hooks) and a skill's scripts are marked as running; the lock is changed under one lock; a commit is made again when a session committed meanwhile; an apply sends the commit that was shown (a moved catalog is refused).
+  - Page: an older catalog's answer arriving last, choices kept after a check, "Update available" counting kept files, Ask Moss inside the radio group and sent twice, the file's name sent to Moss unquoted (now quoted as data), the dialog keeping old values after an update, a failed catalog list shown as nothing.
+  - Not changed: an agent's options in `settings.toml` replace the author's whole table, as the settings form sends all of it.
+  - `go test -race ./...` (394), Vitest (471), `GOOS=windows` and `GOOS=darwin go vet ./...`, Prettier and the build passed.

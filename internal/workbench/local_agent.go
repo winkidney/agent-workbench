@@ -365,7 +365,7 @@ func (s *Server) localAgentAPI(w http.ResponseWriter, r *http.Request) {
 			bad(w, err)
 			return
 		}
-		u, err := m.UpdateFromCatalog(parts[1], v.Apply, nil)
+		u, err := m.UpdateFromCatalog(parts[1], v.Apply, nil, "")
 		if err != nil {
 			bad(w, err)
 			return

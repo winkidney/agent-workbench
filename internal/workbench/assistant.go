@@ -157,6 +157,8 @@ type assistants struct {
 	bg sync.Mutex
 	// The workbench's clones of catalogs (catalog.go).
 	catalog sync.Mutex
+	// assistants.lock.toml is read, changed and written under it.
+	lockMu sync.Mutex
 	// What a catalog could update, by assistant (catalog_update.go).
 	updates map[string]CatalogUpdate
 	// Runs an assistant in the background; replaced in tests.
@@ -796,7 +798,8 @@ func (m *Manager) ensureShared() {
 		fmt.Fprintln(os.Stderr, "assistants: catalog files:", err)
 	}
 	if wrote || len(drop) > 0 {
-		m.commitPaths(root, "chore: add shared files from Agent Workbench", sharedPaths())
+		// What refreshManaged just took out of the index leaves with it.
+		m.commitPaths(root, "chore: add shared files from Agent Workbench", sharedPaths(), drop...)
 	}
 }
 
@@ -1008,10 +1011,11 @@ func (m *Manager) commitAll(root, message string) {
 // the assistants' work in progress elsewhere; nil paths commit everything.
 // Definition files as their catalog has them leave the index on the way
 // (catalog.go).
-func (m *Manager) commitPaths(root, message string, paths []string) {
+func (m *Manager) commitPaths(root, message string, paths []string, dropped ...string) {
 	m.as.bg.Lock()
 	defer m.as.bg.Unlock()
 	drop, err := refreshManaged(root)
+	drop = append(drop, dropped...)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "assistants: catalog files:", err)
 	}
@@ -1283,7 +1287,12 @@ func (m *Manager) PatchAssistant(dir string, p AssistantPatch) (Assistant, error
 			return a, err
 		}
 		settings.Icon = *p.Icon
-		did = append(did, "icon "+*p.Icon)
+		if settings.Icon == "" {
+			// The default is the camera; an empty setting would leave the
+			// author's icon showing.
+			settings.Icon = "camera"
+		}
+		did = append(did, "icon "+settings.Icon)
 	}
 	if p.Ready != nil && *p.Ready != a.Ready {
 		v := *p.Ready
@@ -1630,12 +1639,13 @@ func (s *Server) assistantsAPI(w http.ResponseWriter, r *http.Request, rest stri
 		var v struct {
 			Apply   bool
 			Choices map[string]string
+			Commit  string
 		}
 		if err := decode(w, r, &v); err != nil {
 			bad(w, err)
 			return
 		}
-		u, err := m.UpdateFromCatalog(parts[0], v.Apply, v.Choices)
+		u, err := m.UpdateFromCatalog(parts[0], v.Apply, v.Choices, v.Commit)
 		if err != nil {
 			bad(w, err)
 			return

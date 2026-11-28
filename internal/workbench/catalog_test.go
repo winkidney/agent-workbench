@@ -400,7 +400,7 @@ func TestAssistantsFollowTheirCatalogWithTheirChanges(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "tools/fetch.py"), []byte("import sys\n\nprint('fetch')\n\nprint('done')\nprint('mine')\n"), 0o644)
 	os.WriteFile(filepath.Join(dir, ".agents/skills/check/SKILL.md"), []byte("---\nname: check\n---\nmy step one\n"), 0o644)
 	m.commitPaths(root, "mine", []string{"mail"})
-	if u, err := m.UpdateFromCatalog("mail", false, nil); err != nil || u.Commit != "" {
+	if u, err := m.UpdateFromCatalog("mail", false, nil, ""); err != nil || u.Commit != "" {
 		t.Fatalf("an update with nothing new: %+v %v", u, err)
 	}
 	// The catalog's next version.
@@ -414,7 +414,7 @@ func TestAssistantsFollowTheirCatalogWithTheirChanges(t *testing.T) {
 	gitIn("add", "-A")
 	gitIn("commit", "-q", "-m", "version two")
 
-	check, err := m.UpdateFromCatalog("mail", false, nil)
+	check, err := m.UpdateFromCatalog("mail", false, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -430,7 +430,11 @@ func TestAssistantsFollowTheirCatalogWithTheirChanges(t *testing.T) {
 	if b, _ := os.ReadFile(filepath.Join(dir, "AGENTS.md")); string(b) != "# Mail\n" {
 		t.Fatal("a check changed a file")
 	}
-	u, err := m.UpdateFromCatalog("mail", true, nil)
+	// Not what was shown: the catalog moved on since.
+	if _, err := m.UpdateFromCatalog("mail", true, nil, "0000000000000000000000000000000000000000"); err == nil || !strings.Contains(err.Error(), "check for updates again") {
+		t.Fatalf("applied an update the user did not see: %v", err)
+	}
+	u, err := m.UpdateFromCatalog("mail", true, nil, check.Commit)
 	if err != nil || !u.Applied {
 		t.Fatalf("apply %+v %v", u, err)
 	}
@@ -465,7 +469,7 @@ func TestAssistantsFollowTheirCatalogWithTheirChanges(t *testing.T) {
 	writeCat("mail/.agents/skills/check/SKILL.md", "---\nname: check\n---\nstep one, best\n")
 	gitIn("add", "-A")
 	gitIn("commit", "-q", "-m", "version three")
-	if _, err := m.UpdateFromCatalog("mail", true, map[string]string{".agents/skills/check/SKILL.md": "theirs"}); err != nil {
+	if _, err := m.UpdateFromCatalog("mail", true, map[string]string{".agents/skills/check/SKILL.md": "theirs"}, ""); err != nil {
 		t.Fatal(err)
 	}
 	if read(".agents/skills/check/SKILL.md") != "---\nname: check\n---\nstep one, best\n" || tracked(t, root)["mail/.agents/skills/check/SKILL.md"] {

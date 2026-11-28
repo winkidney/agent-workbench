@@ -78,10 +78,10 @@ func (m *Manager) fetchCatalog(url string) (string, string, error) {
 			return "", "", err
 		}
 		os.RemoveAll(dir)
-		if _, err := gitRun(filepath.Dir(dir), "-c", "protocol.file.allow=always", "clone", "-q", "--no-checkout", url, dir); err != nil {
+		if _, err := gitRun(filepath.Dir(dir), append(slowAbort, "clone", "-q", "--no-checkout", "--", url, dir)...); err != nil {
 			return "", "", fmt.Errorf("could not fetch the catalog %s: %v", url, err)
 		}
-	} else if _, err := gitRun(dir, "-c", "protocol.file.allow=always", "fetch", "-q", "origin"); err != nil {
+	} else if _, err := gitRun(dir, append(slowAbort, "fetch", "-q", "origin")...); err != nil {
 		return dir, "", fmt.Errorf("could not fetch the catalog %s: %v", url, err)
 	}
 	head, err := gitRun(dir, "rev-parse", "origin/HEAD")
@@ -120,6 +120,9 @@ func catalogFiles(dir, commit, path string) ([]catalogFile, error) {
 			continue
 		}
 		rel := strings.TrimPrefix(name, path+"/")
+		if !safeRel(rel) {
+			return nil, fmt.Errorf("the catalog names a file outside the assistant's folder: %q", rel)
+		}
 		if generatedFile(rel) || !definitionFile(rel) {
 			continue
 		}
@@ -388,6 +391,8 @@ func writeDefinition(path string, files []catalogFile) error {
 		if err := os.WriteFile(to, f.Data, mode); err != nil {
 			return err
 		}
+		// WriteFile keeps an existing file's mode.
+		os.Chmod(to, mode)
 	}
 	if err := writeNew(filepath.Join(path, "CLAUDE.md"), []byte("@AGENTS.md\n")); err != nil {
 		return err
@@ -398,6 +403,8 @@ func writeDefinition(path string, files []catalogFile) error {
 // InstallAssistant installs an assistant from a catalog into the folder dir
 // ("" for the catalog's name), for agent ("" for its author's choice).
 func (m *Manager) InstallAssistant(url, path, dir, agent string) (Assistant, error) {
+	m.as.lockMu.Lock()
+	defer m.as.lockMu.Unlock()
 	root := m.assistantsRoot()
 	if root == "" {
 		return Assistant{}, errors.New("set up assistants first (Settings → Assistants)")
@@ -499,13 +506,28 @@ func validAssistantDir(dir string) error {
 // an installed assistant is missing (a clone of the repository on another
 // computer has only the user's files). It reports what it could not.
 func (m *Manager) restoreDefinitions(root string) []error {
+	m.as.lockMu.Lock()
+	defer m.as.lockMu.Unlock()
 	lock, err := readLock(root)
 	if err != nil {
 		return []error{err}
 	}
 	var errs []error
+	removed := false
 	for d, e := range lock.Assistants {
+		if !lockEntryValid(d, e) {
+			errs = append(errs, fmt.Errorf("%s: not a valid entry of %s", d, lockFile))
+			continue
+		}
 		path := filepath.Join(root, d)
+		// Its folder gone (the user deleted the assistant): uninstalled, not
+		// brought back. A clone from another computer keeps the folder for
+		// its data and settings.
+		if _, err := os.Stat(path); err != nil {
+			delete(lock.Assistants, d)
+			removed = true
+			continue
+		}
 		var missing bool
 		for rel := range e.Files {
 			if _, err := os.Stat(filepath.Join(path, filepath.FromSlash(rel))); err != nil {
@@ -534,6 +556,11 @@ func (m *Manager) restoreDefinitions(root string) []error {
 		}
 		if err := writeDefinition(path, put); err != nil {
 			errs = append(errs, fmt.Errorf("%s: %v", d, err))
+		}
+	}
+	if removed {
+		if err := writeLock(root, lock); err != nil {
+			errs = append(errs, err)
 		}
 	}
 	return errs
@@ -580,4 +607,109 @@ func withCatalogs(root string, list []Assistant) {
 		}
 		list[i].Catalog = c
 	}
+}
+
+// safeRel: a path inside an assistant's folder, as a catalog or the lock
+// names it: relative, slash separated, no "..", no backslash, not an
+// option.
+func safeRel(rel string) bool {
+	if rel == "" || strings.ContainsAny(rel, "\\\x00") || strings.HasPrefix(rel, "-") || strings.HasPrefix(rel, "/") {
+		return false
+	}
+	for _, seg := range strings.Split(rel, "/") {
+		if seg == "" || seg == "." || seg == ".." {
+			return false
+		}
+	}
+	return filepath.IsLocal(filepath.FromSlash(rel))
+}
+
+// lockEntryValid: an entry of the lock names a folder of the repository and
+// files inside it (the lock is a file anyone with the repository edits).
+func lockEntryValid(dir string, e LockEntry) bool {
+	if validAssistantDir(dir) != nil {
+		return false
+	}
+	for rel := range e.Files {
+		if !safeRel(rel) {
+			return false
+		}
+	}
+	return true
+}
+
+// slowAbort ends a fetch that stalls (a catalog's server that stops
+// answering), instead of holding the catalog's lock.
+var slowAbort = []string{"-c", "protocol.file.allow=always", "-c", "http.lowSpeedLimit=1000", "-c", "http.lowSpeedTime=60"}
+
+// Background runs and definition files (ADR 0021, 0027): a definition file
+// as its catalog has it is not tracked, so git cannot say a run changed it.
+// The run's writes to them are put back from a copy taken before.
+
+type savedDef struct {
+	data []byte
+	mode os.FileMode
+}
+
+// snapshotDefinitions copies the installed assistants' definition files.
+func snapshotDefinitions(root string) map[string]savedDef {
+	lock, err := readLock(root)
+	if err != nil {
+		return nil
+	}
+	out := map[string]savedDef{}
+	for d, e := range lock.Assistants {
+		if !lockEntryValid(d, e) {
+			continue
+		}
+		files, _ := definitionFiles(filepath.Join(root, d))
+		for _, rel := range files {
+			p := filepath.Join(root, d, filepath.FromSlash(rel))
+			if info, err := os.Stat(p); err == nil {
+				if b, err := os.ReadFile(p); err == nil {
+					out[d+"/"+rel] = savedDef{b, info.Mode().Perm()}
+				}
+			}
+		}
+	}
+	return out
+}
+
+// putBackDefinitions undoes a run's changes to the definition files saved
+// before it: changed or removed ones are written back, new ones in an
+// installed assistant's definition removed. With only set, just those
+// paths. It returns what it put back.
+func putBackDefinitions(root string, saved map[string]savedDef, only []string) []string {
+	if saved == nil || only != nil && len(only) == 0 {
+		return nil
+	}
+	take := func(p string) bool { return only == nil || inList(only, p) }
+	var back []string
+	for rel, s := range saved {
+		if !take(rel) {
+			continue
+		}
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		if b, err := os.ReadFile(p); err == nil && bytes.Equal(b, s.data) {
+			continue
+		}
+		os.MkdirAll(filepath.Dir(p), 0o755)
+		if os.WriteFile(p, s.data, s.mode) == nil {
+			os.Chmod(p, s.mode)
+			back = append(back, rel)
+		}
+	}
+	lock, _ := readLock(root)
+	for d := range lock.Assistants {
+		files, _ := definitionFiles(filepath.Join(root, d))
+		for _, rel := range files {
+			if _, ok := saved[d+"/"+rel]; !ok && take(d+"/"+rel) {
+				if os.Remove(filepath.Join(root, d, filepath.FromSlash(rel))) == nil {
+					back = append(back, d+"/"+rel)
+				}
+			}
+		}
+	}
+	sort.Strings(back)
+	return back
 }

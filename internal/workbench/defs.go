@@ -177,6 +177,8 @@ func (s AssistantSettings) apply(f *AssistantFile) {
 		if f.Options == nil {
 			f.Options = map[string]AgentOptions{}
 		}
+		// An agent's table is the owner's whole choice (the settings form
+		// sends all of it), so it replaces the author's.
 		for agent, o := range s.Options {
 			f.Options[agent] = o
 		}

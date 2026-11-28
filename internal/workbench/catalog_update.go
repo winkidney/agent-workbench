@@ -59,9 +59,14 @@ func (u CatalogUpdate) Conflicts() int {
 
 // UpdateFromCatalog says what updating dir from its catalog does and, with
 // apply, does it. A conflicting file is kept as the user has it unless
-// choices names it "theirs".
-func (m *Manager) UpdateFromCatalog(dir string, apply bool, choices map[string]string) (CatalogUpdate, error) {
+// choices names it "theirs". expect, when set, is the commit the user was
+// shown: a catalog that moved on since is refused, to be checked again.
+func (m *Manager) UpdateFromCatalog(dir string, apply bool, choices map[string]string, expect string) (CatalogUpdate, error) {
 	root := m.assistantsRoot()
+	if apply {
+		m.as.lockMu.Lock()
+		defer m.as.lockMu.Unlock()
+	}
 	lock, err := readLock(root)
 	if err != nil {
 		return CatalogUpdate{}, err
@@ -77,6 +82,9 @@ func (m *Manager) UpdateFromCatalog(dir string, apply bool, choices map[string]s
 	}
 	if head == e.Commit {
 		return u, nil
+	}
+	if apply && expect != "" && expect != head {
+		return u, fmt.Errorf("the catalog has changed since you looked (now %s): check for updates again", short(head))
 	}
 	theirs, err := catalogFiles(clone, head, e.Path)
 	if err != nil {
@@ -116,12 +124,12 @@ func (m *Manager) UpdateFromCatalog(dir string, apply bool, choices map[string]s
 	for _, rel := range names {
 		b, inBase := baseOf[rel]
 		t, inNew := theirsOf[rel]
-		if inBase && inNew && bytes.Equal(b.Data, t.Data) {
+		if inBase && inNew && bytes.Equal(b.Data, t.Data) && b.Exec == t.Exec {
 			continue
 		}
 		mine, readErr := os.ReadFile(filepath.Join(path, filepath.FromSlash(rel)))
 		changed := readErr == nil && digest(mine) != e.Files[rel]
-		f := UpdateFile{Rel: rel, Runs: strings.HasPrefix(rel, "tools/")}
+		f := UpdateFile{Rel: rel, Runs: runsCode(rel)}
 		if rel == "assistant.toml" && inBase && inNew {
 			f.Runs = commandsChanged(b.Data, t.Data)
 		}
@@ -150,9 +158,10 @@ func (m *Manager) UpdateFromCatalog(dir string, apply bool, choices map[string]s
 			f.Result = "update"
 			steps = append(steps, step{rel: rel, write: t.Data, exec: t.Exec})
 		default:
+			// A binary file (an icon) does not merge: theirs to choose.
 			merged, conflicts, err := mergeFile(mine, b.Data, t.Data)
-			if err != nil {
-				return u, fmt.Errorf("%s: %v", rel, err)
+			if err != nil || hasNUL(mine) || hasNUL(t.Data) {
+				conflicts = 1
 			}
 			if conflicts == 0 {
 				f.Result = "merge"
@@ -193,6 +202,7 @@ func (m *Manager) UpdateFromCatalog(dir string, apply bool, choices map[string]s
 		if err := os.WriteFile(to, s.write, mode); err != nil {
 			return u, err
 		}
+		os.Chmod(to, mode)
 	}
 	// The catalog's new versions are the base of the next update.
 	e.Commit, e.Files = head, map[string]string{}
@@ -228,6 +238,14 @@ func (m *Manager) saveVersions(dir, rel string, base, theirs catalogFile, inBase
 	}
 	return b, to + ".theirs"
 }
+
+// runsCode: a definition file that runs on the user's computer when it
+// changes: a script, Claude's settings (hooks), a skill's script.
+func runsCode(rel string) bool {
+	return strings.HasPrefix(rel, "tools/") || rel == ".claude/settings.json" || (strings.HasPrefix(rel, ".agents/") && !strings.HasSuffix(rel, ".md"))
+}
+
+func hasNUL(b []byte) bool { return bytes.IndexByte(b, 0) >= 0 }
 
 // mergeFile merges the catalog's change (base → theirs) into mine, as git
 // merge-file does; conflicts counts the hunks that do not merge.
@@ -291,7 +309,7 @@ func (m *Manager) checkUpdates() {
 	}
 	found := map[string]CatalogUpdate{}
 	for dir := range lock.Assistants {
-		u, err := m.UpdateFromCatalog(dir, false, nil)
+		u, err := m.UpdateFromCatalog(dir, false, nil, "")
 		if err == nil && u.Commit != "" && len(u.Files) > 0 {
 			found[dir] = u
 		}

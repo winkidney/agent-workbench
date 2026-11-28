@@ -7130,3 +7130,12 @@ span.heartbeat.compact {
   align-items: center;
   gap: 3px;
 }
+.catalog-item-head {
+  flex-wrap: wrap;
+}
+.catalog-item-text strong,
+.catalog-bar code,
+.catalog-item-head .subtle {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}

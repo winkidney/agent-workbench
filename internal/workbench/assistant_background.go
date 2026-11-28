@@ -182,6 +182,9 @@ func (m *Manager) inBackground(a Assistant, v AssistantChange, prompt string) As
 	// Edits outside those paths that are not committed: if the run writes
 	// over one, undoing the run puts the edit back, not the last commit.
 	saved := dirtyFiles(root)
+	// Definition files as their catalog has them are not tracked: copied,
+	// to put back what the run changes of them (catalog.go).
+	defs := snapshotDefinitions(root)
 	run := m.as.background
 	if run == nil {
 		run = m.backgroundAgent
@@ -190,13 +193,22 @@ func (m *Manager) inBackground(a Assistant, v AssistantChange, prompt string) As
 	v.Summary = summaryOf(out.Text)
 	var blocked, own []string
 	var undoErr error
+	// Known writes: only those are put back, an edit made meanwhile in a
+	// session stays (ADR 0027).
+	var only []string
 	if known && out.Known {
 		var outside []string
 		own, outside = splitWrites(root, out.Wrote, allowed)
+		only = append([]string{}, outside...)
 		blocked, undoErr = restoreFiles(root, outside, saved)
 		own = append(own, extra...)
 	} else {
 		blocked, undoErr = undoOutside(root, allowed)
+	}
+	for _, p := range putBackDefinitions(root, defs, only) {
+		if !inList(blocked, p) {
+			blocked = append(blocked, p)
+		}
 	}
 	v.Blocked = blocked
 	if undoErr != nil && err == nil {
@@ -683,12 +695,27 @@ func gitWithName(root string, args ...string) (string, error) {
 // else is changed or staged stays as it is (the assistants' work in
 // progress). The real index then follows HEAD for those paths.
 func gitCommitOnly(root, message string, paths, drop []string) (string, error) {
-	if len(paths)+len(drop) == 0 {
-		return "", nil
+	// HEAD moved while the commit was made (a session committed): made
+	// again from the new HEAD, so that commit is not undone.
+	for try := 0; ; try++ {
+		head, commit, err := gitCommitOnlyOnce(root, message, paths, drop)
+		if err != errHeadMoved || try == 2 {
+			_ = head
+			return commit, err
+		}
 	}
+}
+
+var errHeadMoved = errors.New("HEAD moved while committing")
+
+func gitCommitOnlyOnce(root, message string, paths, drop []string) (string, string, error) {
+	if len(paths)+len(drop) == 0 {
+		return "", "", nil
+	}
+	start, _ := gitRun(root, "rev-parse", "-q", "--verify", "HEAD")
 	f, err := os.CreateTemp("", "aw-index-*")
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	index := f.Name()
 	f.Close()
@@ -697,10 +724,10 @@ func gitCommitOnly(root, message string, paths, drop []string) (string, error) {
 	env := []string{"GIT_INDEX_FILE=" + index}
 	if _, err := gitRun(root, "rev-parse", "-q", "--verify", "HEAD"); err == nil {
 		if _, err := gitRunEnv(root, env, "read-tree", "HEAD"); err != nil {
-			return "", err
+			return "", "", err
 		}
 	} else if _, err := gitRunEnv(root, env, "read-tree", "--empty"); err != nil {
-		return "", err
+		return "", "", err
 	}
 	// A path that is neither here nor in HEAD would stop add.
 	var add []string
@@ -736,28 +763,31 @@ func gitCommitOnly(root, message string, paths, drop []string) (string, error) {
 	}
 	if len(add) > 0 {
 		if _, err := gitRunEnv(root, env, append([]string{"add", "-A", "--"}, add...)...); err != nil {
-			return "", err
+			return "", "", err
 		}
 	}
 	if len(drop) > 0 {
 		if _, err := gitRunEnv(root, env, append([]string{"rm", "-q", "--cached", "--ignore-unmatch", "--"}, drop...)...); err != nil {
-			return "", err
+			return "", "", err
 		}
 	}
 	if _, err := gitRunEnv(root, env, "diff", "--cached", "--quiet"); err == nil {
-		return "", nil
+		return "", "", nil
+	}
+	if now, _ := gitRun(root, "rev-parse", "-q", "--verify", "HEAD"); now != start {
+		return "", "", errHeadMoved
 	}
 	args := []string{"commit", "-q", "-m", message}
 	if out, err := gitRun(root, "config", "user.email"); err != nil || strings.TrimSpace(out) == "" {
 		args = append([]string{"-c", "user.name=Agent Workbench", "-c", "user.email=workbench@localhost"}, args...)
 	}
 	if _, err := gitRunEnv(root, env, args...); err != nil {
-		return "", err
+		return "", "", err
 	}
 	sync := append(append([]string{"reset", "-q", "--"}, add...), drop...)
 	gitRun(root, sync...)
 	head, err := gitRun(root, "rev-parse", "HEAD")
-	return strings.TrimSpace(head), err
+	return start, strings.TrimSpace(head), err
 }
 
 // gitCommitPaths commits the changes under paths only (gitCommit when
