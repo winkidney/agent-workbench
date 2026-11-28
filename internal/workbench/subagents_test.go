@@ -545,3 +545,128 @@ func TestOwnClaudeSubagentRunsWithItsTask(t *testing.T) {
 		t.Fatalf("after its task: %s", st)
 	}
 }
+
+// A Codex subagent is listed with the session's background work, as a
+// Claude one is: at work while its thread has a turn, with what it does, how
+// it ended, its session, and Stop as turn/interrupt on its thread.
+func TestCodexSubagentIsListedAsBackgroundWork(t *testing.T) {
+	m, p, r, answer := codexReady(t)
+	id := r.session.ID
+	recv := func(v map[string]any) { m.receive(id, r.generation, v) }
+	task := func() BackgroundTask {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		for _, t := range tasksOf(r) {
+			if t.ID == "agent:kid" {
+				return t
+			}
+		}
+		return BackgroundTask{}
+	}
+	recv(map[string]any{"method": "turn/started", "params": map[string]any{"threadId": "th", "turn": map[string]any{"id": "t1"}}})
+	recv(map[string]any{"method": "item/completed", "params": map[string]any{"threadId": "th", "turnId": "t1", "item": map[string]any{"type": "subAgentActivity", "id": "sa1", "kind": "started", "agentThreadId": "kid", "agentPath": "/root/placement_review", "model": "gpt-6.2", "startedAtMs": 1795616535793.0}}})
+	got := task()
+	if got.Source != "codex" || got.Kind != "agent" || got.Status != "running" || got.Description != "placement review · gpt-6.2" || got.Session != nativeKey("codex", "kid") || got.Started != "2026-11-25T14:22:15Z" {
+		t.Fatalf("started: %+v", got)
+	}
+	recv(map[string]any{"method": "turn/started", "params": map[string]any{"threadId": "kid", "turn": map[string]any{"id": "k1"}}})
+	recv(map[string]any{"method": "item/started", "params": map[string]any{"threadId": "kid", "turnId": "k1", "item": map[string]any{"type": "commandExecution", "id": "c1", "command": "rg -n spawn"}}})
+	if got := task(); got.Progress != "rg -n spawn" || got.NoStop {
+		t.Fatalf("at work: %+v", got)
+	}
+	recv(map[string]any{"method": "item/completed", "params": map[string]any{"threadId": "kid", "turnId": "k1", "item": map[string]any{"type": "agentMessage", "id": "m1", "text": "Two placements overlap.\nDetails follow."}}})
+	recv(map[string]any{"method": "turn/completed", "params": map[string]any{"threadId": "kid", "turn": map[string]any{"id": "k1", "status": "completed"}}})
+	if got := task(); got.Status != "completed" || got.Summary != "Two placements overlap." || got.Progress != "" || got.Ended == "" {
+		t.Fatalf("ended: %+v", got)
+	}
+	// Its reply is in the conversation: no line says it ended.
+	for _, e := range eventsOf(m, id, "notice") {
+		if strings.Contains(fmt.Sprint(e), "placement") {
+			t.Fatalf("notice %v", e)
+		}
+	}
+	// Asked again: the same row works again; the terminal poll leaves it.
+	recv(map[string]any{"method": "turn/started", "params": map[string]any{"threadId": "kid", "turn": map[string]any{"id": "k2"}}})
+	m.mu.Lock()
+	m.applyTerminals(r, nil)
+	m.mu.Unlock()
+	if got := task(); got.Status != "running" || got.Summary != "" || got.Ended != "" {
+		t.Fatalf("again: %+v", got)
+	}
+	// Stop interrupts its turn on its thread.
+	answer("turn/interrupt", map[string]any{})
+	answer("turn/steer", map[string]any{})
+	if err := m.StopBackground(id, "agent:kid"); err != nil {
+		t.Fatal(err)
+	}
+	var sent map[string]any
+	p.mu.Lock()
+	for _, in := range p.in {
+		if in["method"] == "turn/interrupt" {
+			sent = obj(in["params"])
+		}
+	}
+	p.mu.Unlock()
+	if sent["threadId"] != "kid" || sent["turnId"] != "k2" {
+		t.Fatalf("interrupt %v", sent)
+	}
+	// The session's turn, which may wait for it, is told.
+	var told map[string]any
+	for deadline := time.Now().Add(3 * time.Second); told == nil && time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		p.mu.Lock()
+		for _, in := range p.in {
+			if in["method"] == "turn/steer" {
+				told = obj(in["params"])
+			}
+		}
+		p.mu.Unlock()
+	}
+	if told == nil || !strings.Contains(fmt.Sprint(told["input"]), `stopped the subagent "placement review"`) {
+		t.Fatalf("steer %v", told)
+	}
+	recv(map[string]any{"method": "turn/completed", "params": map[string]any{"threadId": "kid", "turn": map[string]any{"id": "k2", "status": "interrupted"}}})
+	if got := task(); got.Status != "stopped" {
+		t.Fatalf("stopped: %+v", got)
+	}
+	// Once its row is cleared (the user wrote again), a late item of its
+	// thread does not bring a row back; a new turn of it does.
+	m.mu.Lock()
+	clearFinished(r)
+	m.mu.Unlock()
+	recv(map[string]any{"method": "item/completed", "params": map[string]any{"threadId": "kid", "turnId": "k2", "item": map[string]any{"type": "commandExecution", "id": "c9", "command": "sleep 60", "status": "completed"}}})
+	if got := task(); got.ID != "" {
+		t.Fatalf("a row came back: %+v", got)
+	}
+	recv(map[string]any{"method": "turn/started", "params": map[string]any{"threadId": "kid", "turn": map[string]any{"id": "k3"}}})
+	if got := task(); got.Status != "running" || got.Description != "placement review" {
+		t.Fatalf("a new turn: %+v", got)
+	}
+	// The session's own turn goes on.
+	m.mu.Lock()
+	turn := r.turn
+	m.mu.Unlock()
+	if !turn {
+		t.Fatal("the session's turn ended")
+	}
+}
+
+// A Claude subagent's row opens its record too.
+func TestClaudeSubagentTaskNamesItsSession(t *testing.T) {
+	m, _ := fixture(t)
+	s, _ := m.Create("claude", t.TempDir(), "x")
+	r := m.sessions[s.ID]
+	r.session.NativeID = "native"
+	t1 := r.task("a1")
+	t1.Source, t1.Kind = "claude", "agent"
+	t2 := r.task("b1")
+	t2.Source, t2.Kind = "claude", "shell"
+	for _, got := range tasksOf(r) {
+		want := ""
+		if got.ID == "a1" {
+			want = claudeSubagentSession("native", "a1")
+		}
+		if got.Session != want {
+			t.Fatalf("%s: session %q", got.ID, got.Session)
+		}
+	}
+}

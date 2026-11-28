@@ -789,6 +789,8 @@ func (m *Manager) receive(id string, generation int, v map[string]any) {
 				r.children = map[string]string{}
 			}
 			r.children[str(it["agentThreadId"])] = str(it["agentPath"])
+			// Listed with the background work, as Claude's subagents are.
+			codexAgentStarted(r, it)
 		}
 		if method == "turn/completed" {
 			// Commands it left running are listed after the turn.
@@ -942,6 +944,10 @@ func (m *Manager) childRecord(r *runtime, child string, v map[string]any) {
 		m.emit(r.session.ID, "approval", m.approvalData(r, key, v))
 		m.status(r, "waiting")
 		return
+	}
+	switch method {
+	case "turn/started", "turn/completed", "item/started", "item/completed":
+		m.codexAgentRecord(r, child, method, params)
 	}
 	switch method {
 	case "serverRequest/resolved":

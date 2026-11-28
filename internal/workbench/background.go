@@ -24,6 +24,11 @@ import (
 //   - Codex's background terminals are only listed on request
 //     (thread/backgroundTerminals/list), so they are polled after turns and
 //     while any runs; terminate and clean stop them.
+//   - A Codex subagent is a thread of its own: the session's thread says it
+//     started one (a subAgentActivity item), and the subagent's turns and
+//     items come on the same connection (codexAgent*). It is listed as an
+//     agent like Claude's, at work while its thread has a turn;
+//     turn/interrupt on its thread stops that turn.
 //   - Anything else the engine left running (a server started with nohup) is
 //     an extra process in its unit or process group.
 
@@ -42,14 +47,20 @@ type BackgroundTask struct {
 	Progress string `json:"progress,omitempty"`
 	Output   bool   `json:"output,omitempty"`
 	// A scheduled task's next run (status "scheduled"; schedule.go).
-	Next  string  `json:"next,omitempty"`
-	PID   int     `json:"pid,omitempty"`
-	CPU   float64 `json:"cpu,omitempty"`
-	RSSKb float64 `json:"rssKb,omitempty"`
+	Next string `json:"next,omitempty"`
+	// An agent's own session (its subagent's record), for Open.
+	Session string `json:"session,omitempty"`
+	// It cannot be stopped from here.
+	NoStop bool    `json:"noStop,omitempty"`
+	PID    int     `json:"pid,omitempty"`
+	CPU    float64 `json:"cpu,omitempty"`
+	RSSKb  float64 `json:"rssKb,omitempty"`
 
 	outputFile string
 	toolUseID  string
 	order      int
+	// A Codex subagent: its thread, its turn at work, its last message.
+	thread, turnID, said string
 }
 
 // finishedKept is how many ended tasks stay listed until the next message.
@@ -121,7 +132,9 @@ func (m *Manager) endTask(r *runtime, t *BackgroundTask, status, summary string)
 		t.Summary = summary
 	}
 	defer m.trimFinished(r)
-	if t.Source == "claude" && status != "ended" {
+	// Claude's record says how it ended; a Codex subagent's reply is in the
+	// conversation already.
+	if (t.Source == "claude" && status != "ended") || (t.Source == "codex" && t.Kind == "agent") {
 		return
 	}
 	text := t.Summary
@@ -306,6 +319,10 @@ func tasksOf(r *runtime) []BackgroundTask {
 	for _, t := range r.tasks {
 		c := *t
 		c.Output = c.outputFile != ""
+		// A Claude subagent's record is named after its task.
+		if c.Kind == "agent" && c.Source == "claude" && c.Session == "" && r.session.NativeID != "" {
+			c.Session = claudeSubagentSession(r.session.NativeID, c.ID)
+		}
 		out = append(out, c)
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -391,7 +408,7 @@ func (m *Manager) applyTerminals(r *runtime, list []any) {
 		t.toolUseID = str(e["itemId"])
 	}
 	for _, t := range r.tasks {
-		if t.Source == "codex" && t.Status == "running" && !live[strings.TrimPrefix(t.ID, "terminal:")] {
+		if t.Source == "codex" && t.Kind == "terminal" && t.Status == "running" && !live[strings.TrimPrefix(t.ID, "terminal:")] {
 			m.endTask(r, t, "ended", "")
 		}
 	}
@@ -525,13 +542,23 @@ func (m *Manager) StopBackground(id, taskID string) error {
 	}
 	var errs []error
 	cleaned := false
+	// Codex subagents stopped: the session's turn may be waiting for them.
+	var stoppedAgents []string
 	for _, t := range targets {
 		var err error
 		switch t.Source {
 		case "claude":
 			_, err = m.rpc(id, "stop_task", map[string]any{"task_id": t.ID})
 		case "codex":
-			if taskID == "" {
+			if t.Kind == "agent" {
+				if t.NoStop {
+					continue
+				}
+				_, err = m.rpc(id, "turn/interrupt", map[string]any{"threadId": t.thread, "turnId": t.turnID})
+				if err == nil {
+					stoppedAgents = append(stoppedAgents, t.Description)
+				}
+			} else if taskID == "" {
 				if !cleaned {
 					_, err = m.rpc(id, "thread/backgroundTerminals/clean", map[string]any{"threadId": thread})
 					cleaned = true
@@ -547,13 +574,23 @@ func (m *Manager) StopBackground(id, taskID string) error {
 		}
 	}
 	m.mu.Lock()
+	working := false
 	if r := m.find(id); r != nil {
 		if r.session.Agent == "codex" {
 			m.scheduleTerminalPoll(r, 300*time.Millisecond)
 		}
 		m.refreshOthers(r)
+		working = r.turn
 	}
 	m.mu.Unlock()
+	// Codex does not tell a turn waiting for a subagent that its turn was
+	// interrupted (Claude tells it a task was stopped): the session is told,
+	// in its turn, so it goes on without them.
+	if len(stoppedAgents) > 0 && working {
+		if _, err := m.Steer(id, codexAgentsStopped(stoppedAgents)); err != nil {
+			errs = append(errs, err)
+		}
+	}
 	return errors.Join(errs...)
 }
 
@@ -718,4 +755,112 @@ func (m *Manager) refreshAllOthers(only ...string) {
 		}
 		m.mu.Unlock()
 	}
+}
+
+// Codex subagents.
+
+func codexAgentTask(r *runtime, thread string) *BackgroundTask {
+	t := r.task("agent:" + thread)
+	t.Source, t.Kind, t.thread = "codex", "agent", thread
+	t.Session = nativeKey("codex", thread)
+	return t
+}
+
+// codexAgentName: "/root/placement_review" reads "placement review".
+func codexAgentName(path string) string {
+	name := path[strings.LastIndex(path, "/")+1:]
+	return strings.TrimSpace(strings.ReplaceAll(name, "_", " "))
+}
+
+// codexAgentStarted: the session's thread started a subagent (m.mu held).
+func codexAgentStarted(r *runtime, it map[string]any) {
+	thread := str(it["agentThreadId"])
+	if thread == "" || str(it["kind"]) != "started" {
+		return
+	}
+	t := codexAgentTask(r, thread)
+	t.Description = codexAgentName(str(it["agentPath"]))
+	if model := str(it["model"]); model != "" {
+		if t.Description == "" {
+			t.Description = model
+		} else {
+			t.Description += " · " + model
+		}
+	}
+	if ms := num(it["startedAtMs"]); ms > 0 {
+		t.Started = time.UnixMilli(int64(ms)).UTC().Format(time.RFC3339)
+	}
+}
+
+// codexAgentRecord follows a subagent's thread (m.mu held): at work while it
+// has a turn, what it does now, and its last message for when it ends.
+func (m *Manager) codexAgentRecord(r *runtime, thread, method string, params map[string]any) {
+	// Only a turn makes a row: what comes after a row was cleared (a command
+	// that ends after its turn was interrupted) does not bring it back.
+	t := r.tasks["agent:"+thread]
+	if t == nil && method != "turn/started" {
+		return
+	}
+	if t == nil {
+		t = codexAgentTask(r, thread)
+		t.Description = codexAgentName(r.children[thread])
+	}
+	switch method {
+	case "turn/started":
+		t.Status, t.Ended, t.Summary, t.said = "running", "", "", ""
+		t.turnID = str(obj(params["turn"])["id"])
+		t.NoStop = t.turnID == ""
+	case "item/started":
+		t.Progress = codexAgentDoing(obj(params["item"]))
+	case "item/completed":
+		if it := obj(params["item"]); str(it["type"]) == "agentMessage" {
+			t.said = str(it["text"])
+		}
+	case "turn/completed":
+		status := "completed"
+		switch str(obj(params["turn"])["status"]) {
+		case "failed":
+			status = "failed"
+		case "interrupted":
+			status = "stopped"
+		}
+		summary := strings.TrimSpace(t.said)
+		if i := strings.IndexByte(summary, '\n'); i >= 0 {
+			summary = summary[:i]
+		}
+		t.Progress = ""
+		m.endTask(r, t, status, clip(summary, 200))
+	}
+}
+
+// codexAgentDoing is what a subagent's item does, in a few words.
+func codexAgentDoing(it map[string]any) string {
+	switch str(it["type"]) {
+	case "commandExecution":
+		return clip(str(it["command"]), 120)
+	case "mcpToolCall":
+		return clip(str(it["server"])+" "+str(it["tool"]), 120)
+	case "fileChange":
+		return "Editing files"
+	case "webSearch":
+		return "Searching the web"
+	case "reasoning":
+		return "Thinking"
+	case "agentMessage":
+		return "Writing"
+	}
+	return ""
+}
+
+// codexAgentsStopped is what the session is told when the user stops its
+// subagents.
+func codexAgentsStopped(names []string) string {
+	for i, n := range names {
+		names[i] = strconv.Quote(strings.SplitN(n, " · ", 2)[0])
+	}
+	which := "subagent " + names[0]
+	if len(names) > 1 {
+		which = "subagents " + strings.Join(names, ", ")
+	}
+	return "[The user stopped the " + which + " from the workbench. It will not reply: go on without it.]"
 }

@@ -5,7 +5,7 @@ import { unwrapShell } from "../transcript/summarize";
 
 // What a session runs outside its turns (internal/workbench/background.go):
 // Claude's background shells, monitors and subagents, Codex's background
-// terminals, or other processes the engine left running; and Claude's
+// terminals and subagents, or other processes the engine left running; and Claude's
 // scheduled tasks (CronCreate, /loop), "scheduled" until they run.
 export type BackgroundTask = {
   id: string;
@@ -24,7 +24,15 @@ export type BackgroundTask = {
   pid?: number;
   cpu?: number;
   rssKb?: number;
+  // An agent's own session, which Open shows.
+  session?: string;
+  // It cannot be stopped from here.
+  noStop?: boolean;
 };
+
+// Whether the page offers Stop for it.
+export const stoppable = (t: BackgroundTask) =>
+  t.status === "running" && !t.noStop;
 
 export const KIND_LABEL: Record<string, string> = {
   shell: "shell",

@@ -5,6 +5,7 @@ import {
   ChevronRight,
   Cpu,
   Eye,
+  ExternalLink,
   FileText,
   Plug,
   Square,
@@ -13,12 +14,14 @@ import {
 } from "lucide-react";
 import { PixelPulse } from "../components/pixel";
 import { api } from "../lib/api";
+import { openSessionLater } from "../lib/assistants";
 import { AnsiText } from "../transcript/Timeline";
 import {
   KIND_LABEL,
   backgroundChanged,
   elapsed,
   running,
+  stoppable,
   summary,
   taskState,
   taskTitle,
@@ -141,7 +144,7 @@ export function BackgroundTray({
             className={open ? "fold-chevron open" : "fold-chevron"}
           />
         </button>
-        {!readOnly && live.length > 1 && (
+        {!readOnly && live.filter(stoppable).length > 1 && (
           <button
             type="button"
             className="goal-action"
@@ -151,7 +154,7 @@ export function BackgroundTray({
             Stop all
           </button>
         )}
-        {!readOnly && live.length === 1 && !open && (
+        {!readOnly && live.length === 1 && !open && stoppable(live[0]) && (
           <button
             type="button"
             className="goal-action"
@@ -182,6 +185,17 @@ export function BackgroundTray({
                     {taskState(t)}
                   </span>
                   <span className="bg-actions">
+                    {t.session && (
+                      <button
+                        type="button"
+                        className="goal-action"
+                        title="Open its conversation"
+                        onClick={() => openSessionLater(t.session!)}
+                      >
+                        <ExternalLink size={11} />
+                        Open
+                      </button>
+                    )}
                     {t.output && (
                       <button
                         type="button"
@@ -193,7 +207,7 @@ export function BackgroundTray({
                         Output
                       </button>
                     )}
-                    {!readOnly && t.status === "running" && (
+                    {!readOnly && stoppable(t) && (
                       <button
                         type="button"
                         className="goal-action"

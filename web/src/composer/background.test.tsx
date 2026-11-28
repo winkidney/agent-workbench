@@ -4,6 +4,7 @@ import {
   backgroundable,
   elapsed,
   memory,
+  stoppable,
   summary,
   taskState,
   taskTitle,
@@ -62,6 +63,24 @@ describe("background work", () => {
         now,
       ),
     ).toBe("8s");
+  });
+
+  it("shows Codex subagents as agents, as Claude's", () => {
+    const codex = task({
+      id: "agent:kid",
+      source: "codex",
+      kind: "agent",
+      description: "placement review · gpt-6.2",
+      progress: "rg -n spawn",
+      session: "codex:kid",
+    });
+    expect(taskTitle(codex)).toBe("placement review · gpt-6.2");
+    expect(taskState(codex)).toBe("rg -n spawn");
+    expect(summary([codex], now)).toContain("1 background task");
+    expect(stoppable(codex)).toBe(true);
+    // Stop only where it can stop, and only while it runs.
+    expect(stoppable({ ...codex, noStop: true })).toBe(false);
+    expect(stoppable({ ...codex, status: "completed" })).toBe(false);
   });
 
   it("names Codex terminals by the command typed", () => {
