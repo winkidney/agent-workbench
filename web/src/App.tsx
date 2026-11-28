@@ -1,7 +1,7 @@
 import { SidePanel, type SideChat } from "./side/SidePanel";
 import { NewSession } from "./newsession/NewSession";
 import { AgentIcon } from "./components/AgentIcon";
-import { MossIcon } from "./components/MossIcon";
+import { AssistantIcon, iconOf } from "./components/AssistantIcon";
 import { ResizeHandle } from "./layout/ResizeHandle";
 import {
   DEFAULT_SIDE,
@@ -1459,7 +1459,12 @@ export default function App() {
               {current && !composing && (
                 <>
                   {topicOf ? (
-                    <MossIcon agent={current.agent} size={16} />
+                    <AssistantIcon
+                      {...iconOf(topicOf)}
+                      agent={current.agent}
+                      size={16}
+                      name={topicOf.name}
+                    />
                   ) : (
                     <AgentIcon agent={current.agent} size={16} />
                   )}

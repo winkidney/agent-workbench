@@ -1,7 +1,7 @@
 import { Pixels, PixelSvg } from "./pixel";
 
 // An assistant (Moss and the others alike): a box camera in 2:1 pixel isometry, its
-// coated lens on the front-left face and the agent it runs on shown on the
+// red-coated lens on the front-left face and the agent it runs on shown on the
 // screen of its right face (Claude in orange on black; Codex as a light
 // screen with its prompt). Two drawings: 16×16 for the sidebar, ink within
 // the middle 14×14 like the other icons there, and 32×32 for large sizes
@@ -110,7 +110,7 @@ export const MOSS_CODEX_32 = [
   "............K...................",
   "................................",
 ];
-const MOSS_COLORS = {
+export const MOSS_COLORS = {
   C: "var(--agent-claude)", // Claude
   F: "#aeb1bf", // front
   H: "#ffffff", // glint
@@ -120,12 +120,12 @@ const MOSS_COLORS = {
   N: "#0c0d10", // Claude screen
   O: "#3f4857", // Codex prompt
   Q: "#6b7186", // right, lit
-  R: "#3550c8", // lens: dark glass with a blue coating
+  R: "#c8323a", // lens: dark glass with a red coating
   T: "#c4c7d2", // top
   V: "#2e3240", // vents
   f: "#8e92a2", // front, shaded
   l: "#545867", // lens barrel
-  r: "#1a2558", // lens rim
+  r: "#5a1418", // lens rim
   s: "#3c4050", // right, shaded
   x: "#dfe4ec", // Codex screen
 };

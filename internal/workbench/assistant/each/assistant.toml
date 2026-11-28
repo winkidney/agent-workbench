@@ -10,6 +10,11 @@ sessions = {{printf "%q" .Sessions}}
 # state: this assistant keeps state/ and log.md. wiki: it also maintains
 # ../shared/wiki from its conversations.
 memory = {{printf "%q" .Memory}}
+# Its icon in the page, with its agent as a badge: camera (the default),
+# mail, review, video, calendar, bell, globe, chart, book, chat, doc or
+# toolbox; or a square .png in this folder (Settings → Assistants uploads
+# one as icon.png).
+# icon = "camera"
 # What the page shows about it (its home card): one line on what it does,
 # what it can do, and requests to try. Keep them true when the procedure
 # changes.

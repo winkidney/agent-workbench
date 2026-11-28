@@ -15,6 +15,8 @@ import {
 import type { Routine } from "../routines/when";
 import { RoutineLine } from "../routines/RoutineLine";
 import { openRoutine } from "../routines/open";
+import { IconPicker } from "./IconPicker";
+import { DEFAULT_ICON } from "../components/AssistantIcon";
 
 type Agent = "claude" | "codex";
 
@@ -60,6 +62,8 @@ export function AssistantSettings({
     a.sessions || "per-task",
   );
   const [enabled, setEnabled] = useState(a.enabled !== false);
+  // Its icon (ADR 0030): a drawing's name, or "file" for its uploaded image.
+  const [icon, setIcon] = useState(a.icon || DEFAULT_ICON);
   // Its own session settings, per agent (ADR 0017), and what an unset one
   // falls back to (Settings → Agents).
   const [options, setOptions] = useState<Partial<Record<Agent, Options>>>(
@@ -103,6 +107,10 @@ export function AssistantSettings({
     if (agent !== a.agent) patch.agent = agent;
     if (sessions !== a.sessions) patch.sessions = sessions;
     if (enabled !== (a.enabled !== false)) patch.enabled = enabled;
+    // An upload took effect already; a drawing is saved here. Going back
+    // to the uploaded image names its file again.
+    if (icon !== (a.icon || DEFAULT_ICON))
+      patch.icon = icon === "file" ? "icon.png" : icon;
     const changedOptions: Partial<Record<Agent, Options>> = {};
     for (const v of ["claude", "codex"] as Agent[])
       if (!sameTable(options[v], a.options?.[v]))
@@ -143,6 +151,12 @@ export function AssistantSettings({
             void save();
           }}
         >
+          <IconPicker
+            assistant={a}
+            agent={agent}
+            icon={icon}
+            onPick={setIcon}
+          />
           <label className="routine-field">
             <span className="routine-label">Name</span>
             <Input

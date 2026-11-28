@@ -40,7 +40,7 @@ It makes the folder from the template, commits it and prints its path. It never 
 
 | Path | What | In git |
 | --- | --- | --- |
-| `assistant.toml` | name, agent, sessions, memory, `description`, `capabilities`, `examples`, `ready`, `[options.<agent>]` (model, effort), `[[routines]]` | yes |
+| `assistant.toml` | name, agent, sessions, memory, `icon`, `description`, `capabilities`, `examples`, `ready`, `[options.<agent>]` (model, effort), `[[routines]]` | yes |
 | `AGENTS.md` | the procedure (sections below) | yes |
 | `config.toml` | settings its scripts read, with comments; never secrets | yes |
 | `tools/<name>.py`, `tools/test_<name>.py` | scripts and their tests | yes |
@@ -54,6 +54,8 @@ It makes the folder from the template, commits it and prints its path. It never 
 **Scripts:** Python run with `uv run`, dependencies declared inline (PEP 723), the standard library where it will do. Each has a test (`unittest`, no network, runnable as `uv run tools/test_<name>.py`). A script that a routine runs prints nothing when there is nothing new, so nobody is woken; it prints a clear one-line error and exits non-zero when it cannot work. Scripts only read unless the job is to write, and never send anything to other people.
 
 **Home card:** `description` (one line), `capabilities` (what it can do, a few short items) and `examples` (requests the user can click to start) and `requires` (what it needs from the user, each with the ways it can be given, e.g. "GitHub: the gh CLI signed in, the GitHub MCP server, or an API token in secrets") at the top of `assistant.toml`, in the user's language. The page shows them when the assistant is opened. `ready = false` until setup is done.
+
+**Icon:** set `icon` to the built-in drawing closest to its job, and name it in the plan: `mail` (mail), `review` (code review), `video` (videos, a channel), `calendar` (a calendar, schedules), `bell` (alerts, watching releases), `globe` (websites), `chart` (reports, numbers), `book` (notes, a wiki), `chat` (conversations, support), `doc` (writing), `toolbox` (operations, maintenance), or `camera` (the default). The page adds the agent as a badge; the user can upload an image in Settings instead.
 
 **Routines** in `assistant.toml` start with `enabled = false`. Their schedule is one of `daily = "HH:MM"` (with `days`), `every = "30m"`, `at = "YYYY-MM-DD HH:MM"` (once) or `cron = "0 9 1 * *"` (minute hour day month weekday, local time; `@weekly`), at most every 5 minutes. Use:
 

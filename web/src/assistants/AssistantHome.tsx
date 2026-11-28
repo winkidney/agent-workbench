@@ -29,7 +29,7 @@ import {
 import { RoutineLine } from "../routines/RoutineLine";
 import { openRoutine } from "../routines/open";
 import { seeReport } from "../routines/waiting";
-import { MossIcon } from "../components/MossIcon";
+import { AssistantIcon, iconOf } from "../components/AssistantIcon";
 import { ATTENTION_LABEL } from "../attention";
 import { relativeTime, type Session } from "../sidebar/tree";
 import { PixelPulse } from "../components/pixel";
@@ -135,9 +135,14 @@ export function AssistantHome({
   return (
     <section className="assistant-home" aria-label={`${a.name}: about`}>
       <header className="assistant-home-head">
-        {/* Every assistant is the box camera, its agent on its screen. */}
+        {/* Its icon, its agent as a badge (ADR 0030). */}
         {(a.agent === "claude" || a.agent === "codex") && (
-          <MossIcon agent={a.agent} size={64} title={a.name} />
+          <AssistantIcon
+            {...iconOf(a)}
+            agent={a.agent}
+            size={64}
+            name={a.name}
+          />
         )}
         <div>
           <h2>{a.name}</h2>

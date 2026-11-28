@@ -49,6 +49,8 @@ type AssistantFile struct {
 	Agent    string `toml:"agent"`
 	Sessions string `toml:"sessions"`
 	Memory   string `toml:"memory"`
+	// Its icon: a built-in drawing's name, or a .png in its folder (ADR 0030).
+	Icon string `toml:"icon"`
 	// Its sessions' model, effort, mode and permissions, by agent (ADR 0017).
 	Options  map[string]AgentOptions `toml:"options"`
 	Routines []FileRoutine           `toml:"routines"`
@@ -101,6 +103,10 @@ type Assistant struct {
 	// continuous: the session of the ongoing topic, and earlier ones.
 	Current  string   `json:"current,omitempty"`
 	Previous []string `json:"previous,omitempty"`
+	// Its icon (ADR 0030): a built-in drawing's name, or "file" for the
+	// image in its folder, at IconVersion (its modification time, ms).
+	Icon        string `json:"icon,omitempty"`
+	IconVersion int64  `json:"iconVersion,omitempty"`
 
 	file AssistantFile
 }
@@ -282,6 +288,9 @@ func readAssistant(path string) (AssistantFile, error) {
 	if err := oneLine("description", f.Description); err != nil {
 		return f, err
 	}
+	if err := checkIcon(f.Icon); err != nil {
+		return f, err
+	}
 	for key, list := range map[string][]string{"capabilities": f.Capabilities, "examples": f.Examples, "requires": f.Requires} {
 		if len(list) > metaItems {
 			return f, fmt.Errorf("%s: at most %d", key, metaItems)
@@ -447,6 +456,7 @@ func (m *Manager) Assistants() []Assistant {
 			a.Description, a.Capabilities, a.Examples, a.Requires = f.Description, f.Capabilities, f.Examples, f.Requires
 			a.Ready = f.Ready == nil || *f.Ready
 			a.Options = f.Options
+			a.Icon, a.IconVersion = iconShown(dir, f.Icon)
 		}
 		list = append(list, a)
 	}
@@ -1091,6 +1101,8 @@ type AssistantPatch struct {
 	Examples              *[]string
 	Requires              *[]string
 	Enabled, Ready        *bool
+	// A built-in icon's name, or a .png in its folder (ADR 0030).
+	Icon *string
 	// Its session settings for an agent: the whole table, "" leaves a key
 	// to Settings → Agents.
 	Options map[string]AgentOptions
@@ -1176,6 +1188,13 @@ func (m *Manager) PatchAssistant(dir string, p AssistantPatch) (Assistant, error
 		}
 		text = setOrInsert(text, f.key, tomlStrings(clean))
 		did = append(did, f.key)
+	}
+	if p.Icon != nil && *p.Icon != a.file.Icon {
+		if err := checkIcon(*p.Icon); err != nil {
+			return a, err
+		}
+		text = setOrInsert(text, "icon", strconv.Quote(*p.Icon))
+		did = append(did, "icon "+*p.Icon)
 	}
 	if p.Ready != nil && *p.Ready != a.Ready {
 		text = setOrInsert(text, "ready", strconv.FormatBool(*p.Ready))
@@ -1521,6 +1540,8 @@ func (s *Server) assistantsAPI(w http.ResponseWriter, r *http.Request, rest stri
 			return
 		}
 		writeJSON(w, a)
+	case len(parts) == 2 && parts[1] == "icon":
+		m.assistantIconAPI(w, r, parts[0])
 	case len(parts) == 2 && parts[1] == "open" && r.Method == "POST":
 		out, err := m.OpenAssistant(parts[0])
 		if err != nil {

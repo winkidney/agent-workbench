@@ -27,6 +27,10 @@ export type Assistant = {
   error?: string;
   current?: string;
   previous?: string[];
+  // Its icon (ADR 0030): a built-in drawing's name, or "file" for the image
+  // in its folder, read at iconVersion (its time, to load it again).
+  icon?: string;
+  iconVersion?: number;
 };
 
 export type Assistants = {

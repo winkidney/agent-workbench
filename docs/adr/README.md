@@ -33,3 +33,4 @@ Decisions that shape how the workbench behaves, why, and what they cost. Each re
 | [0027](0027-an-assistants-routine-work-takes-turns.md) | An assistant's routine work takes turns, and background runs keep to their own files | accepted; amends 0009, 0011 and 0021 |
 | [0028](0028-install-and-restart-from-about.md) | Install and restart from Settings → About | accepted |
 | [0029](0029-routine-replies-are-reports.md) | A routine's reply is a report, shown until seen | accepted |
+| [0030](0030-assistant-icons.md) | An icon for each assistant, with its agent as a badge | accepted; amends 0015 |

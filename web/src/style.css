@@ -6948,3 +6948,88 @@ span.heartbeat.compact {
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
+
+/* An assistant's icon (ADR 0030): square, with its agent as a badge in the
+   bottom-right corner, ringed in the background so it reads on any icon. */
+.assistant-icon {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.assistant-icon > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+}
+.assistant-badge {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  box-shadow: 0 0 0 1px var(--background);
+}
+.assistant-icon-dot .assistant-badge {
+  width: 6px;
+  height: 6px;
+  right: -1px;
+  bottom: -1px;
+  border-radius: 2px;
+}
+.assistant-icon-dot .assistant-badge.claude {
+  background: var(--agent-claude);
+}
+.assistant-icon-dot .assistant-badge.codex {
+  background: var(--agent-codex);
+}
+.assistant-icon-mark .assistant-badge {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--background);
+}
+
+/* Settings: an assistant's icon, the drawings to choose from, an upload. */
+.icon-row {
+  align-items: flex-start;
+}
+.icon-picker {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  min-width: 0;
+  flex: 1;
+}
+.icon-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.icon-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.icon-grid button {
+  display: inline-flex;
+  padding: 3px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  cursor: pointer;
+}
+.icon-grid button:hover {
+  background: var(--muted);
+}
+.icon-grid button.on {
+  border-color: var(--foreground);
+  background: var(--muted);
+}
+.icon-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  font-size: 12px;
+}
