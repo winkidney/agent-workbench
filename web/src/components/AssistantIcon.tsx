@@ -1,11 +1,5 @@
 import { AgentIcon } from "./AgentIcon";
-import {
-  MOSS_CLAUDE_16,
-  MOSS_CLAUDE_32,
-  MOSS_CODEX_16,
-  MOSS_CODEX_32,
-  MOSS_COLORS,
-} from "./MossIcon";
+import { MOSS_CLAUDE_16, MOSS_CLAUDE_32, MOSS_COLORS } from "./MossIcon";
 import { ICON_COLORS, ICON_DRAWINGS } from "./assistantIcons";
 import { Pixels, PixelSvg } from "./pixel";
 
@@ -33,31 +27,23 @@ export const AGENT_NAME: Record<string, string> = {
 export const iconURL = (dir: string, version?: number) =>
   `/api/assistants/${encodeURIComponent(dir)}/icon?v=${version ?? 0}`;
 
-function Drawing({
-  icon,
-  agent,
-  size,
-}: {
-  icon: string;
-  agent: string;
-  size: number;
-}) {
+// The camera with a blank screen: the badge alone names the agent, so the
+// drawing is the same whichever it runs on.
+const CAMERA_COLORS = { ...MOSS_COLORS, C: "#262b36", N: "#262b36" };
+
+function Drawing({ icon, size }: { icon: string; size: number }) {
   const n = size >= 32 ? 32 : 16;
   const drawing = ICON_DRAWINGS[icon];
   const grid = drawing
     ? n === 32
       ? drawing.g32
       : drawing.g16
-    : agent === "codex"
-      ? n === 32
-        ? MOSS_CODEX_32
-        : MOSS_CODEX_16
-      : n === 32
-        ? MOSS_CLAUDE_32
-        : MOSS_CLAUDE_16;
+    : n === 32
+      ? MOSS_CLAUDE_32
+      : MOSS_CLAUDE_16;
   return (
     <PixelSvg w={n} h={n} scale={size / n}>
-      <Pixels grid={grid} palette={drawing ? ICON_COLORS : MOSS_COLORS} />
+      <Pixels grid={grid} palette={drawing ? ICON_COLORS : CAMERA_COLORS} />
     </PixelSvg>
   );
 }
@@ -97,7 +83,7 @@ export function AssistantIcon({
       {src ? (
         <img src={src} alt="" width={size} height={size} draggable={false} />
       ) : (
-        <Drawing icon={icon ?? DEFAULT_ICON} agent={agent} size={size} />
+        <Drawing icon={icon ?? DEFAULT_ICON} size={size} />
       )}
       {showBadge && (agent === "claude" || agent === "codex") && (
         <span className={`assistant-badge ${agent}`} aria-hidden>

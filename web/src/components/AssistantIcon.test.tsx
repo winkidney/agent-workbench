@@ -83,6 +83,14 @@ describe("assistant icons", () => {
       <AssistantIcon {...iconOf({ dir: "main" })} agent="codex" size={16} />,
     );
     expect(camera).toContain("<svg");
+    // The same blank-screened camera for both agents: only the badge differs.
+    const claude = renderToStaticMarkup(
+      <AssistantIcon {...iconOf({ dir: "main" })} agent="claude" size={16} />,
+    );
+    const drawing = (html: string) =>
+      html.slice(html.indexOf("<svg"), html.indexOf("</svg>"));
+    expect(drawing(claude)).toBe(drawing(camera));
+    expect(drawing(camera)).not.toContain("var(--agent-claude)");
     expect(iconOf({ dir: "x", icon: "bell" })).toEqual({ icon: "bell" });
   });
 
