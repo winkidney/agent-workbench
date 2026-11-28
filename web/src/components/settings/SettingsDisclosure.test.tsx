@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { SettingsDisclosure, remembered } from "./SettingsDisclosure";
 import {
@@ -64,6 +64,26 @@ describe("settings disclosure", () => {
 });
 
 describe("Moss's starts", () => {
+  it("forgets a browse request no catalog section took", () => {
+    vi.useFakeTimers();
+    try {
+      const had = globalThis.window;
+      globalThis.window = new EventTarget() as Window & typeof globalThis;
+      try {
+        browseCatalog();
+      } finally {
+        globalThis.window = had;
+      }
+      vi.advanceTimersByTime(9_000);
+      expect(browseRequested()).toBe(true);
+      vi.advanceTimersByTime(2_000);
+      expect(browseRequested()).toBe(false);
+      expect(takeBrowseRequest()).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("adds installing and routines to the card's requests", () => {
     const s = mainStarters(["What can you do?"]);
     expect(s[0]).toEqual({
@@ -86,14 +106,17 @@ describe("Moss's starts", () => {
     globalThis.window = new EventTarget() as Window & typeof globalThis;
     let heard = 0;
     const on = () => heard++;
-    window.addEventListener("workbench:browse-catalog", on);
-    browseCatalog();
-    window.removeEventListener("workbench:browse-catalog", on);
+    try {
+      window.addEventListener("workbench:browse-catalog", on);
+      browseCatalog();
+      window.removeEventListener("workbench:browse-catalog", on);
+    } finally {
+      globalThis.window = had;
+    }
     expect(heard).toBe(1);
     expect(browseRequested()).toBe(true);
     expect(browseRequested()).toBe(true);
     expect(takeBrowseRequest()).toBe(true);
     expect(takeBrowseRequest()).toBe(false);
-    globalThis.window = had;
   });
 });

@@ -10,7 +10,7 @@ What this assistant does, in a sentence or two. (Write it with the user: see the
 
 ## Setting up
 
-What to ask the user the first time, step by step. Credentials (passwords, tokens, keys, private URLs) never go in this repository: the user saves them in `~/.config/assistant/secrets/` (mode 600), or the assistant uses a tool's existing sign-in; they are never given in the conversation. Run the check once, then set `enabled = true` on the routines, `ready = true` at the top of `assistant.toml` (with its `description`, `capabilities` and `examples` filled in, in the user's language), and run `"$AGENT_WORKBENCH_BIN" assistant reload`.
+What to ask the user the first time, step by step. Credentials (passwords, tokens, keys, private URLs) never go in this repository: the user saves them in `~/.config/assistant/secrets/` (mode 600), or the assistant uses a tool's existing sign-in; they are never given in the conversation. Run the check once, then switch on in `settings.toml` (`ready = true`, and `[routines."<name>"]` with `enabled = true`; never in `assistant.toml`), put what this assistant should know about the user in `AGENTS.local.md`, and run `"$AGENT_WORKBENCH_BIN" assistant reload`. (Its author fills in `description`, `capabilities` and `examples` in `assistant.toml`.)
 
 ## Procedure
 
@@ -25,7 +25,7 @@ What to ask the user the first time, step by step. Credentials (passwords, token
 
 ## Base capabilities
 
-- **Scheduled tasks:** `"$AGENT_WORKBENCH_BIN" routine add --in 2h|--at "YYYY-MM-DD HH:MM"|--daily HH:MM [--days mon,fri]|--every 1d --message "…" [--to this|<assistant>]`; `routine list`, `routine rm <id>`. Messages only; a routine that runs a script goes in `assistant.toml`.
+- **Scheduled tasks:** `"$AGENT_WORKBENCH_BIN" routine add --in 2h|--at "YYYY-MM-DD HH:MM"|--daily HH:MM [--days mon,fri]|--every 1d --message "…" [--to this|<assistant>]`; `routine list`, `routine rm <id>`. Messages only; a routine of the user's that runs a script goes in `settings.toml` as `[routines."<name>"]` (when it runs, `command`, `message`), after they agree to what it runs.
 - **The shared wiki (LLM Wiki):** read `../shared/wiki/index.md` and the pages it points to when knowing the user matters. To keep something lasting (a preference, a fact about a project), hand it to the personal assistant, which keeps the wiki: `"$AGENT_WORKBENCH_BIN" assistant send main "Remember: …"`. Do not edit `../shared/wiki/` yourself.
 
 ## Where things live

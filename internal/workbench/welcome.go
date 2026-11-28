@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"strconv"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -151,9 +150,15 @@ func upgradeMossCard(root string) bool {
 				continue
 			}
 			now := mossMeta(lang)
-			text := setOrInsert(string(data), "description", strconv.Quote(now.Description))
+			text := setOrInsert(string(data), "description", tomlQuote(now.Description))
 			text = setOrInsert(text, "capabilities", tomlStrings(now.Capabilities))
 			text = setOrInsert(text, "examples", tomlStrings(now.Examples))
+			// A file laid out otherwise (lists over several lines) could be
+			// broken by line edits: written only when it reads back right.
+			var check AssistantFile
+			if _, err := toml.Decode(text, &check); err != nil || !reflect.DeepEqual(check.Examples, now.Examples) || !reflect.DeepEqual(check.Capabilities, now.Capabilities) {
+				return false
+			}
 			return os.WriteFile(path, []byte(text), 0o644) == nil
 		}
 	}

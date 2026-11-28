@@ -314,13 +314,21 @@ func settingsNotes(dir string, base, theirs []byte) []string {
 		r := s.Routines[n]
 		old, inOld := was[n]
 		cur, inNow := now[n]
-		switch {
-		case inNow && !inOld && !r.onlySwitch():
-			notes = append(notes, fmt.Sprintf("The catalog adds a routine %q: yours of that name in settings.toml takes its place.", n))
-		case inNow && inOld && r.Command != "" && cur.Command != old.Command:
+		if inNow && !inOld && !r.onlySwitch() {
+			notes = append(notes, fmt.Sprintf("The catalog adds a routine %q: your settings.toml routine of that name is laid over it, and what you did not set comes from the catalog's (its command too, if you set none).", n))
+		}
+		if inNow && inOld && r.Command != "" && cur.Command != old.Command {
 			notes = append(notes, fmt.Sprintf("The catalog changes the command of %q: yours in settings.toml stays.", n))
-		case inNow && inOld && r.Message != "" && cur.Message != old.Message:
+		}
+		if inNow && inOld && r.Message != "" && cur.Message != old.Message {
 			notes = append(notes, fmt.Sprintf("The catalog changes the message of %q: yours in settings.toml stays.", n))
+		}
+		if inOld && !inNow && !r.onlySwitch() {
+			if r.own() {
+				notes = append(notes, fmt.Sprintf("The catalog removes the routine %q: your settings.toml one of that name stays, as a routine of your own.", n))
+			} else {
+				notes = append(notes, fmt.Sprintf("The catalog removes the routine %q: your changes to it in settings.toml no longer apply.", n))
+			}
 		}
 	}
 	return notes

@@ -159,6 +159,10 @@ func (m *Manager) inBackground(a Assistant, v AssistantChange, prompt string) As
 	m.recordChange(v)
 	m.as.bg.Lock()
 	defer m.as.bg.Unlock()
+	// The agent files as they should be, before the run: made now, they are
+	// in the commit of what was there before (not taken for the run's).
+	writeAgentFiles(root)
+	writeAgentFiles(a.Path)
 	allowed := backgroundWrites(a)
 	// What the run's commit includes besides what it wrote: the record an
 	// ingest reads, written for it just before.
@@ -171,6 +175,11 @@ func (m *Manager) inBackground(a Assistant, v AssistantChange, prompt string) As
 	// own, so undoing the run leaves it. With known writes, only where the
 	// run may write; edits elsewhere stay as they are.
 	before := append(append([]string{}, allowed...), extra...)
+	// The agent files just made, where git tracks them (the top's, Moss's,
+	// the user's own assistants'): theirs, not the run's.
+	if out, err := gitRun(root, "ls-files", "--", "CLAUDE.md", a.Dir+"/CLAUDE.md"); err == nil {
+		before = append(before, strings.Fields(out)...)
+	}
 	if !known {
 		before = nil
 	}
@@ -185,6 +194,9 @@ func (m *Manager) inBackground(a Assistant, v AssistantChange, prompt string) As
 	// Definition files as their catalog has them are not tracked: copied,
 	// to put back what the run changes of them (catalog.go).
 	defs := snapshotDefinitions(root)
+	// CLAUDE.md and AGENTS.override.md may be excluded from git: copied, to
+	// put back a run's change to them (one would steer every later session).
+	agentFiles := snapshotAgentFiles(root)
 	run := m.as.background
 	if run == nil {
 		run = m.backgroundAgent
@@ -205,7 +217,7 @@ func (m *Manager) inBackground(a Assistant, v AssistantChange, prompt string) As
 	} else {
 		blocked, undoErr = undoOutside(root, allowed)
 	}
-	for _, p := range putBackDefinitions(root, defs, only) {
+	for _, p := range append(putBackDefinitions(root, defs, only), putBackAgentFiles(root, agentFiles)...) {
 		if !inList(blocked, p) {
 			blocked = append(blocked, p)
 		}
@@ -503,7 +515,6 @@ func backgroundModel(agent string, o Options) []string {
 // workspace-write sandbox, which has no network.
 func (m *Manager) backgroundAgent(a Assistant, prompt string) (backgroundOut, error) {
 	root := m.assistantsRoot()
-	m.agentFilesFor(a.Path)
 	run, err := m.cli(a.Agent)
 	if err != nil {
 		return backgroundOut{}, err

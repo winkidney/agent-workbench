@@ -33,13 +33,15 @@ export function CatalogSection() {
   const [draft, setDraft] = useState("");
   // Asked to show the catalog (Add from a catalog, Browse assistants):
   // counted, so each ask opens it and lists it again.
+  // Read while rendering, taken once mounted: a render React throws away
+  // does not use it up.
   const [asked, setAsked] = useState(() => (browseRequested() ? 1 : 0));
-  const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    // A section mounted only for a moment (React may mount twice) leaves
-    // the ask for the one that stays: taken when listing starts, below.
-    if (browseRequested()) setAsked((n) => n || 1);
-    const ask = () => setAsked((n) => n + 1);
+    if (takeBrowseRequest()) setAsked((n) => n || 1);
+    const ask = () => {
+      takeBrowseRequest();
+      setAsked((n) => n + 1);
+    };
     window.addEventListener(BROWSE_CATALOG_EVENT, ask);
     return () => window.removeEventListener(BROWSE_CATALOG_EVENT, ask);
   }, []);
@@ -71,17 +73,18 @@ export function CatalogSection() {
       })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)));
   }, []);
-  // Opened: listed (once the catalogs are known), and in view when asked.
-  const [opened, setOpened] = useState(false);
+  // Each ask is listed once (when the catalogs are known) and brought into
+  // view; folding or another catalog lists nothing by itself.
+  const handled = useRef(0);
   useEffect(() => {
-    if (!url) return;
-    if (asked) {
-      takeBrowseRequest();
-      box.current?.scrollIntoView({ block: "nearest" });
-    }
-    if (asked || opened) void load(url);
+    if (!url || asked <= handled.current) return;
+    handled.current = asked;
+    document
+      .getElementById("catalog-section")
+      ?.scrollIntoView({ block: "nearest" });
+    void load(url);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [asked, opened, url]);
+  }, [asked, url]);
   const saveSources = async () => {
     const urls = draft
       .split("\n")
@@ -102,114 +105,105 @@ export function CatalogSection() {
     }
   };
   return (
-    <div ref={box}>
-      <SettingsDisclosure
-        id="catalog"
-        title="Add from a catalog"
-        className="catalog-section"
-        force={asked}
-        onOpenChange={setOpened}
-      >
-        <p className="subtle">
-          Ready-made assistants others share. Its definition comes from the
-          catalog; your settings and records stay yours.
-        </p>
-        {sources && !editing && (
-          <div className="catalog-bar">
-            {sources.length > 1 ? (
-              <select
-                aria-label="Catalog"
-                value={url}
-                disabled={loading}
-                onChange={(e) => {
-                  setUrl(e.target.value);
-                  setList(null);
-                }}
-              >
-                {sources.map((s) => (
-                  <option key={s.url} value={s.url}>
-                    {catalogName(s.url)}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <code>{catalogName(url)}</code>
-            )}
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={loading || !url}
-              onClick={() => void load(url)}
+    <SettingsDisclosure
+      id="catalog"
+      domId="catalog-section"
+      title="Add from a catalog"
+      className="catalog-section"
+      force={asked}
+      // Unfolded by the user: listed, unless it is already. Never when
+      // Settings opens with it left unfolded (that would fetch each time).
+      onOpenChange={(o) => o && url && !list && !loading && void load(url)}
+    >
+      <p className="subtle">
+        Ready-made assistants others share. Its definition comes from the
+        catalog; your settings and records stay yours.
+      </p>
+      {sources && !editing && (
+        <div className="catalog-bar">
+          {sources.length > 1 ? (
+            <select
+              aria-label="Catalog"
+              value={url}
+              disabled={loading}
+              onChange={(e) => {
+                setUrl(e.target.value);
+                setList(null);
+              }}
             >
-              {loading ? (
-                <Loader2 size={14} className="spin" />
-              ) : (
-                <RefreshCw size={14} />
-              )}
-              {list ? "Check again" : "Browse"}
+              {sources.map((s) => (
+                <option key={s.url} value={s.url}>
+                  {catalogName(s.url)}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <code>{catalogName(url)}</code>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={loading || !url}
+            onClick={() => void load(url)}
+          >
+            {loading ? (
+              <Loader2 size={14} className="spin" />
+            ) : (
+              <RefreshCw size={14} />
+            )}
+            {list ? "Check again" : "Browse"}
+          </Button>
+        </div>
+      )}
+      {editing && (
+        <div className="catalog-edit">
+          <label className="routine-field">
+            <span className="routine-label">
+              Catalogs: one git address per line
+            </span>
+            <Textarea
+              rows={3}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+            />
+          </label>
+          <div className="confirm-actions">
+            <Button variant="ghost" size="sm" onClick={() => setEditing(false)}>
+              Cancel
+            </Button>
+            <Button size="sm" onClick={() => void saveSources()}>
+              Save
+            </Button>
+          </div>
+        </div>
+      )}
+      {error && <p className="error-text">{error}</p>}
+      {list && (
+        <ul className="catalog-list">
+          {list.map((e) => (
+            <CatalogItem key={e.path} entry={e} onInstalled={() => load(url)} />
+          ))}
+          {list.length === 0 && <li className="subtle">No assistants yet.</li>}
+        </ul>
+      )}
+      <SettingsDisclosure id="catalog-more" small title="More">
+        {!editing && (
+          <div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setDraft((sources ?? []).map((s) => s.url).join("\n"));
+                setEditing(true);
+              }}
+            >
+              Catalogs…
             </Button>
           </div>
         )}
-        {editing && (
-          <div className="catalog-edit">
-            <label className="routine-field">
-              <span className="routine-label">
-                Catalogs: one git address per line
-              </span>
-              <Textarea
-                rows={3}
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-              />
-            </label>
-            <div className="confirm-actions">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setEditing(false)}
-              >
-                Cancel
-              </Button>
-              <Button size="sm" onClick={() => void saveSources()}>
-                Save
-              </Button>
-            </div>
-          </div>
-        )}
-        {error && <p className="error-text">{error}</p>}
-        {list && (
-          <ul className="catalog-list">
-            {list.map((e) => (
-              <CatalogItem
-                key={e.path}
-                entry={e}
-                onInstalled={() => load(url)}
-              />
-            ))}
-            {list.length === 0 && (
-              <li className="subtle">No assistants yet.</li>
-            )}
-          </ul>
-        )}
-        <SettingsDisclosure id="catalog-more" small title="More">
-          {!editing && (
-            <div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setDraft((sources ?? []).map((s) => s.url).join("\n"));
-                  setEditing(true);
-                }}
-              >
-                Catalogs…
-              </Button>
-            </div>
-          )}
-          {url && <BindSection url={url} onBound={() => void load(url)} />}
-        </SettingsDisclosure>
+        {url && <BindSection url={url} onBound={() => void load(url)} />}
       </SettingsDisclosure>
-    </div>
+    </SettingsDisclosure>
   );
 }
 

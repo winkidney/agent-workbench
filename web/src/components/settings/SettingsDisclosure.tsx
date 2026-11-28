@@ -35,6 +35,7 @@ export function SettingsDisclosure({
   small = false,
   className = "",
   onOpenChange,
+  domId,
   children,
 }: {
   id: string;
@@ -43,7 +44,9 @@ export function SettingsDisclosure({
   defaultOpen?: boolean;
   // Opens it; a number opens it again each time it changes.
   force?: boolean | number;
+  // The user folded or unfolded it (not told of opening by force).
   onOpenChange?: (open: boolean) => void;
+  domId?: string;
   small?: boolean;
   className?: string;
   children: ReactNode;
@@ -54,13 +57,9 @@ export function SettingsDisclosure({
   useEffect(() => {
     if (force) setOpen(true);
   }, [force]);
-  // Opened by force at first: told as any opening is.
-  useEffect(() => {
-    if (open) onOpenChange?.(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
   return (
     <details
+      id={domId}
       className={
         (small
           ? "settings-disclosure small "

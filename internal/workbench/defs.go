@@ -93,6 +93,9 @@ func (r RoutineSetting) when() bool {
 	return r.Daily != "" || r.Every != "" || r.Cron != "" || r.At != ""
 }
 
+// own: complete enough to be a routine of the owner's own.
+func (r RoutineSetting) own() bool { return r.when() && (r.Message != "" || r.Command != "") }
+
 func (r RoutineSetting) onlySwitch() bool {
 	r.Enabled = nil
 	return reflect.DeepEqual(r, RoutineSetting{})
@@ -125,6 +128,10 @@ func (r RoutineSetting) lay(f *FileRoutine) {
 			*p.to = *p.v
 		}
 	}
+	// No approval: nothing to preview either.
+	if r.Approve != nil && !*r.Approve && r.Preview == "" {
+		f.Preview = ""
+	}
 	if r.Enabled != nil {
 		f.Enabled = r.Enabled
 	}
@@ -134,15 +141,11 @@ func (r RoutineSetting) lay(f *FileRoutine) {
 // have) says when it runs and what it does.
 func (s AssistantSettings) checkOwnRoutines(f AssistantFile) error {
 	for name, r := range s.Routines {
-		// Only a switch: for a routine the author has since removed.
-		if inRoutines(f.Routines, name) || r.onlySwitch() {
+		// Changes to a routine the author has since removed (no time, or
+		// nothing to do, of their own) are left unused: an update must not
+		// break the assistant. The update says so (settingsNotes).
+		if inRoutines(f.Routines, name) || !r.own() {
 			continue
-		}
-		if !r.when() {
-			return fmt.Errorf("%s: routine %q: no routine of that name in assistant.toml; your own needs when it runs (daily, every, cron or at)", settingsFile, name)
-		}
-		if r.Message == "" && r.Command == "" {
-			return fmt.Errorf("%s: routine %q: your own needs a message or a command", settingsFile, name)
 		}
 	}
 	return nil
@@ -206,7 +209,7 @@ func writeAssistantSettings(dir string, s AssistantSettings) error {
 	b.WriteString(settingsHeader)
 	str := func(k, v string) {
 		if v != "" {
-			fmt.Fprintf(&b, "%s = %s\n", k, strconv.Quote(v))
+			fmt.Fprintf(&b, "%s = %s\n", k, tomlQuote(v))
 		}
 	}
 	boolean := func(k string, v *bool) {
@@ -316,7 +319,7 @@ func (s AssistantSettings) apply(f *AssistantFile) {
 	// The owner's own routines, after the author's, by name.
 	var own []string
 	for name := range s.Routines {
-		if !inRoutines(f.Routines, name) && !s.Routines[name].onlySwitch() {
+		if !inRoutines(f.Routines, name) && s.Routines[name].own() {
 			own = append(own, name)
 		}
 	}
@@ -367,11 +370,17 @@ const (
 )
 
 // writeAgentFiles brings CLAUDE.md and AGENTS.override.md in dir in step
-// with its AGENTS.md and AGENTS.local.md. A CLAUDE.md or an
-// AGENTS.override.md someone wrote by hand is left alone.
+// with its AGENTS.md and AGENTS.local.md. AGENTS.override.md is always
+// the workbench's (one written by anyone else would replace AGENTS.md for
+// Codex); a CLAUDE.md someone wrote by hand is left alone.
 func writeAgentFiles(dir string) error {
+	override := filepath.Join(dir, agentsOverride)
+	old, oerr := os.ReadFile(override)
 	agents, err := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
 	if err != nil {
+		if oerr == nil {
+			return os.Remove(override)
+		}
 		return nil
 	}
 	local, lerr := os.ReadFile(filepath.Join(dir, agentsLocal))
@@ -382,34 +391,102 @@ func writeAgentFiles(dir string) error {
 		want = claudeLocal
 	}
 	if info, err := os.Lstat(claude); err == nil && info.Mode().IsRegular() {
-		if old, _ := os.ReadFile(claude); (string(old) == claudePlain || string(old) == claudeLocal) && string(old) != want {
-			if err := os.WriteFile(claude, []byte(want), 0o644); err != nil {
+		cur, _ := os.ReadFile(claude)
+		// A checkout with Windows line ends has the same lines.
+		crlf := bytes.Contains(cur, []byte("\r\n"))
+		plain := strings.ReplaceAll(string(cur), "\r\n", "\n")
+		if (plain == claudePlain || plain == claudeLocal) && plain != want {
+			out := want
+			if crlf {
+				out = strings.ReplaceAll(want, "\n", "\r\n")
+			}
+			if err := writeAtomic(claude, []byte(out)); err != nil {
 				return err
 			}
 		}
 	}
-	override := filepath.Join(dir, agentsOverride)
-	old, oerr := os.ReadFile(override)
-	ours := oerr == nil && bytes.HasPrefix(old, []byte(overrideHeader))
 	if !hasLocal {
-		if ours {
+		if oerr == nil {
 			return os.Remove(override)
 		}
 		return nil
 	}
-	if oerr == nil && !ours {
-		return nil
-	}
 	var b bytes.Buffer
 	b.WriteString(overrideHeader)
-	b.Write(bytes.TrimRight(agents, "\n"))
+	b.Write(bytes.TrimRight(agents, "\r\n"))
 	b.WriteString("\n\n## The owner's additions (AGENTS.local.md)\n\nWhere these differ from the above, these win.\n\n")
-	b.Write(bytes.TrimRight(local, "\n"))
+	b.Write(bytes.TrimRight(local, "\r\n"))
 	b.WriteString("\n")
-	if bytes.Equal(old, b.Bytes()) {
+	if oerr == nil && bytes.Equal(old, b.Bytes()) {
 		return nil
 	}
-	return os.WriteFile(override, b.Bytes(), 0o644)
+	return writeAtomic(override, b.Bytes())
+}
+
+// writeAtomic replaces a file whole, so an agent starting meanwhile never
+// reads half of it.
+func writeAtomic(path string, data []byte) error {
+	tmp := path + ".aw-tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return nil
+}
+
+// agentFiles are the files writeAgentFiles makes, which git may not show
+// (excluded): a background run's changes to them are put back.
+func snapshotAgentFiles(root string) map[string][]byte {
+	out := map[string][]byte{}
+	dirs := []string{"."}
+	entries, _ := os.ReadDir(root)
+	for _, e := range entries {
+		if e.IsDir() && !strings.HasPrefix(e.Name(), ".") {
+			dirs = append(dirs, e.Name())
+		}
+	}
+	for _, d := range dirs {
+		for _, f := range []string{"CLAUDE.md", agentsOverride} {
+			rel := filepath.ToSlash(filepath.Join(d, f))
+			b, err := os.ReadFile(filepath.Join(root, d, f))
+			if err != nil {
+				b = nil
+			} else if b == nil {
+				b = []byte{}
+			}
+			out[rel] = b
+		}
+	}
+	return out
+}
+
+// putBackAgentFiles undoes changes to them since the snapshot (a new one
+// removed); it returns what it put back.
+func putBackAgentFiles(root string, before map[string][]byte) []string {
+	var back []string
+	now := snapshotAgentFiles(root)
+	for rel, cur := range now {
+		was, known := before[rel]
+		if !known {
+			was = nil
+		}
+		if (cur == nil) == (was == nil) && bytes.Equal(cur, was) {
+			continue
+		}
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		if was == nil {
+			if os.Remove(p) == nil {
+				back = append(back, rel)
+			}
+		} else if writeAtomic(p, was) == nil {
+			back = append(back, rel)
+		}
+	}
+	sort.Strings(back)
+	return back
 }
 
 // writeAllAgentFiles does it for the repository's top and every folder in
@@ -438,8 +515,41 @@ func (m *Manager) agentFilesFor(path string) {
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
 		return
 	}
+	// Not while a background run works: it would take the change for the
+	// run's and undo it. The files are as of its start anyway.
+	if !m.as.bg.TryLock() {
+		return
+	}
+	defer m.as.bg.Unlock()
 	writeAgentFiles(root)
 	if first := strings.Split(filepath.ToSlash(rel), "/")[0]; first != "." && first != "" {
 		writeAgentFiles(filepath.Join(root, first))
 	}
+}
+
+// tomlQuote writes s as a TOML basic string (Go's quoting writes \x..,
+// which TOML does not read).
+func tomlQuote(s string) string {
+	var b strings.Builder
+	b.WriteByte('"')
+	for _, r := range s {
+		switch {
+		case r == '"':
+			b.WriteString(`\"`)
+		case r == '\\':
+			b.WriteString(`\\`)
+		case r == '\n':
+			b.WriteString(`\n`)
+		case r == '\t':
+			b.WriteString(`\t`)
+		case r == '\r':
+			b.WriteString(`\r`)
+		case r < 0x20 || r == 0x7f:
+			fmt.Fprintf(&b, `\u%04X`, r)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	b.WriteByte('"')
+	return b.String()
 }

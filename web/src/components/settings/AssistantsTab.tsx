@@ -332,7 +332,7 @@ function AssistantItem({
             type="button"
             className="routine-toggle"
             aria-expanded={more}
-            aria-label={`${a.name}: ${more ? "less" : "more"}`}
+            aria-controls={`assistant-more-${a.dir}`}
             onClick={() => setMore(!more)}
           >
             {more ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -375,7 +375,7 @@ function AssistantItem({
               type="button"
               role="switch"
               aria-checked={a.enabled !== false}
-              aria-label={`${a.name}: ${a.enabled === false ? "turn on" : "turn off"}`}
+              aria-label={`${a.name} on`}
               className="routine-switch"
               disabled={busy}
               onClick={() => void update({ enabled: a.enabled === false })}
@@ -403,7 +403,7 @@ function AssistantItem({
         </span>
       </div>
       {more && (
-        <div className="assistant-more">
+        <div className="assistant-more" id={`assistant-more-${a.dir}`}>
           {agentOK && (
             <AgentChoice
               value={a.agent as Agent}
@@ -419,7 +419,12 @@ function AssistantItem({
               ` · ${a.routines} routine${a.routines === 1 ? "" : "s"}`}
           </span>
           {naming === null && !a.error && (
-            <Button variant="ghost" size="sm" onClick={() => setNaming(a.name)}>
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label={`Rename ${a.name}`}
+              onClick={() => setNaming(a.name)}
+            >
               <Pencil size={14} />
               Rename
             </Button>
@@ -464,7 +469,7 @@ function LanguageSection({ value }: { value: Language }) {
         className="agent-switch"
         role="radiogroup"
         aria-label="Language"
-        title="What assistants write to you in, unless you write in another; also the language of the welcome"
+        aria-describedby="language-note"
       >
         {LANGUAGES.map(([v, label]) => (
           <button
@@ -488,6 +493,9 @@ function LanguageSection({ value }: { value: Language }) {
           </button>
         ))}
       </div>
+      <span id="language-note" className="subtle">
+        What assistants write to you in, and the welcome
+      </span>
       {error && <p className="error-text">{error}</p>}
     </section>
   );
@@ -507,22 +515,24 @@ function BackupSection({ root, sync }: { root: string; sync?: SyncState }) {
       .catch((e) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setBusy(false));
   };
-  const note = !sync?.remote
-    ? "Not backed up"
-    : sync.error
-      ? "Push failed"
-      : sync.ahead > 0
-        ? `${sync.ahead} not pushed`
-        : sync.ahead === 0
-          ? "Up to date"
-          : "Not pushed yet";
+  const note = !sync
+    ? undefined
+    : !sync.remote
+      ? "Not backed up"
+      : sync.error
+        ? "Push failed"
+        : sync.ahead > 0
+          ? `${sync.ahead} not pushed`
+          : sync.ahead === 0
+            ? "Up to date"
+            : "Not pushed yet";
   return (
     <SettingsDisclosure
       id="assistant-backup"
       title="Backup"
       note={note}
       // What needs the user shows by itself.
-      force={!!sync?.error || (sync?.ahead ?? 0) > 0}
+      force={!!sync?.remote && (!!sync.error || sync.ahead !== 0)}
     >
       {sync?.remote ? (
         <>

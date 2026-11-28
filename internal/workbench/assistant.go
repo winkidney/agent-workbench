@@ -266,7 +266,7 @@ func oneLine(key, s string) error {
 func tomlStrings(list []string) string {
 	q := make([]string, len(list))
 	for i, s := range list {
-		q[i] = strconv.Quote(s)
+		q[i] = tomlQuote(s)
 	}
 	return "[" + strings.Join(q, ", ") + "]"
 }
@@ -797,8 +797,10 @@ func (m *Manager) ensureShared() {
 		fmt.Fprintln(os.Stderr, "assistants: catalog:", err)
 	}
 	writeAllAgentFiles(root)
+	paths := sharedPaths()
 	if upgradeMossCard(root) {
 		wrote = true
+		paths = append(paths, "main/assistant.toml")
 	}
 	drop, err := refreshManaged(root)
 	if err != nil {
@@ -806,7 +808,7 @@ func (m *Manager) ensureShared() {
 	}
 	if wrote || len(drop) > 0 {
 		// What refreshManaged just took out of the index leaves with it.
-		m.commitPaths(root, "chore: add shared files from Agent Workbench", append(sharedPaths(), "main/assistant.toml"), drop...)
+		m.commitPaths(root, "chore: add shared files from Agent Workbench", paths, drop...)
 	}
 }
 
