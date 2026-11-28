@@ -42,6 +42,10 @@ func TestProgressFollowsClaudeThinkingWithoutText(t *testing.T) {
 			t.Fatalf("step %d: phase %q tokens %v", i, r.phase, r.turnOut)
 		}
 	}
+	// Without a process, saved telemetry newer than the session's last
+	// event (to the second) is shown instead of the live figures: the turn's
+	// result saved in the next second made this fail now and then.
+	r.last = time.Now()
 	if m.Telemetry(s.ID).Speed == 0 {
 		t.Fatal("thinking tokens left the live speed at zero")
 	}
