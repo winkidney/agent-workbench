@@ -1,9 +1,17 @@
 import { useState } from "react";
-import { Loader2, Pencil, Plus } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  Loader2,
+  PackagePlus,
+  Pencil,
+  Plus,
+} from "lucide-react";
 import { api } from "../../lib/api";
 import { ChangeList } from "../../assistants/lazy";
 import {
   assistantsChanged,
+  browseCatalog,
   folderFor,
   LANGUAGES,
   MAIN_NAME,
@@ -21,6 +29,7 @@ import { shortTime } from "../../routines/when";
 import { CatalogSection } from "../../assistants/CatalogSection";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
+import { SettingsDisclosure } from "./SettingsDisclosure";
 
 type Agent = "claude" | "codex";
 
@@ -100,26 +109,17 @@ export function AssistantsTab({
     <>
       <section className="settings-section">
         <h3>Assistants</h3>
-        <p className="subtle">
-          In <code>{value.root}</code>. Each folder's <code>AGENTS.md</code> is
-          its procedure and <code>assistant.toml</code> its settings and
-          routines; edit them there, or ask the assistant to.
-        </p>
         {!adding && (
-          <Button variant="outline" size="sm" onClick={() => setAdding(true)}>
-            <Plus size={14} />
-            New assistant
-          </Button>
-        )}
-        {!adding && (
-          <Button
-            variant="ghost"
-            size="sm"
-            title="Read the assistant.toml files again, after editing them by hand"
-            onClick={() => void reloadAssistants()}
-          >
-            Reload assistants
-          </Button>
+          <div className="assistants-actions">
+            <Button variant="outline" size="sm" onClick={() => setAdding(true)}>
+              <Plus size={14} />
+              New assistant
+            </Button>
+            <Button variant="outline" size="sm" onClick={browseCatalog}>
+              <PackagePlus size={14} />
+              Add from a catalog
+            </Button>
+          </div>
         )}
         {adding && (
           <form
@@ -215,12 +215,36 @@ export function AssistantsTab({
             </div>
           </form>
         )}
+        <ul className="routine-list">
+          {value.assistants.map((a) => (
+            <AssistantItem key={a.dir} assistant={a} onOpen={onOpen} />
+          ))}
+        </ul>
+        <SettingsDisclosure
+          id="assistant-files"
+          small
+          title="About these files"
+        >
+          <p className="subtle">
+            In <code>{value.root}</code>. Each folder's <code>AGENTS.md</code>{" "}
+            is its procedure and <code>assistant.toml</code> its settings and
+            routines, from its author; your own choices, routines and card text
+            are in <code>settings.toml</code>, and your additions to the
+            procedure in <code>AGENTS.local.md</code>. Edit them there, or ask
+            the assistant to.
+          </p>
+          <div>
+            <Button
+              variant="ghost"
+              size="sm"
+              title="Read the assistant.toml files again, after editing them by hand"
+              onClick={() => void reloadAssistants()}
+            >
+              Reload assistants
+            </Button>
+          </div>
+        </SettingsDisclosure>
       </section>
-      <ul className="routine-list">
-        {value.assistants.map((a) => (
-          <AssistantItem key={a.dir} assistant={a} onOpen={onOpen} />
-        ))}
-      </ul>
       <CatalogSection />
       {!!value.mossUpdates?.length && (
         <section className="settings-section" role="status">
@@ -256,13 +280,21 @@ export function AssistantsTab({
       )}
       <LanguageSection value={value.language ?? "zh-Hans"} />
       <BackupSection root={value.root} sync={value.sync} />
-      <ChangeList list={changes} />
+      {changes.length > 0 && (
+        <SettingsDisclosure
+          id="assistant-changes"
+          title="Recent changes"
+          note={String(changes.length)}
+        >
+          <ChangeList list={changes} inside />
+        </SettingsDisclosure>
+      )}
     </>
   );
 }
 
-// One assistant: open it, rename it, switch its agent. Both change its
-// assistant.toml (PATCH /api/assistants/{dir}).
+// One assistant: open it, rename it, switch its agent (PATCH
+// /api/assistants/{dir}). What is used most shows; the rest unfolds.
 function AssistantItem({
   assistant: a,
   onOpen,
@@ -271,6 +303,7 @@ function AssistantItem({
   onOpen: (dir: string) => void;
 }) {
   const [naming, setNaming] = useState<string | null>(null);
+  const [more, setMore] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const update = async (change: {
@@ -290,16 +323,31 @@ function AssistantItem({
       setBusy(false);
     }
   };
+  const agentOK = !a.error && (a.agent === "claude" || a.agent === "codex");
   return (
     <li className="routine-item">
       <div className="routine-head">
         {naming === null ? (
-          <span className="routine-name">
-            {a.name}
-            {a.dir === "main" && (
-              <span className="subtle"> · your personal assistant</span>
+          <button
+            type="button"
+            className="routine-toggle"
+            aria-expanded={more}
+            aria-label={`${a.name}: ${more ? "less" : "more"}`}
+            onClick={() => setMore(!more)}
+          >
+            {more ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            <span className="routine-name">
+              {a.name}
+              {a.dir === "main" && (
+                <span className="subtle"> · your personal assistant</span>
+              )}
+            </span>
+            {agentOK && (
+              <span className="assistant-agent-mark">
+                {a.agent === "claude" ? "Claude" : "Codex"}
+              </span>
             )}
-          </span>
+          </button>
         ) : (
           <form
             className="assistant-rename"
@@ -322,35 +370,18 @@ function AssistantItem({
           </form>
         )}
         <span className="change-actions">
-          {a.dir === "main" && naming === null && !a.error && (
-            <Button
-              variant="ghost"
-              size="sm"
+          {a.dir !== "main" && !a.error && (
+            <button
+              type="button"
+              role="switch"
+              aria-checked={a.enabled !== false}
+              aria-label={`${a.name}: ${a.enabled === false ? "turn on" : "turn off"}`}
+              className="routine-switch"
               disabled={busy}
-              title="Send the welcome again"
-              onClick={() => {
-                setBusy(true);
-                setError("");
-                api<{ session: string }>("assistants/main/welcome", "POST")
-                  .then((out) => openSessionLater(out.session))
-                  .catch((e) =>
-                    setError(e instanceof Error ? e.message : String(e)),
-                  )
-                  .finally(() => setBusy(false));
-              }}
+              onClick={() => void update({ enabled: a.enabled === false })}
             >
-              Welcome
-            </Button>
-          )}
-          {naming === null && !a.error && (
-            <Button
-              variant="ghost"
-              size="sm"
-              aria-label={`Rename ${a.name}`}
-              onClick={() => setNaming(a.name)}
-            >
-              <Pencil size={14} />
-            </Button>
+              {a.enabled === false ? "Off" : "On"}
+            </button>
           )}
           {!a.error && (
             <Button
@@ -371,35 +402,50 @@ function AssistantItem({
           </Button>
         </span>
       </div>
-      <div className="assistant-meta">
-        {!a.error && (a.agent === "claude" || a.agent === "codex") && (
-          <AgentChoice
-            value={a.agent}
-            onChange={(agent) => !busy && void update({ agent })}
-          />
-        )}
-        {a.dir !== "main" && !a.error && (
-          <button
-            type="button"
-            role="switch"
-            aria-checked={a.enabled !== false}
-            aria-label={a.enabled === false ? "Turn on" : "Turn off"}
-            className="routine-switch"
-            disabled={busy}
-            onClick={() => void update({ enabled: a.enabled === false })}
-          >
-            {a.enabled === false ? "Off" : "On"}
-          </button>
-        )}
-        <span className="routine-meta">
-          <code>{a.dir}/</code>
-          {a.sessions &&
-            ` · ${a.sessions === "continuous" ? "one ongoing conversation" : "a session per request"}`}
-          {a.memory === "wiki" && " · keeps the shared wiki"}
-          {a.routines > 0 &&
-            ` · ${a.routines} routine${a.routines === 1 ? "" : "s"}`}
-        </span>
-      </div>
+      {more && (
+        <div className="assistant-more">
+          {agentOK && (
+            <AgentChoice
+              value={a.agent as Agent}
+              onChange={(agent) => !busy && void update({ agent })}
+            />
+          )}
+          <span className="routine-meta">
+            <code>{a.dir}/</code>
+            {a.sessions &&
+              ` · ${a.sessions === "continuous" ? "one ongoing conversation" : "a session per request"}`}
+            {a.memory === "wiki" && " · keeps the shared wiki"}
+            {a.routines > 0 &&
+              ` · ${a.routines} routine${a.routines === 1 ? "" : "s"}`}
+          </span>
+          {naming === null && !a.error && (
+            <Button variant="ghost" size="sm" onClick={() => setNaming(a.name)}>
+              <Pencil size={14} />
+              Rename
+            </Button>
+          )}
+          {a.dir === "main" && !a.error && (
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={busy}
+              title="Send the welcome again"
+              onClick={() => {
+                setBusy(true);
+                setError("");
+                api<{ session: string }>("assistants/main/welcome", "POST")
+                  .then((out) => openSessionLater(out.session))
+                  .catch((e) =>
+                    setError(e instanceof Error ? e.message : String(e)),
+                  )
+                  .finally(() => setBusy(false));
+              }}
+            >
+              Welcome
+            </Button>
+          )}
+        </div>
+      )}
       {error && <p className="routine-meta error-text">{error}</p>}
       {a.error && (
         <p className="routine-meta error-text">assistant.toml: {a.error}</p>
@@ -412,13 +458,14 @@ function AssistantItem({
 function LanguageSection({ value }: { value: Language }) {
   const [error, setError] = useState("");
   return (
-    <section className="settings-section">
+    <section className="settings-section language-row">
       <h3>Language</h3>
-      <p className="subtle">
-        What assistants write to you in, unless you write in another; also the
-        language of the welcome.
-      </p>
-      <div className="agent-switch" role="radiogroup" aria-label="Language">
+      <div
+        className="agent-switch"
+        role="radiogroup"
+        aria-label="Language"
+        title="What assistants write to you in, unless you write in another; also the language of the welcome"
+      >
         {LANGUAGES.map(([v, label]) => (
           <button
             type="button"
@@ -460,9 +507,23 @@ function BackupSection({ root, sync }: { root: string; sync?: SyncState }) {
       .catch((e) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setBusy(false));
   };
+  const note = !sync?.remote
+    ? "Not backed up"
+    : sync.error
+      ? "Push failed"
+      : sync.ahead > 0
+        ? `${sync.ahead} not pushed`
+        : sync.ahead === 0
+          ? "Up to date"
+          : "Not pushed yet";
   return (
-    <section className="settings-section">
-      <h3>Backup</h3>
+    <SettingsDisclosure
+      id="assistant-backup"
+      title="Backup"
+      note={note}
+      // What needs the user shows by itself.
+      force={!!sync?.error || (sync?.ahead ?? 0) > 0}
+    >
       {sync?.remote ? (
         <>
           <p className="subtle">
@@ -515,6 +576,6 @@ function BackupSection({ root, sync }: { root: string; sync?: SyncState }) {
         </>
       )}
       {error && <p className="error-text">{error}</p>}
-    </section>
+    </SettingsDisclosure>
   );
 }

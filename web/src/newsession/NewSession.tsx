@@ -24,6 +24,7 @@ import {
 import type { ViewItem } from "../transcript/media";
 import {
   assistantsChanged,
+  MAIN_ACTIONS,
   MAIN_STARTERS,
   type Assistant,
 } from "../lib/assistants";
@@ -209,9 +210,10 @@ export function NewSession({
           }}
         />
       )}
-      {assistant?.dir === "main" && !assistant.examples?.length && !text && (
+      {assistant?.dir === "main" && !text && (
         <QuickStart
-          starters={MAIN_STARTERS}
+          // Its card above has the requests to try: the actions here.
+          starters={assistant.examples?.length ? MAIN_ACTIONS : MAIN_STARTERS}
           onPick={(t) => {
             setText(t);
             requestAnimationFrame(() => {

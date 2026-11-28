@@ -4,7 +4,13 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strconv"
 	"strings"
+
+	"github.com/BurntSushi/toml"
 )
 
 // Messages Agent Workbench itself sends to assistants (ADR 0014): the
@@ -84,6 +90,26 @@ type assistantMeta struct {
 var mossMetas = map[string]assistantMeta{
 	"en": {
 		Description:  "Your personal assistant: one ongoing conversation that remembers what matters.",
+		Capabilities: []string{"Reminders and routines, from a sentence", "Remembers things for you, builds a wiki, and keeps useful knowledge", "Installs ready-made assistants from catalogs and sets them up with you", "Makes assistants for jobs you repeat, after you approve", "Hands tasks to your other assistants", "Each evening, has your assistants commit their changes and keeps them in step with the remote"},
+		Examples:     []string{"What can you do?", "Which assistants do I have?", "Which assistants can I install?", "Remind me in 2 hours to call Ana", "Every weekday at 9:00, ask me for my top three", "Save this link: ", "Summarize this and add it to the wiki: ", "Make me an assistant for my weekly report"},
+	},
+	"zh-Hans": {
+		Description:  "你的个人助理：一个持续的对话，记住对你重要的事。",
+		Capabilities: []string{"一句话设置提醒和定时任务", "帮你记住信息、整理成 wiki、收藏有用的知识", "从目录安装现成的助理，并和你一起设置好", "经你批准后为重复的工作创建助理", "把任务转交给你的其他助理", "每晚提醒各助理提交改动，并与远端保持同步"},
+		Examples:     []string{"你能做什么？", "我有哪些助理？", "有哪些现成的助理可以装？", "2 小时后提醒我给 Ana 打电话", "每个工作日 9 点问我今天最重要的三件事", "收藏这个网址：", "帮我总结并加入 wiki：", "帮我建一个写周报的助理"},
+	},
+	"zh-Hant": {
+		Description:  "你的個人助理：一個持續的對話，記住對你重要的事。",
+		Capabilities: []string{"一句話設定提醒和定時任務", "幫你記住資訊、整理成 wiki、收藏有用的知識", "從目錄安裝現成的助理，並和你一起設定好", "經你批准後為重複的工作建立助理", "把任務轉交給你的其他助理", "每晚提醒各助理提交改動，並與遠端保持同步"},
+		Examples:     []string{"你能做什麼？", "我有哪些助理？", "有哪些現成的助理可以裝？", "2 小時後提醒我給 Ana 打電話", "每個工作日 9 點問我今天最重要的三件事", "收藏這個網址：", "幫我總結並加入 Wiki：", "幫我建一個寫週報的助理"},
+	},
+}
+
+// Earlier cards, replaced on start where the user left them as they were
+// (upgradeMossCard).
+var olderMossMetas = []map[string]assistantMeta{{
+	"en": {
+		Description:  "Your personal assistant: one ongoing conversation that remembers what matters.",
 		Capabilities: []string{"Reminders and routines, from a sentence", "Remembers things for you, builds a wiki, and keeps useful knowledge", "Makes assistants for jobs you repeat, after you approve", "Hands tasks to your other assistants", "Each evening, has your assistants commit their changes and keeps them in step with the remote"},
 		Examples:     []string{"What can you do?", "Which assistants do I have?", "Remind me in 2 hours to call Ana", "Every weekday at 9:00, ask me for my top three", "Save this link: ", "Summarize this and add it to the wiki: ", "Make me an assistant for my weekly report"},
 	},
@@ -97,11 +123,39 @@ var mossMetas = map[string]assistantMeta{
 		Capabilities: []string{"一句話設定提醒和定時任務", "幫你記住資訊、整理成 wiki、收藏有用的知識", "經你批准後為重複的工作建立助理", "把任務轉交給你的其他助理", "每晚提醒各助理提交改動，並與遠端保持同步"},
 		Examples:     []string{"你能做什麼？", "我有哪些助理？", "2 小時後提醒我給 Ana 打電話", "每個工作日 9 點問我今天最重要的三件事", "收藏這個網址：", "幫我總結並加入 Wiki：", "幫我建一個寫週報的助理"},
 	},
-}
+}}
 
 func mossMeta(lang string) assistantMeta {
 	if m, ok := mossMetas[lang]; ok {
 		return m
 	}
 	return mossMetas[defaultLanguage]
+}
+
+// upgradeMossCard puts the current card in Moss's assistant.toml when it
+// still says what an earlier version wrote (the user did not change it);
+// whether it did.
+func upgradeMossCard(root string) bool {
+	path := filepath.Join(root, "main", "assistant.toml")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	var f AssistantFile
+	if _, err := toml.Decode(string(data), &f); err != nil {
+		return false
+	}
+	for _, older := range olderMossMetas {
+		for lang, m := range older {
+			if f.Description != m.Description || !reflect.DeepEqual(f.Capabilities, m.Capabilities) || !reflect.DeepEqual(f.Examples, m.Examples) {
+				continue
+			}
+			now := mossMeta(lang)
+			text := setOrInsert(string(data), "description", strconv.Quote(now.Description))
+			text = setOrInsert(text, "capabilities", tomlStrings(now.Capabilities))
+			text = setOrInsert(text, "examples", tomlStrings(now.Examples))
+			return os.WriteFile(path, []byte(text), 0o644) == nil
+		}
+	}
+	return false
 }

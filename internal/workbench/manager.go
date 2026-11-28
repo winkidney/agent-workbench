@@ -297,6 +297,8 @@ func (m *Manager) Start(id string) error {
 	if r.proc != nil {
 		return nil
 	}
+	// An assistant's session reads the owner's additions as they are now.
+	m.agentFilesFor(r.session.Cwd)
 	if r.session.Status == "stopping" {
 		return errors.New("session is stopping")
 	}

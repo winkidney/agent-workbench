@@ -34,6 +34,8 @@ type UpdateFile struct {
 	// saved for merging by hand or by an agent.
 	Base   string `json:"base,omitempty"`
 	Theirs string `json:"theirs,omitempty"`
+	// What the owner's settings.toml keeps over the change.
+	Notes []string `json:"notes,omitempty"`
 }
 
 // CatalogUpdate is an assistant's update: from which commit to which, file
@@ -133,6 +135,9 @@ func (m *Manager) UpdateFromCatalog(dir string, apply bool, choices map[string]s
 		if rel == "assistant.toml" && inBase && inNew {
 			f.Runs = commandsChanged(b.Data, t.Data)
 		}
+		if rel == "assistant.toml" && inNew {
+			f.Notes = settingsNotes(path, b.Data, t.Data)
+		}
 		switch {
 		case inNew && !inBase:
 			switch {
@@ -204,6 +209,7 @@ func (m *Manager) UpdateFromCatalog(dir string, apply bool, choices map[string]s
 		}
 		os.Chmod(to, mode)
 	}
+	writeAgentFiles(path)
 	// The catalog's new versions are the base of the next update.
 	e.Commit, e.Files = head, map[string]string{}
 	for _, f := range theirs {
@@ -278,6 +284,46 @@ func mergeFile(mine, base, theirs []byte) ([]byte, int, error) {
 		return out.Bytes(), exit.ExitCode(), nil
 	}
 	return nil, 0, err
+}
+
+// settingsNotes: what the owner's settings.toml keeps over a new
+// assistant.toml: their own routine where the catalog adds one of that
+// name, their command where the catalog changes it.
+func settingsNotes(dir string, base, theirs []byte) []string {
+	s, err := readSettings(dir)
+	if err != nil || len(s.Routines) == 0 {
+		return nil
+	}
+	routines := func(data []byte) map[string]FileRoutine {
+		var f AssistantFile
+		toml.Decode(string(data), &f)
+		out := map[string]FileRoutine{}
+		for _, r := range f.Routines {
+			out[r.Name] = r
+		}
+		return out
+	}
+	was, now := routines(base), routines(theirs)
+	var notes []string
+	names := make([]string, 0, len(s.Routines))
+	for n := range s.Routines {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	for _, n := range names {
+		r := s.Routines[n]
+		old, inOld := was[n]
+		cur, inNow := now[n]
+		switch {
+		case inNow && !inOld && !r.onlySwitch():
+			notes = append(notes, fmt.Sprintf("The catalog adds a routine %q: yours of that name in settings.toml takes its place.", n))
+		case inNow && inOld && r.Command != "" && cur.Command != old.Command:
+			notes = append(notes, fmt.Sprintf("The catalog changes the command of %q: yours in settings.toml stays.", n))
+		case inNow && inOld && r.Message != "" && cur.Message != old.Message:
+			notes = append(notes, fmt.Sprintf("The catalog changes the message of %q: yours in settings.toml stays.", n))
+		}
+	}
+	return notes
 }
 
 // commandsChanged: whether a routine's command differs between two

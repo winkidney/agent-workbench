@@ -115,6 +115,12 @@ export function CatalogUpdatePanel({
               <li key={f.rel}>
                 <code>{f.rel}</code>: {UPDATE_RESULT[f.result] ?? f.result}
                 {f.runs && <strong className="catalog-runs"> runs</strong>}
+                {f.notes?.map((n) => (
+                  <span key={n} className="subtle catalog-note">
+                    {" "}
+                    {n}
+                  </span>
+                ))}
                 {f.result === "conflict" && (
                   <span className="catalog-choice">
                     <span

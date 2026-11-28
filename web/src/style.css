@@ -7139,3 +7139,85 @@ span.heartbeat.compact {
   overflow-wrap: anywhere;
   min-width: 0;
 }
+
+/* Settings parts that fold away (SettingsDisclosure). */
+.settings-disclosure summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  cursor: pointer;
+  list-style: none;
+  min-height: 28px;
+}
+.settings-disclosure summary::-webkit-details-marker {
+  display: none;
+}
+.settings-disclosure summary h3 {
+  margin: 0;
+}
+.settings-disclosure summary > svg {
+  color: var(--muted-foreground);
+  transition: transform 0.15s;
+  flex: none;
+}
+.settings-disclosure[open] > summary > svg {
+  transform: rotate(90deg);
+}
+.settings-disclosure summary:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+.settings-disclosure-note {
+  font-size: 12px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.settings-disclosure-body {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.settings-disclosure.small summary {
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+.settings-disclosure.small {
+  margin-top: 4px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .settings-disclosure summary > svg {
+    transition: none;
+  }
+}
+.assistants-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.assistant-agent-mark {
+  font-size: 11px;
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+.assistant-more {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin-top: 6px;
+}
+.language-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.language-row h3 {
+  margin: 0;
+}

@@ -360,6 +360,8 @@ func writeExclude(root string, paths []string) error {
 	for _, p := range paths {
 		b.WriteString("/" + gitignoreEscape(p) + "\n")
 	}
+	// Made for Codex from AGENTS.md and AGENTS.local.md (defs.go), anywhere.
+	b.WriteString(agentsOverride + "\n")
 	b.WriteString(excludeEnd + "\n")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
@@ -397,7 +399,10 @@ func writeDefinition(path string, files []catalogFile) error {
 	if err := writeNew(filepath.Join(path, "CLAUDE.md"), []byte("@AGENTS.md\n")); err != nil {
 		return err
 	}
-	return skillsLink(path)
+	if err := skillsLink(path); err != nil {
+		return err
+	}
+	return writeAgentFiles(path)
 }
 
 // InstallAssistant installs an assistant from a catalog into the folder dir

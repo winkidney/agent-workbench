@@ -6,7 +6,7 @@ What this assistant does, in a sentence or two. (Write it with the user: see the
 ## How work arrives
 
 - On request: a message in one of its sessions.
-- On a schedule: its `[[routines]]` in `assistant.toml` (a message, a script, or a script whose output is handed to you).
+- On a schedule: its `[[routines]]` in `assistant.toml` (a message, a script, or a script whose output is handed to you), and the user's own in `settings.toml`.
 
 ## Setting up
 
@@ -30,7 +30,7 @@ What to ask the user the first time, step by step. Credentials (passwords, token
 
 ## Where things live
 
-Everything this assistant is stays in this folder: `assistant.toml` (its definition and routines), `settings.toml` (the user's choices: set up, routines on, options), `AGENTS.md` (this procedure), `config.toml` (settings its scripts read, no secrets), `tools/` (scripts, each with a test), `.agents/skills/` (procedures), `state/` (what is in progress: kept in git), `raw/` (fetched data and scripts' bookkeeping: not in git), `log.md`.
+Everything this assistant is stays in this folder: `assistant.toml` (its definition and routines), `settings.toml` (the user's choices: set up, routines on, options), `AGENTS.md` (this procedure), `AGENTS.local.md` (the user's additions to it, if any), `config.toml` (settings its scripts read, no secrets), `tools/` (scripts, each with a test), `.agents/skills/` (procedures), `state/` (what is in progress: kept in git), `raw/` (fetched data and scripts' bookkeeping: not in git), `log.md`.
 
 
 Shared rules: `../AGENTS.md` (read it if your CLI has not already).

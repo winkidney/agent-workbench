@@ -503,6 +503,7 @@ func backgroundModel(agent string, o Options) []string {
 // workspace-write sandbox, which has no network.
 func (m *Manager) backgroundAgent(a Assistant, prompt string) (backgroundOut, error) {
 	root := m.assistantsRoot()
+	m.agentFilesFor(a.Path)
 	run, err := m.cli(a.Agent)
 	if err != nil {
 		return backgroundOut{}, err

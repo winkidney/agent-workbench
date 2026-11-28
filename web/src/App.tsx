@@ -54,7 +54,8 @@ import {
   changesChanged,
   ASSISTANT_SETTINGS_EVENT,
   latestFor,
-  MAIN_STARTERS,
+  BROWSE_CATALOG_EVENT,
+  mainStarters,
   newRoutine,
   NEW_ROUTINE_EVENT,
   OPEN_SESSION_EVENT,
@@ -77,7 +78,10 @@ import {
   DialogContent as AboutContent,
   DialogTitle as AboutTitle,
 } from "./components/ui/dialog";
-import { SettingsDialog } from "./components/settings/SettingsDialog";
+import {
+  SettingsDialog,
+  type SettingsTab,
+} from "./components/settings/SettingsDialog";
 import { OPEN_ROUTINE_EVENT } from "./routines/open";
 import { LogoMark } from "./components/Logo";
 import { PreviewPanel } from "./preview/PreviewPanel";
@@ -417,13 +421,18 @@ export default function App() {
     void bootstrap();
   }, []);
   // Settings, on a given tab when one is asked for.
-  const [settingsTab, setSettingsTab] = useState<"routines" | undefined>();
+  const [settingsTab, setSettingsTab] = useState<SettingsTab | undefined>();
   // A routine Settings opens on (routines/open.ts), until it closes.
   const [settingsRoutine, setSettingsRoutine] = useState<string>();
-  const openSettings = (tab?: "routines") => {
+  const openSettings = (tab?: SettingsTab) => {
     setSettingsTab(tab);
     setSettingsOpen(true);
   };
+  useEffect(() => {
+    const browse = () => openSettings("assistants");
+    window.addEventListener(BROWSE_CATALOG_EVENT, browse);
+    return () => window.removeEventListener(BROWSE_CATALOG_EVENT, browse);
+  }, []);
   useEffect(() => {
     const show = ((e: CustomEvent<string>) => {
       setSettingsRoutine(e.detail);
@@ -1947,10 +1956,10 @@ export default function App() {
                 // The same requests to try as its card (assistant.toml);
                 // the built-in starts only when Moss has none.
                 starters={
-                  topicOf?.examples?.length
-                    ? topicOf.examples.map((e) => ({ label: e, text: e }))
-                    : topicOf?.dir === "main"
-                      ? MAIN_STARTERS
+                  topicOf?.dir === "main"
+                    ? mainStarters(topicOf.examples)
+                    : topicOf?.examples?.length
+                      ? topicOf.examples.map((e) => ({ label: e, text: e }))
                       : undefined
                 }
                 session={

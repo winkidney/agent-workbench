@@ -115,12 +115,20 @@ export function ChangeBanner({ change }: { change: AssistantChange }) {
 }
 
 // Settings → Assistants: what background runs changed lately.
-export function ChangeList({ list }: { list: AssistantChange[] }) {
+export function ChangeList({
+  list,
+  inside = false,
+}: {
+  list: AssistantChange[];
+  // Inside a part with its own title.
+  inside?: boolean;
+}) {
   const { busy, error, act } = useAct();
   if (!list.length) return null;
+  const Box = inside ? "div" : "section";
   return (
-    <section className="settings-section">
-      <h3>Recent changes</h3>
+    <Box className={inside ? undefined : "settings-section"}>
+      {!inside && <h3>Recent changes</h3>}
       <p className="subtle">
         What background runs wrote: memory from conversations, and routines with{" "}
         <code>background = true</code>. Each is a git commit; Undo reverts it.
@@ -148,6 +156,6 @@ export function ChangeList({ list }: { list: AssistantChange[] }) {
           </li>
         ))}
       </ul>
-    </section>
+    </Box>
   );
 }

@@ -285,6 +285,9 @@ func readAssistant(path string) (AssistantFile, error) {
 	if err != nil {
 		return f, err
 	}
+	if err := settings.checkOwnRoutines(f); err != nil {
+		return f, err
+	}
 	settings.apply(&f)
 	for _, a := range f.Agents {
 		if a != "claude" && a != "codex" {
@@ -793,13 +796,17 @@ func (m *Manager) ensureShared() {
 	for _, err := range m.restoreDefinitions(root) {
 		fmt.Fprintln(os.Stderr, "assistants: catalog:", err)
 	}
+	writeAllAgentFiles(root)
+	if upgradeMossCard(root) {
+		wrote = true
+	}
 	drop, err := refreshManaged(root)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "assistants: catalog files:", err)
 	}
 	if wrote || len(drop) > 0 {
 		// What refreshManaged just took out of the index leaves with it.
-		m.commitPaths(root, "chore: add shared files from Agent Workbench", sharedPaths(), drop...)
+		m.commitPaths(root, "chore: add shared files from Agent Workbench", append(sharedPaths(), "main/assistant.toml"), drop...)
 	}
 }
 
@@ -904,6 +911,7 @@ func (m *Manager) setUp(root, agent, name, lang string) (bool, error) {
 	}
 	// A clone of the user's repository from another computer: its
 	// installed assistants' definitions come back from their catalogs.
+	defer writeAllAgentFiles(abs)
 	for _, err := range m.restoreDefinitions(abs) {
 		fmt.Fprintln(os.Stderr, "assistants: catalog:", err)
 	}
@@ -1262,8 +1270,16 @@ func (m *Manager) PatchAssistant(dir string, p AssistantPatch) (Assistant, error
 		settings.Sessions = p.Sessions
 		did, switched = append(did, "topics "+p.Sessions), true
 	}
+	// An assistant from a catalog keeps its author's assistant.toml: what
+	// its card says becomes the owner's, in settings.toml (defs.go).
+	lock, _ := readLock(m.assistantsRoot())
+	_, fromCatalog := lock.Assistants[dir]
 	if p.Description != nil && *p.Description != a.Description {
-		text = setOrInsert(text, "description", strconv.Quote(strings.TrimSpace(*p.Description)))
+		if fromCatalog {
+			settings.Description = strings.TrimSpace(*p.Description)
+		} else {
+			text = setOrInsert(text, "description", strconv.Quote(strings.TrimSpace(*p.Description)))
+		}
 		did = append(did, "description")
 	}
 	for _, f := range []struct {
@@ -1279,7 +1295,11 @@ func (m *Manager) PatchAssistant(dir string, p AssistantPatch) (Assistant, error
 				clean = append(clean, item)
 			}
 		}
-		text = setOrInsert(text, f.key, tomlStrings(clean))
+		if fromCatalog {
+			*map[string]*[]string{"capabilities": &settings.Capabilities, "examples": &settings.Examples, "requires": &settings.Requires}[f.key] = clean
+		} else {
+			text = setOrInsert(text, f.key, tomlStrings(clean))
+		}
 		did = append(did, f.key)
 	}
 	if p.Icon != nil && *p.Icon != a.file.Icon {

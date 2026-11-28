@@ -6,6 +6,7 @@ import {
   Eye,
   FileText,
   MessageSquareText,
+  PackagePlus,
   Settings,
   ShieldAlert,
   Sparkles,
@@ -13,6 +14,7 @@ import {
 } from "lucide-react";
 import { api } from "../lib/api";
 import {
+  browseCatalog,
   openAssistantSettings,
   openSessionLater,
   routinesOf,
@@ -297,6 +299,12 @@ export function AssistantHome({
         </>
       )}
       <footer className="assistant-home-foot">
+        {a.dir === "main" && (
+          <Button variant="outline" size="sm" onClick={browseCatalog}>
+            <PackagePlus size={14} />
+            Browse assistants
+          </Button>
+        )}
         {!!a.catalog?.update?.files?.length && (
           <Button
             variant="outline"

@@ -59,6 +59,8 @@ export type CatalogUpdate = {
     runs?: boolean;
     base?: string;
     theirs?: string;
+    // What the owner's settings.toml keeps over the change.
+    notes?: string[];
   }[];
 };
 
@@ -185,6 +187,28 @@ export const newRoutine = (assistant = "main") =>
   window.dispatchEvent(
     new CustomEvent(NEW_ROUTINE_EVENT, { detail: assistant }),
   );
+
+// Asks App.tsx to open Settings → Assistants with the catalog listed. The
+// request waits until the catalog section is there to take it.
+export const BROWSE_CATALOG_EVENT = "workbench:browse-catalog";
+// When it was asked; an ask older than a few seconds is forgotten (the
+// section never came).
+let browseWanted = 0;
+export const browseCatalog = () => {
+  browseWanted = Date.now();
+  window.dispatchEvent(new CustomEvent(BROWSE_CATALOG_EVENT));
+};
+// Whether one waits, without taking it (safe while rendering: a render
+// React throws away must not use it up).
+export const browseRequested = () =>
+  browseWanted > 0 && Date.now() - browseWanted < 10_000;
+// The catalog section takes the request once mounted (true when there was
+// one).
+export const takeBrowseRequest = () => {
+  const v = browseRequested();
+  browseWanted = 0;
+  return v;
+};
 
 // The folders in their new order after moving one to where another is
 // (before it, or after when moving down); the personal assistant stays first.
@@ -357,9 +381,26 @@ export function latestFor(
 // each puts the start of a message in the composer, to finish and send.
 // A start either fills in text, or (action) opens something.
 export type Starter = { label: string; text: string; action?: "routine" };
+// Starts Moss always offers, besides the requests to try on its card.
+export const MAIN_ACTIONS: Starter[] = [
+  {
+    label: "Install an assistant",
+    text: "Which ready-made assistants would suit me? List them and recommend some.",
+  },
+  { label: "Schedule a routine", text: "", action: "routine" },
+];
+
+// Moss's starts: its card's requests to try, then the actions; the
+// built-in ones when its card has none.
+export function mainStarters(examples: string[] | undefined): Starter[] {
+  if (!examples?.length) return MAIN_STARTERS;
+  const own = examples.map((e) => ({ label: e, text: e }));
+  return [...own, ...MAIN_ACTIONS.filter((s) => !examples.includes(s.label))];
+}
+
 export const MAIN_STARTERS: Starter[] = [
   { label: "Remind me", text: "Remind me in 2 hours to " },
-  { label: "Schedule a routine", text: "", action: "routine" },
+  ...MAIN_ACTIONS,
   {
     label: "New assistant",
     text: "I'd like an assistant for a job I keep doing: ",

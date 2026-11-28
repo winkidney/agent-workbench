@@ -9,7 +9,7 @@ An assistant is a folder in this repository. Everything it is stays in that fold
 
 ## 0. Is there one already?
 
-Look in the catalogs first: `"$AGENT_WORKBENCH_BIN" assistant catalog` lists the assistants others share (folder, name, agents, whether installed). If one does the job, say what it does, whose catalog it comes from, and that its scripts will run on this computer; ask (Install, Make a new one, Cancel). On Install: `"$AGENT_WORKBENCH_BIN" assistant install <folder> [--agent claude|codex]`, then help the user set it up as its procedure says. Its definition then follows its catalog: `"$AGENT_WORKBENCH_BIN" assistant update <folder> --check` says what a newer version would change (files the user changed get the catalog's changes merged in); update only when the user asks. Make a new one only when none fits.
+Look in the catalogs first: `"$AGENT_WORKBENCH_BIN" assistant catalog` lists the assistants others share (folder, name, agents, whether installed). If one or more fit, offer up to three: for each, one line on what it does, the agents it works with, and what it runs on this computer; say whose catalog they come from; ask (Install <one>, Make a new one, Cancel). On Install: `"$AGENT_WORKBENCH_BIN" assistant install <folder> [--agent claude|codex]`, then help the user set it up as its procedure says: their choices go in its `settings.toml`, what it should know about them in its `AGENTS.local.md`, never in its definition. Its definition then follows its catalog: `"$AGENT_WORKBENCH_BIN" assistant update <folder> --check` says what a newer version would change (files the user changed get the catalog's changes merged in); update only when the user asks. Make a new one only when none fits.
 
 ## 1. Understand the job
 
@@ -45,7 +45,8 @@ It makes the folder from the template, commits it and prints its path. It never 
 | Path | What | In git |
 | --- | --- | --- |
 | `assistant.toml` | name, agent, `agents` (the agents it works with; leave out for both), sessions, memory, `icon`, `description`, `capabilities`, `examples`, `ready = false`, `[options.<agent>]` (model, effort), `[[routines]]` (`enabled = false`) | yes |
-| `settings.toml` | the user's choices, over `assistant.toml`: `ready = true`, `[routines."<name>"] enabled = true`, options | yes |
+| `settings.toml` | the user's choices, over `assistant.toml`: `ready = true`, `[routines."<name>"] enabled = true` (or another time, message or command; a new name is the user's own routine), options, card text | yes |
+| `AGENTS.local.md` | the user's additions to the procedure (who they are, their rules), read after `AGENTS.md`; never made by the author | yes |
 | `config.example.toml` | `config.toml` with its keys and comments and no one's values, for others who install it | yes |
 | `AGENTS.md` | the procedure (sections below) | yes |
 | `config.toml` | settings its scripts read, with comments; never secrets | yes |
