@@ -72,7 +72,8 @@ func TestAssistantIconIsChosenUploadedAndRemoved(t *testing.T) {
 	if err != nil || a.Icon != "mail" || a.IconVersion != 0 {
 		t.Fatalf("%+v %v", a, err)
 	}
-	if b, _ := os.ReadFile(filepath.Join(dir, "assistant.toml")); !strings.Contains(string(b), `icon = "mail"`) {
+	// The owner's choice: in settings.toml, not the author's assistant.toml.
+	if b, _ := os.ReadFile(filepath.Join(dir, "settings.toml")); !strings.Contains(string(b), `icon = "mail"`) {
 		t.Fatalf("toml:\n%s", b)
 	}
 	if c := lastCommit(t, dir); !strings.Contains(c, "mail: icon mail") {
@@ -99,7 +100,7 @@ func TestAssistantIconIsChosenUploadedAndRemoved(t *testing.T) {
 	if a.Icon != "file" || a.IconVersion == 0 || a.file.Icon != "icon.png" {
 		t.Fatalf("after upload %+v", a)
 	}
-	if c := lastCommit(t, dir); !strings.Contains(c, "icon.png") || !strings.Contains(c, "assistant.toml") {
+	if c := lastCommit(t, dir); !strings.Contains(c, "icon.png") || !strings.Contains(c, "settings.toml") {
 		t.Fatalf("commit %q", c)
 	}
 	w := request(t, s, s.Host, "GET", "/api/assistants/mail/icon?v=1", "", nil)

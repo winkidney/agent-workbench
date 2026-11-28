@@ -34,3 +34,4 @@ Decisions that shape how the workbench behaves, why, and what they cost. Each re
 | [0028](0028-install-and-restart-from-about.md) | Install and restart from Settings → About | accepted |
 | [0029](0029-routine-replies-are-reports.md) | A routine's reply is a report, shown until seen | accepted |
 | [0030](0030-assistant-icons.md) | An icon for each assistant, with its agent as a badge | accepted; amends 0015 |
+| [0031](0031-assistants-install-from-catalogs.md) | Assistants install from catalogs; an assistant's definition and its owner's data are apart | accepted; amends 0010, 0013 and 0015; extends 0016 |

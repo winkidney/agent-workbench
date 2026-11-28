@@ -51,6 +51,8 @@ type AssistantFile struct {
 	Memory   string `toml:"memory"`
 	// Its icon: a built-in drawing's name, or a .png in its folder (ADR 0030).
 	Icon string `toml:"icon"`
+	// The agents its author made it for; none means both (ADR 0031).
+	Agents []string `toml:"agents"`
 	// Its sessions' model, effort, mode and permissions, by agent (ADR 0017).
 	Options  map[string]AgentOptions `toml:"options"`
 	Routines []FileRoutine           `toml:"routines"`
@@ -107,6 +109,11 @@ type Assistant struct {
 	// image in its folder, at IconVersion (its modification time, ms).
 	Icon        string `json:"icon,omitempty"`
 	IconVersion int64  `json:"iconVersion,omitempty"`
+	// The agents its author made it for; none means both.
+	Agents []string `json:"agents,omitempty"`
+	// The catalog it was installed from, and its definition files the user
+	// changed (catalog.go).
+	Catalog *AssistantCatalog `json:"catalog,omitempty"`
 
 	file AssistantFile
 }
@@ -148,6 +155,8 @@ type assistants struct {
 	lookup func(id string) (Session, bool)
 	// One background run at a time in the repository (background.go).
 	bg sync.Mutex
+	// The workbench's clones of catalogs (catalog.go).
+	catalog sync.Mutex
 	// Runs an assistant in the background; replaced in tests.
 	background func(a Assistant, prompt string) (backgroundOut, error)
 	// Hands a routine's message to an assistant's session (AssistantMessage);
@@ -266,6 +275,17 @@ func readAssistant(path string) (AssistantFile, error) {
 	}
 	if extra := md.Undecoded(); len(extra) > 0 {
 		return f, fmt.Errorf("unknown setting %q", extra[0].String())
+	}
+	// The owner's settings beside it take precedence (defs.go).
+	settings, err := readSettings(filepath.Dir(path))
+	if err != nil {
+		return f, err
+	}
+	settings.apply(&f)
+	for _, a := range f.Agents {
+		if a != "claude" && a != "codex" {
+			return f, errors.New(`agents: "claude", "codex" or both`)
+		}
 	}
 	if strings.TrimSpace(f.Name) == "" {
 		return f, errors.New("name is missing")
@@ -457,10 +477,14 @@ func (m *Manager) Assistants() []Assistant {
 			a.Ready = f.Ready == nil || *f.Ready
 			a.Options = f.Options
 			a.Icon, a.IconVersion = iconShown(dir, f.Icon)
+			a.Agents = f.Agents
 		}
 		list = append(list, a)
 	}
 	m.sortAssistants(list)
+	if root != "" {
+		withCatalogs(root, list)
+	}
 	m.syncFileRoutines(list)
 	m.as.mu.Lock()
 	m.as.seen, m.as.list = sig, list
@@ -752,7 +776,16 @@ func (m *Manager) ensureShared() {
 	} else if updated {
 		wrote = true
 	}
-	if wrote {
+	// Installed assistants' definitions missing here (a clone on another
+	// computer) come back from their catalogs (catalog.go).
+	for _, err := range m.restoreDefinitions(root) {
+		fmt.Fprintln(os.Stderr, "assistants: catalog:", err)
+	}
+	changed, err := refreshManaged(root)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "assistants: catalog files:", err)
+	}
+	if wrote || changed {
 		m.commitAll(root, "chore: add shared files from Agent Workbench")
 	}
 }
@@ -855,6 +888,11 @@ func (m *Manager) setUp(root, agent, name, lang string) (bool, error) {
 	if _, err := m.updateMoss(abs); err != nil {
 		return false, err
 	}
+	// A clone of the user's repository from another computer: its
+	// installed assistants' definitions come back from their catalogs.
+	for _, err := range m.restoreDefinitions(abs) {
+		fmt.Fprintln(os.Stderr, "assistants: catalog:", err)
+	}
 	m.commitAll(abs, "Set up assistants")
 	m.assistantsChanged()
 	return created, nil
@@ -943,6 +981,11 @@ func (m *Manager) NewAssistant(name, dir, agent, sessions string) (Assistant, er
 func (m *Manager) commitAll(root, message string) {
 	m.as.bg.Lock()
 	defer m.as.bg.Unlock()
+	// Definition files as their catalog has them are not the user's to
+	// commit (catalog.go).
+	if _, err := refreshManaged(root); err != nil {
+		fmt.Fprintln(os.Stderr, "assistants: catalog files:", err)
+	}
 	_, _, _ = gitCommit(root, message)
 }
 
@@ -1123,16 +1166,19 @@ func (m *Manager) PatchAssistant(dir string, p AssistantPatch) (Assistant, error
 	if err != nil {
 		return a, err
 	}
+	// The owner's choices go to settings.toml, the author's text to
+	// assistant.toml (defs.go, ADR 0031).
+	settings, err := readSettings(a.Path)
+	if err != nil {
+		return a, err
+	}
 	text := string(data)
 	var did []string
 	if name != "" && strings.TrimSpace(name) != a.Name {
 		if name, err = assistantName(name); err != nil {
 			return a, err
 		}
-		var ok bool
-		if text, ok = setTopLevel(text, "name", name); !ok {
-			return a, errors.New(`assistant.toml has no name = "…" line to change`)
-		}
+		settings.Name = name
 		did = append(did, "rename to "+name)
 	}
 	switched := false
@@ -1140,23 +1186,16 @@ func (m *Manager) PatchAssistant(dir string, p AssistantPatch) (Assistant, error
 		if agent != "claude" && agent != "codex" {
 			return a, errors.New("agent must be claude or codex")
 		}
-		var ok bool
-		if text, ok = setTopLevel(text, "agent", agent); !ok {
-			return a, errors.New(`assistant.toml has no agent = "…" line to change`)
-		}
+		settings.Agent = agent
 		did, switched = append(did, "switch to "+agent), true
 	}
 	if enabled != nil && *enabled != a.Enabled {
 		if dir == "main" {
 			return a, errors.New("the personal assistant cannot be turned off")
 		}
-		raw := strconv.FormatBool(*enabled)
-		if t, ok := setTopLevelRaw(text, "enabled", raw); ok {
-			text = t
-		} else {
-			text = insertTopLevel(text, "enabled", raw)
-		}
-		if *enabled {
+		v := *enabled
+		settings.Enabled = &v
+		if v {
 			did = append(did, "turn on")
 		} else {
 			did = append(did, "turn off")
@@ -1166,7 +1205,7 @@ func (m *Manager) PatchAssistant(dir string, p AssistantPatch) (Assistant, error
 		if p.Sessions != "per-task" && p.Sessions != "continuous" {
 			return a, errors.New("sessions: per-task or continuous")
 		}
-		text = setOrInsert(text, "sessions", strconv.Quote(p.Sessions))
+		settings.Sessions = p.Sessions
 		did, switched = append(did, "topics "+p.Sessions), true
 	}
 	if p.Description != nil && *p.Description != a.Description {
@@ -1193,12 +1232,13 @@ func (m *Manager) PatchAssistant(dir string, p AssistantPatch) (Assistant, error
 		if err := checkIcon(*p.Icon); err != nil {
 			return a, err
 		}
-		text = setOrInsert(text, "icon", strconv.Quote(*p.Icon))
+		settings.Icon = *p.Icon
 		did = append(did, "icon "+*p.Icon)
 	}
 	if p.Ready != nil && *p.Ready != a.Ready {
-		text = setOrInsert(text, "ready", strconv.FormatBool(*p.Ready))
-		did = append(did, map[bool]string{true: "ready", false: "not set up"}[*p.Ready])
+		v := *p.Ready
+		settings.Ready = &v
+		did = append(did, map[bool]string{true: "ready", false: "not set up"}[v])
 	}
 	for _, agent := range []string{"claude", "codex"} {
 		o, ok := p.Options[agent]
@@ -1208,22 +1248,44 @@ func (m *Manager) PatchAssistant(dir string, p AssistantPatch) (Assistant, error
 		if err := checkAgentOptions(map[string]AgentOptions{agent: o}); err != nil {
 			return a, err
 		}
-		text = setOptionsTable(text, agent, o)
+		if settings.Options == nil {
+			settings.Options = map[string]AgentOptions{}
+		}
+		settings.Options[agent] = o
 		did = append(did, agent+" settings")
 	}
 	if len(did) == 0 {
 		return a, nil
 	}
-	// Checked before it replaces the file: a change never breaks it.
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(text), 0o644); err != nil {
+	// Checked before it replaces the files: a change never breaks them.
+	oldSettings, _ := os.ReadFile(filepath.Join(a.Path, settingsFile))
+	restore := func() {
+		if oldSettings == nil {
+			os.Remove(filepath.Join(a.Path, settingsFile))
+		} else {
+			os.WriteFile(filepath.Join(a.Path, settingsFile), oldSettings, 0o644)
+		}
+	}
+	if err := writeAssistantSettings(a.Path, settings); err != nil {
 		return a, err
 	}
-	if _, err := readAssistant(tmp); err != nil {
-		os.Remove(tmp)
-		return a, err
-	}
-	if err := os.Rename(tmp, path); err != nil {
+	if text != string(data) {
+		tmp := path + ".tmp"
+		if err := os.WriteFile(tmp, []byte(text), 0o644); err != nil {
+			restore()
+			return a, err
+		}
+		if _, err := readAssistant(tmp); err != nil {
+			os.Remove(tmp)
+			restore()
+			return a, err
+		}
+		if err := os.Rename(tmp, path); err != nil {
+			restore()
+			return a, err
+		}
+	} else if _, err := readAssistant(path); err != nil {
+		restore()
 		return a, err
 	}
 	if switched && a.Sessions == "continuous" {
@@ -1469,6 +1531,61 @@ func (s *Server) assistantsAPI(w http.ResponseWriter, r *http.Request, rest stri
 			return
 		}
 		writeJSON(w, map[string]any{"session": s.ID})
+	case rest == "catalogs" && r.Method == "GET":
+		writeJSON(w, m.catalogSources())
+	case rest == "catalogs" && r.Method == "PUT":
+		var v []CatalogSource
+		if err := decode(w, r, &v); err != nil {
+			bad(w, err)
+			return
+		}
+		if err := m.SetCatalogSources(v); err != nil {
+			bad(w, err)
+			return
+		}
+		writeJSON(w, m.catalogSources())
+	case rest == "catalog" && r.Method == "GET":
+		url := r.URL.Query().Get("url")
+		if url == "" {
+			url = m.catalogSources()[0].URL
+		}
+		list, err := m.CatalogEntries(url)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		writeJSON(w, map[string]any{"catalog": url, "assistants": list})
+	case rest == "install" && r.Method == "POST":
+		var v struct{ Catalog, Path, Dir, Agent string }
+		if err := decode(w, r, &v); err != nil {
+			bad(w, err)
+			return
+		}
+		a, err := m.InstallAssistant(v.Catalog, v.Path, v.Dir, v.Agent)
+		if err != nil {
+			bad(w, err)
+			return
+		}
+		writeJSON(w, a)
+	case rest == "migrate" && r.Method == "POST":
+		var v struct {
+			Catalog    string
+			Apply      bool
+			UseCatalog []string
+		}
+		if err := decode(w, r, &v); err != nil {
+			bad(w, err)
+			return
+		}
+		if v.Catalog == "" {
+			v.Catalog = m.catalogSources()[0].URL
+		}
+		items, err := m.MigrateAssistants(v.Catalog, v.Apply, v.UseCatalog)
+		if err != nil {
+			bad(w, err)
+			return
+		}
+		writeJSON(w, map[string]any{"catalog": v.Catalog, "applied": v.Apply, "assistants": items})
 	case rest == "reload" && r.Method == "POST":
 		// Read the assistant.toml files again (they are not watched).
 		m.assistantsChanged()

@@ -286,10 +286,14 @@ func TestAssistantsAreRenamedAndSwitchAgents(t *testing.T) {
 	if err != nil || a.Name != "Mo" || a.Agent != "claude" {
 		t.Fatalf("rename: %+v %v", a, err)
 	}
-	// Only the top-level name changed: the routines keep theirs.
+	// The name is the owner's: settings.toml has it, assistant.toml is as
+	// its author wrote it.
 	after, _ := os.ReadFile(path)
-	if strings.Replace(string(before), `name = "Moss"`, `name = "Mo"`, 1) != string(after) {
+	if string(before) != string(after) {
 		t.Fatalf("assistant.toml:\n%s", after)
+	}
+	if b, _ := os.ReadFile(filepath.Join(root, "main", "settings.toml")); !strings.Contains(string(b), `name = "Mo"`) {
+		t.Fatalf("settings.toml:\n%s", b)
 	}
 	if st := m.topicState("main"); st.Current != "claude:a" {
 		t.Fatalf("a rename started a new topic: %+v", st)
@@ -407,9 +411,9 @@ func TestAssistantsOrderAndTurningOff(t *testing.T) {
 	if err != nil || a.Enabled {
 		t.Fatalf("off: %+v %v", a, err)
 	}
-	b, _ := os.ReadFile(filepath.Join(root, "calendar", "assistant.toml"))
-	if !strings.Contains(string(b), "agent = \"claude\"\nenabled = false\n") || !strings.Contains(string(b), "[[routines]]\nname = \"Agenda\"") {
-		t.Fatalf("assistant.toml:\n%s", b)
+	b, _ := os.ReadFile(filepath.Join(root, "calendar", "settings.toml"))
+	if !strings.Contains(string(b), "enabled = false\n") {
+		t.Fatalf("settings.toml:\n%s", b)
 	}
 	list, _ := m.Routines()
 	if len(list) != 1 || !list[0].AssistantOff || list[0].Next != "" {
@@ -427,7 +431,7 @@ func TestAssistantsOrderAndTurningOff(t *testing.T) {
 	if a, err := m.UpdateAssistant("calendar", "", "", &on); err != nil || !a.Enabled {
 		t.Fatalf("on: %+v %v", a, err)
 	}
-	if b, _ := os.ReadFile(filepath.Join(root, "calendar", "assistant.toml")); !strings.Contains(string(b), "enabled = true\n") {
+	if b, _ := os.ReadFile(filepath.Join(root, "calendar", "settings.toml")); !strings.Contains(string(b), "enabled = true\n") {
 		t.Fatalf("back on:\n%s", b)
 	}
 	if list, _ := m.Routines(); list[0].AssistantOff {

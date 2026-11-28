@@ -9,6 +9,7 @@ import { NewSessionOptions } from "../AgentControls";
 import { OPTION_KEYS, type Options } from "../agentOptions";
 import {
   assistantsChanged,
+  catalogName,
   routinesOf,
   type Assistant,
 } from "../lib/assistants";
@@ -151,6 +152,17 @@ export function AssistantSettings({
             void save();
           }}
         >
+          {a.catalog && (
+            <p className="subtle assistant-origin">
+              From the catalog <code>{catalogName(a.catalog.url)}</code> at{" "}
+              <code>{a.catalog.commit.slice(0, 7)}</code>; your settings are in{" "}
+              <code>settings.toml</code>.
+              {!!a.catalog.changed?.length &&
+                ` Files you changed (kept as yours): ${a.catalog.changed.join(", ")}.`}
+              {!!a.catalog.missing?.length &&
+                ` Missing here: ${a.catalog.missing.join(", ")}.`}
+            </p>
+          )}
           <IconPicker
             assistant={a}
             agent={agent}

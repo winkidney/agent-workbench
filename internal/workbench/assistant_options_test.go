@@ -25,12 +25,15 @@ func TestAssistantOptions(t *testing.T) {
 	if err != nil || a.Options["claude"].Model != "sonnet" || a.Options["codex"].Effort != "low" {
 		t.Fatalf("patched: %+v %v", a, err)
 	}
-	b, _ := os.ReadFile(path)
-	if !strings.Contains(string(b), "[options.claude]\nmodel = \"sonnet\"\n\n") || strings.Index(string(b), "[options.") > strings.Index(string(b), "# Its routines.") || !strings.Contains(string(b), "[[routines]]\nname = \"Check\"") {
-		t.Fatalf("assistant.toml:\n%s", b)
+	// The owner's settings: in settings.toml; assistant.toml is left as its
+	// author wrote it.
+	before, _ := os.ReadFile(path)
+	b, _ := os.ReadFile(filepath.Join(filepath.Dir(path), "settings.toml"))
+	if !strings.Contains(string(b), "[options.claude]\nmodel = \"sonnet\"\n") || !strings.Contains(string(b), "[options.codex]\neffort = \"low\"\n") {
+		t.Fatalf("settings.toml:\n%s", b)
 	}
-	if strings.Index(string(b), "[options.claude]") > strings.Index(string(b), "[options.codex]") {
-		t.Fatalf("the tables are apart or out of order:\n%s", b)
+	if after, _ := os.ReadFile(path); string(after) != string(before) {
+		t.Fatalf("assistant.toml changed:\n%s", after)
 	}
 	// Its table first, the saved defaults for what it leaves out.
 	if o := m.assistantOptions(a); o.Model != "sonnet" || o.Effort != "high" {
@@ -40,7 +43,7 @@ func TestAssistantOptions(t *testing.T) {
 	if a, err = m.PatchAssistant("cr", AssistantPatch{Options: map[string]AgentOptions{"claude": {Model: "opus", Effort: "max"}, "codex": {}}}); err != nil {
 		t.Fatal(err)
 	}
-	b, _ = os.ReadFile(path)
+	b, _ = os.ReadFile(filepath.Join(filepath.Dir(path), "settings.toml"))
 	if strings.Count(string(b), "[options.claude]") != 1 || strings.Contains(string(b), "[options.codex]") || !strings.Contains(string(b), "effort = \"max\"") {
 		t.Fatalf("replaced:\n%s", b)
 	}

@@ -40,7 +40,9 @@ It makes the folder from the template, commits it and prints its path. It never 
 
 | Path | What | In git |
 | --- | --- | --- |
-| `assistant.toml` | name, agent, sessions, memory, `icon`, `description`, `capabilities`, `examples`, `ready`, `[options.<agent>]` (model, effort), `[[routines]]` | yes |
+| `assistant.toml` | name, agent, `agents` (the agents it works with; leave out for both), sessions, memory, `icon`, `description`, `capabilities`, `examples`, `ready = false`, `[options.<agent>]` (model, effort), `[[routines]]` (`enabled = false`) | yes |
+| `settings.toml` | the user's choices, over `assistant.toml`: `ready = true`, `[routines."<name>"] enabled = true`, options | yes |
+| `config.example.toml` | `config.toml` with its keys and comments and no one's values, for others who install it | yes |
 | `AGENTS.md` | the procedure (sections below) | yes |
 | `config.toml` | settings its scripts read, with comments; never secrets | yes |
 | `tools/<name>.py`, `tools/test_<name>.py` | scripts and their tests | yes |
@@ -76,7 +78,7 @@ It makes the folder from the template, commits it and prints its path. It never 
 Run its tests and its check once. Then:
 
 - If the user can give what setup needs now, do the setup with them.
-- Switch on the routines that work (`enabled = true`), set `ready = true`, and run `"$AGENT_WORKBENCH_BIN" assistant reload`.
+- In its `settings.toml`, switch on the routines that work (`[routines."<name>"]` with `enabled = true`) and set `ready = true`; then run `"$AGENT_WORKBENCH_BIN" assistant reload`.
 - Commit the folder: `git add <folder> && git commit -m "Set up <name>"`.
 - Tell the user:
   - it is in the sidebar under Assistants;

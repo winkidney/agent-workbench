@@ -18,6 +18,7 @@ import {
   type SyncState,
 } from "../../lib/assistants";
 import { shortTime } from "../../routines/when";
+import { CatalogSection } from "../../assistants/CatalogSection";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 
@@ -220,6 +221,7 @@ export function AssistantsTab({
           <AssistantItem key={a.dir} assistant={a} onOpen={onOpen} />
         ))}
       </ul>
+      <CatalogSection />
       {!!value.mossUpdates?.length && (
         <section className="settings-section" role="status">
           <h3>A newer Moss</h3>

@@ -7033,3 +7033,75 @@ span.heartbeat.compact {
   gap: 6px 10px;
   font-size: 12px;
 }
+
+/* Assistants from a catalog (ADR 0031). */
+.catalog-bar,
+.catalog-install-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.catalog-bar select {
+  max-width: 100%;
+}
+.catalog-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.catalog-item {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.catalog-item-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.catalog-item-text {
+  flex: 1;
+  min-width: 0;
+}
+.catalog-item-text p {
+  margin: 2px 0 0;
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+.catalog-agents {
+  display: inline-flex;
+  gap: 2px;
+}
+.catalog-install {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+.catalog-install p,
+.catalog-bind p {
+  margin: 0;
+  font-size: 12.5px;
+}
+.catalog-warn {
+  color: var(--warning);
+}
+.catalog-bind {
+  margin-top: 10px;
+}
+.catalog-plan {
+  margin: 6px 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+.assistant-origin {
+  margin: 0;
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}

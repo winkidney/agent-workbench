@@ -30,7 +30,7 @@ What to ask the user the first time, step by step. Credentials (passwords, token
 
 ## Where things live
 
-Everything this assistant is stays in this folder: `assistant.toml` (settings, routines), `AGENTS.md` (this procedure), `config.toml` (settings its scripts read, no secrets), `tools/` (scripts, each with a test), `.agents/skills/` (procedures), `state/` (what is in progress: kept in git), `raw/` (fetched data and scripts' bookkeeping: not in git), `log.md`.
+Everything this assistant is stays in this folder: `assistant.toml` (its definition and routines), `settings.toml` (the user's choices: set up, routines on, options), `AGENTS.md` (this procedure), `config.toml` (settings its scripts read, no secrets), `tools/` (scripts, each with a test), `.agents/skills/` (procedures), `state/` (what is in progress: kept in git), `raw/` (fetched data and scripts' bookkeeping: not in git), `log.md`.
 
 
 Shared rules: `../AGENTS.md` (read it if your CLI has not already).

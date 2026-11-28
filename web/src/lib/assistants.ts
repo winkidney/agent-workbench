@@ -31,7 +31,59 @@ export type Assistant = {
   // in its folder, read at iconVersion (its time, to load it again).
   icon?: string;
   iconVersion?: number;
+  // The agents its author made it for; none means both (ADR 0031).
+  agents?: Agent[];
+  // The catalog it was installed from, and its definition files the user
+  // changed or lacks.
+  catalog?: {
+    url: string;
+    path: string;
+    commit: string;
+    changed?: string[];
+    missing?: string[];
+  };
 };
+
+type Agent = "claude" | "codex";
+
+// An assistant a catalog offers (ADR 0031).
+export type CatalogEntry = {
+  catalog: string;
+  path: string;
+  commit: string;
+  name: string;
+  description?: string;
+  capabilities?: string[];
+  requires?: string[];
+  agent: Agent;
+  agents?: Agent[];
+  icon?: string;
+  installed?: string;
+  codexWarning?: string;
+};
+
+// What binding an older repository to a catalog does to one assistant.
+export type MigrationItem = {
+  dir: string;
+  catalog?: string;
+  fromCatalog?: string[];
+  changed?: string[];
+  added?: string[];
+  settings?: string[];
+  skipped?: string;
+};
+
+// The agents an assistant can be installed for: its author's choice, or
+// both.
+export const agentsOf = (e: { agents?: Agent[] }): Agent[] =>
+  e.agents?.length ? e.agents : ["claude", "codex"];
+
+// A catalog's address as people say it: owner/name for GitHub.
+export const catalogName = (url: string) =>
+  url
+    .replace(/^https:\/\/github\.com\//, "")
+    .replace(/^file:\/\//, "")
+    .replace(/\.git$/, "");
 
 export type Assistants = {
   root: string;
