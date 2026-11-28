@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"testing"
 )
@@ -102,10 +103,13 @@ func TestAssistantsInstallFromACatalog(t *testing.T) {
 	if b, _ := os.ReadFile(filepath.Join(dir, "state/loops.md")); strings.Contains(string(b), "should not") {
 		t.Fatal("the catalog's state was installed")
 	}
+	// A link where links can be made; else the note that says what to do.
 	if l, err := os.Readlink(filepath.Join(dir, ".claude/skills")); err != nil || l != filepath.Join("..", ".agents", "skills") {
-		t.Fatalf("skills link %q %v", l, err)
+		if _, note := os.Stat(filepath.Join(dir, ".claude/SKILLS.md")); note != nil {
+			t.Fatalf("skills link %q %v", l, err)
+		}
 	}
-	if info, _ := os.Stat(filepath.Join(dir, "tools/fetch.py")); info.Mode()&0o100 == 0 {
+	if info, _ := os.Stat(filepath.Join(dir, "tools/fetch.py")); goruntime.GOOS != "windows" && info.Mode()&0o100 == 0 {
 		t.Fatal("a script lost its execute bit")
 	}
 	lock, _ := readLock(root)
@@ -277,5 +281,17 @@ func TestOlderRepositoriesBindToTheirCatalog(t *testing.T) {
 		if it.Dir == "mail" && !strings.HasPrefix(it.Skipped, "already from") {
 			t.Fatalf("bound twice: %+v", it)
 		}
+	}
+}
+
+func TestCatalogClonesHaveShortNames(t *testing.T) {
+	m, _ := fixture(t)
+	a := m.catalogDir("https://github.com/winkidney/agent-workbench-assistants.git")
+	b := m.catalogDir(`file://C:\Users\RUNNER~1\AppData\Local\Temp\TestOlderRepositoriesBindToTheirCatalog3498831074\001`)
+	if filepath.Base(a) != "agent-workbench-assistants-"+digest([]byte("https://github.com/winkidney/agent-workbench-assistants.git"))[:8] {
+		t.Fatalf("a: %s", a)
+	}
+	if len(filepath.Base(b)) > 41 || a == b {
+		t.Fatalf("b: %s", b)
 	}
 }

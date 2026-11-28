@@ -53,10 +53,18 @@ func (m *Manager) SetCatalogSources(v []CatalogSource) error {
 
 var catalogDirRE = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
 
-// catalogDir is where the workbench keeps its clone of a catalog.
+// catalogDir is where the workbench keeps its clone of a catalog: its
+// name and a digest of its address, short enough for Windows' path limit.
 func (m *Manager) catalogDir(url string) string {
-	name := strings.Trim(catalogDirRE.ReplaceAllString(strings.TrimSuffix(strings.TrimPrefix(strings.TrimPrefix(url, "https://"), "file://"), ".git"), "_"), "_")
-	return filepath.Join(m.store.dir, "catalogs", name)
+	base := strings.TrimSuffix(strings.TrimRight(url, "/\\"), ".git")
+	if i := strings.LastIndexAny(base, "/\\:"); i >= 0 {
+		base = base[i+1:]
+	}
+	name := strings.Trim(catalogDirRE.ReplaceAllString(base, "_"), "_")
+	if len(name) > 32 {
+		name = name[:32]
+	}
+	return filepath.Join(m.store.dir, "catalogs", name+"-"+digest([]byte(url))[:8])
 }
 
 // fetchCatalog brings the workbench's clone of a catalog up to date and
